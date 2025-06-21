@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  oracle-db:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle-analytics-db
+    environment:
+      ORACLE_PASSWORD: admin123
+      ORACLE_DATABASE: ANALYTICS
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./SAMPLE_DATA.sql:/docker-entrypoint-initdb.d/01-sample-data.sql:ro
+    restart: unless-stopped
+
+volumes:
+  oracle-data:

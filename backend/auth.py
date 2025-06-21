@@ -1,0 +1,258 @@
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from fastapi import HTTPException, status, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from models import User, UserCreate, UserLogin
+from database import db_manager
+from config import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against its hash"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    """Hash a password"""
+    return pwd_context.hash(password)
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(
+            minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
+    return encoded_jwt
+
+
+def verify_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify JWT token and return payload"""
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        return payload
+    except JWTError:
+        return None
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> User:
+    """Get current user from JWT token"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise credentials_exception
+
+    username = payload.get("sub")
+    if username is None:
+        raise credentials_exception
+
+    user = get_user_by_username(username)
+    if user is None:
+        raise credentials_exception
+
+    return user
+
+
+def get_user_by_username(username: str) -> Optional[User]:
+    """Get user by username from database"""
+    try:
+        result = db_manager.execute_query(
+            "SELECT id, username, email, is_active, created_at FROM app_users WHERE username = ?",
+            (username,),
+        )
+        if result:
+            user_data = result[0]
+            return User(
+                id=user_data["ID"],
+                username=user_data["USERNAME"],
+                email=user_data["EMAIL"],
+                is_active=bool(user_data["IS_ACTIVE"]),
+                created_at=user_data["CREATED_AT"],
+            )
+        return None
+    except Exception as e:
+        logger.error(f"Error getting user by username: {e}")
+        return None
+
+
+def get_user_by_email(email: str) -> Optional[User]:
+    """Get user by email from database"""
+    try:
+        result = db_manager.execute_query(
+            "SELECT id, username, email, is_active, created_at FROM app_users WHERE email = ?",
+            (email,),
+        )
+        if result:
+            user_data = result[0]
+            return User(
+                id=user_data["ID"],
+                username=user_data["USERNAME"],
+                email=user_data["EMAIL"],
+                is_active=bool(user_data["IS_ACTIVE"]),
+                created_at=user_data["CREATED_AT"],
+            )
+        return None
+    except Exception as e:
+        logger.error(f"Error getting user by email: {e}")
+        return None
+
+
+def authenticate_user(username: str, password: str) -> Optional[User]:
+    """Authenticate user with username and password"""
+    try:
+        result = db_manager.execute_query(
+            "SELECT id, username, email, password_hash, is_active, created_at FROM app_users WHERE username = ?",
+            (username,),
+        )
+        if not result:
+            return None
+
+        user_data = result[0]
+        if not verify_password(password, user_data["PASSWORD_HASH"]):
+            return None
+
+        if not user_data["IS_ACTIVE"]:
+            return None
+
+        return User(
+            id=user_data["ID"],
+            username=user_data["USERNAME"],
+            email=user_data["EMAIL"],
+            is_active=bool(user_data["IS_ACTIVE"]),
+            created_at=user_data["CREATED_AT"],
+        )
+    except Exception as e:
+        logger.error(f"Error authenticating user: {e}")
+        return None
+
+
+def create_user(user_create: UserCreate) -> Optional[User]:
+    """Create new user"""
+    try:
+        # Check if user already exists
+        if get_user_by_username(user_create.username):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered",
+            )
+
+        if get_user_by_email(user_create.email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+            )
+
+        # Hash password
+        hashed_password = get_password_hash(user_create.password)
+
+        # Insert user
+        user_id = db_manager.execute_non_query(
+            """INSERT INTO app_users (username, email, password_hash) 
+               VALUES (?, ?, ?) RETURNING id INTO ?""",
+            (user_create.username, user_create.email, hashed_password),
+        )
+
+        # Get created user
+        return get_user_by_username(user_create.username)
+
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating user",
+        )
+
+
+# SAML Authentication (placeholder - would need proper SAML library integration)
+class SAMLAuth:
+    """SAML Authentication handler"""
+
+    def __init__(self):
+        self.idp_url = settings.SAML_SSO_URL
+        self.sp_entity_id = settings.SAML_ENTITY_ID
+        self.cert_path = settings.SAML_X509_CERT
+
+    def initiate_login(self) -> str:
+        """Initiate SAML login - returns redirect URL"""
+        # In a real implementation, you would:
+        # 1. Generate SAML AuthnRequest
+        # 2. Sign the request
+        # 3. Return redirect URL to IdP
+        return f"{self.idp_url}?SAMLRequest=..."
+
+    def handle_response(self, saml_response: str) -> Optional[User]:
+        """Handle SAML response and return user"""
+        # In a real implementation, you would:
+        # 1. Validate SAML response signature
+        # 2. Extract user attributes
+        # 3. Create or update user in database
+        # 4. Return user object
+
+        # Placeholder implementation
+        return None
+
+
+saml_auth = SAMLAuth()
+
+
+def get_auth_mode() -> str:
+    """Get current authentication mode"""
+    return settings.AUTH_MODE
+
+
+# Initialize default admin user
+def init_default_user():
+    """Create default admin user if no users exist"""
+    try:
+        result = db_manager.execute_query("SELECT COUNT(*) as count FROM app_users")
+        if result and result[0]["COUNT"] == 0:
+            # Create default admin user
+            admin_user = UserCreate(
+                username="admin",
+                email="admin@example.com",
+                password="admin123",  # Change this in production!
+            )
+            create_user(admin_user)
+            logger.info("Default admin user created")
+    except Exception as e:
+        logger.error(f"Error creating default user: {e}")
+
+
+# Optional: Role-based access control
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require admin role for certain endpoints"""
+    # You can extend this to check user roles from database
+    if current_user.username != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
+    return current_user

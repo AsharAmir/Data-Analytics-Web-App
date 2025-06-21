@@ -1,0 +1,4 @@
+*.pyc
+/backend/venv
+/frontend/.next
+/frontend/node_modules
