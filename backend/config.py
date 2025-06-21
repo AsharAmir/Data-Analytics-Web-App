@@ -35,8 +35,3 @@ class Settings:
 
 
 settings = Settings()
-
-
-# For direct pyodbc connection
-def get_pyodbc_connection_string():
-    return f"Driver={{Oracle in OraClient21Home1}};Dbq={settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_SERVICE_NAME};Uid={settings.DB_USERNAME};Pwd={settings.DB_PASSWORD};"
