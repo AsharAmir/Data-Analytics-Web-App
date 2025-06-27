@@ -20,6 +20,7 @@ from models import (
     DashboardWidget,
 )
 import logging
+from sql_utils import escape_literal
 
 logger = logging.getLogger(__name__)
 
@@ -217,23 +218,31 @@ class DataService:
             operator = condition.operator.lower()
             value = condition.value
 
+            # All literals are escaped via ``escape_literal`` which doubles single
+            # quotes thus making it safe for direct interpolation. Numeric values
+            # are passed through as-is.
+
+            def _as_sql_literal(val):
+                return val if isinstance(val, (int, float)) else escape_literal(str(val))
+
             if operator == "eq":
-                where_conditions.append(f"{column} = '{value}'")
+                where_conditions.append(f"{column} = {_as_sql_literal(value)}")
             elif operator == "ne":
-                where_conditions.append(f"{column} != '{value}'")
+                where_conditions.append(f"{column} != {_as_sql_literal(value)}")
             elif operator == "gt":
-                where_conditions.append(f"{column} > {value}")
+                where_conditions.append(f"{column} > {_as_sql_literal(value)}")
             elif operator == "lt":
-                where_conditions.append(f"{column} < {value}")
+                where_conditions.append(f"{column} < {_as_sql_literal(value)}")
             elif operator == "gte":
-                where_conditions.append(f"{column} >= {value}")
+                where_conditions.append(f"{column} >= {_as_sql_literal(value)}")
             elif operator == "lte":
-                where_conditions.append(f"{column} <= {value}")
+                where_conditions.append(f"{column} <= {_as_sql_literal(value)}")
             elif operator == "like":
-                where_conditions.append(f"{column} LIKE '%{value}%'")
+                # LIKE needs wildcards around the escaped literal
+                where_conditions.append(f"{column} LIKE '%' || {_as_sql_literal(value)} || '%'")
             elif operator == "in" and isinstance(value, list):
-                in_values = "', '".join(str(v) for v in value)
-                where_conditions.append(f"{column} IN ('{in_values}')")
+                in_values = ", ".join(_as_sql_literal(v) for v in value)
+                where_conditions.append(f"{column} IN ({in_values})")
 
         if where_conditions:
             logic_operator = f" {filters.logic} "
@@ -357,7 +366,7 @@ class QueryService:
             SELECT id, name, description, sql_query, chart_type, chart_config, 
                    menu_item_id, is_active, created_at
             FROM app_queries
-            WHERE menu_item_id = ? AND is_active = 1
+            WHERE menu_item_id = :1 AND is_active = 1
             ORDER BY name
             """
 
@@ -399,7 +408,7 @@ class QueryService:
             SELECT id, name, description, sql_query, chart_type, chart_config, 
                    menu_item_id, is_active, created_at
             FROM app_queries
-            WHERE id = ? AND is_active = 1
+            WHERE id = :1 AND is_active = 1
             """
 
             result = db_manager.execute_query(query, (query_id,))

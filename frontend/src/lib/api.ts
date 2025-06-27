@@ -216,6 +216,16 @@ class ApiClient {
     }
   }
 
+  // Query detail
+  async getQueryDetail(queryId: number): Promise<APIResponse<Query>> {
+    try {
+      const response: AxiosResponse<APIResponse<Query>> = await this.client.get(`/api/query/${queryId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // Generic methods for custom requests
   async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     try {
@@ -299,5 +309,6 @@ export const {
   getReportsByMenu,
   isAuthenticated,
   getUser,
-  downloadFile
+  downloadFile,
+  getQueryDetail
 } = apiClient; 

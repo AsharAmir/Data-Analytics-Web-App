@@ -29,6 +29,9 @@ class Settings:
     SAML_SSO_URL: Optional[str] = os.getenv("SAML_SSO_URL")
     SAML_X509_CERT: Optional[str] = os.getenv("SAML_X509_CERT")
 
+    # Frontend base URL (used for redirects after authentication)
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
     @property
     def database_url(self) -> str:
         return f"oracle+pyodbc://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_SERVICE_NAME}?driver=Oracle+in+OraClient21Home1"

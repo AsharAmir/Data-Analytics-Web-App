@@ -8,6 +8,7 @@ from models import User, UserCreate, UserLogin
 from database import db_manager
 from config import settings
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def get_user_by_username(username: str) -> Optional[User]:
     """Get user by username from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, is_active, created_at FROM app_users WHERE username = ?",
+            "SELECT id, username, email, is_active, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if result:
@@ -108,7 +109,7 @@ def get_user_by_email(email: str) -> Optional[User]:
     """Get user by email from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, is_active, created_at FROM app_users WHERE email = ?",
+            "SELECT id, username, email, is_active, created_at FROM app_users WHERE email = :1",
             (email,),
         )
         if result:
@@ -130,7 +131,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
     """Authenticate user with username and password"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, password_hash, is_active, created_at FROM app_users WHERE username = ?",
+            "SELECT id, username, email, password_hash, is_active, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if not result:
@@ -177,7 +178,7 @@ def create_user(user_create: UserCreate) -> Optional[User]:
         # Insert user
         user_id = db_manager.execute_non_query(
             """INSERT INTO app_users (username, email, password_hash) 
-               VALUES (?, ?, ?) RETURNING id INTO ?""",
+               VALUES (:1, :2, :3)""",
             (user_create.username, user_create.email, hashed_password),
         )
 
@@ -194,31 +195,145 @@ def create_user(user_create: UserCreate) -> Optional[User]:
 
 # SAML Authentication (placeholder - would need proper SAML library integration)
 class SAMLAuth:
-    """SAML Authentication handler"""
+    """Light-weight SAML authentication wrapper around python3-saml.
+
+    The goal is not to expose all SAML capabilities but to provide just enough
+    behaviour so that IdP-initiated or SP-initiated flows can be completed and
+    the resulting user can be mapped/created in the local database.
+
+    This implementation purposely keeps the 3rd-party dependency optional so
+    that the whole backend can still boot even when the python3-saml extras are
+    not available in the environment (for example during CI when SAML is not
+    used). In such cases, the helper will raise explicit HTTP 501 errors when
+    the SAML endpoints are hit so that administrators know why the flow cannot
+    continue.
+    """
 
     def __init__(self):
         self.idp_url = settings.SAML_SSO_URL
-        self.sp_entity_id = settings.SAML_ENTITY_ID
+        self.sp_entity_id = settings.SAML_ENTITY_ID or "http://localhost:8000/metadata"  # default entity ID
         self.cert_path = settings.SAML_X509_CERT
+        self._saml_available = None  # Will be checked lazily
 
-    def initiate_login(self) -> str:
-        """Initiate SAML login - returns redirect URL"""
-        # In a real implementation, you would:
-        # 1. Generate SAML AuthnRequest
-        # 2. Sign the request
-        # 3. Return redirect URL to IdP
-        return f"{self.idp_url}?SAMLRequest=..."
+    # ------------------------------------------------------------------
+    # Helper methods
+    # ------------------------------------------------------------------
+    def _check_saml_availability(self):
+        """Lazily check if SAML libraries are available"""
+        if self._saml_available is None:
+            try:
+                # Lazy import so that the module is only required when SAML mode is enabled
+                from onelogin.saml2.settings import OneLogin_Saml2_Settings  # noqa
+                from onelogin.saml2.auth import OneLogin_Saml2_Auth  # noqa
+                from onelogin.saml2.utils import OneLogin_Saml2_Utils  # noqa
+                self._saml_available = True
+            except ImportError:
+                self._saml_available = False
+        return self._saml_available
+
+    def _build_settings(self):
+        """Return a minimal python3-saml settings dict."""
+        return {
+            "strict": False,
+            "debug": settings.DEBUG,
+            "sp": {
+                "entityId": self.sp_entity_id,
+                "assertionConsumerService": {
+                    "url": f"{os.getenv('BACKEND_BASE_URL', 'http://localhost:8000').rstrip('/')}/auth/saml/acs",
+                    "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+                },
+                "NameIDFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+            },
+            "idp": {
+                "entityId": self.idp_url,
+                "singleSignOnService": {
+                    "url": self.idp_url,
+                    "binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+                },
+                "x509cert": self._load_idp_cert(),
+            },
+        }
+
+    def _load_idp_cert(self):
+        if self.cert_path and os.path.exists(self.cert_path):
+            try:
+                with open(self.cert_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"Unable to read IdP certificate: {e}")
+        return ""
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+    def initiate_login(self, request: Optional[Request] = None) -> str:
+        """Return the URL that the user should be redirected to in order to start the SAML login flow."""
+        if not self._check_saml_availability():
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="SAML libraries not installed on the server.",
+            )
+
+        # Build a fake FastAPI request adapter as expected by python3-saml.
+        saml_request_data = {
+            "https": "on" if request and request.url.scheme == "https" else "off",
+            "http_host": request.url.hostname if request else "localhost",
+            "server_port": str(request.url.port or (443 if (request and request.url.scheme == "https") else 80)),
+            "script_name": request.url.path if request else "",
+            "get_data": request.query_params if request else {},
+            "post_data": {},
+        }
+
+        from onelogin.saml2.auth import OneLogin_Saml2_Auth
+
+        auth = OneLogin_Saml2_Auth(saml_request_data, self._build_settings())
+        return auth.login()
 
     def handle_response(self, saml_response: str) -> Optional[User]:
-        """Handle SAML response and return user"""
-        # In a real implementation, you would:
-        # 1. Validate SAML response signature
-        # 2. Extract user attributes
-        # 3. Create or update user in database
-        # 4. Return user object
+        """Validate the SAML response and map or create a local user.
 
-        # Placeholder implementation
-        return None
+        Returns a ``User`` instance on success or ``None`` when validation fails.
+        """
+        if not self._check_saml_availability():
+            logger.error("python3-saml not available – cannot validate SAML response")
+            return None
+
+        try:
+            from onelogin.saml2.response import OneLogin_Saml2_Response
+            from onelogin.saml2.utils import OneLogin_Saml2_Utils
+
+            settings_dict = self._build_settings()
+            from onelogin.saml2.settings import OneLogin_Saml2_Settings
+
+            saml_settings = OneLogin_Saml2_Settings(settings_dict, raise_exceptions=True)
+            response = OneLogin_Saml2_Response(saml_settings, saml_response)
+
+            if not response.is_valid():
+                logger.warning("Invalid SAML response received")
+                return None
+
+            user_data = response.get_attributes()
+            username = response.get_nameid()
+            email = (
+                user_data.get("email")
+                or user_data.get("Email")
+                or user_data.get("mail")
+                or [f"{username}@example.com"]
+            )[0]
+
+            # ------------------------------------------------------------------
+            # Ensure that the user exists locally
+            # ------------------------------------------------------------------
+            user = get_user_by_username(username)
+            if not user:
+                random_password = jwt.encode({"rnd": username}, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+                new_user = UserCreate(username=username, email=email, password=random_password)
+                user = create_user(new_user)
+
+            return user
+        except Exception as exc:
+            logger.error(f"Exception while handling SAML response: {exc}")
+            return None
 
 
 saml_auth = SAMLAuth()

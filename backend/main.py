@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 import uvicorn
@@ -37,6 +37,8 @@ from models import (
     APIResponse,
     PaginatedResponse,
 )
+from sql_utils import validate_sql
+from services import DataService  # NEW: use shared DataService implementation
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -76,112 +78,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# Simple service classes (inline for now)
-class DataService:
-    @staticmethod
-    def execute_query_for_chart(
-        query: str, chart_type: str = None, chart_config: dict = None
-    ) -> QueryResult:
-        start_time = time.time()
-        try:
-            df = db_manager.execute_query_pandas(query)
-            if df.empty:
-                return QueryResult(
-                    success=False,
-                    error="Query returned no data",
-                    execution_time=time.time() - start_time,
-                )
-
-            # Simple chart data formatting
-            if chart_type in ["pie", "doughnut"]:
-                labels = df.iloc[:, 0].astype(str).tolist()
-                values = (
-                    pd.to_numeric(df.iloc[:, 1], errors="coerce").fillna(0).tolist()
-                )
-                chart_data = {
-                    "labels": labels,
-                    "datasets": [
-                        {
-                            "data": values,
-                            "backgroundColor": [
-                                "#FF6384",
-                                "#36A2EB",
-                                "#FFCE56",
-                                "#4BC0C0",
-                                "#9966FF",
-                            ][: len(labels)],
-                        }
-                    ],
-                }
-            else:
-                labels = df.iloc[:, 0].astype(str).tolist()
-                datasets = []
-                for i, col in enumerate(df.columns[1:]):
-                    values = pd.to_numeric(df[col], errors="coerce").fillna(0).tolist()
-                    datasets.append(
-                        {
-                            "label": col,
-                            "data": values,
-                            "backgroundColor": [
-                                "#FF6384",
-                                "#36A2EB",
-                                "#FFCE56",
-                                "#4BC0C0",
-                                "#9966FF",
-                            ][i % 5],
-                        }
-                    )
-                chart_data = {"labels": labels, "datasets": datasets}
-
-            return QueryResult(
-                success=True,
-                data=chart_data,
-                chart_type=chart_type,
-                chart_config=chart_config or {},
-                execution_time=time.time() - start_time,
-            )
-        except Exception as e:
-            return QueryResult(
-                success=False, error=str(e), execution_time=time.time() - start_time
-            )
-
-    @staticmethod
-    def execute_query_for_table(
-        query: str, limit: int = 1000, offset: int = 0
-    ) -> QueryResult:
-        start_time = time.time()
-        try:
-            # Add pagination
-            paginated_query = f"""
-            SELECT * FROM (
-                SELECT ROWNUM as rn, sub.* FROM (
-                    {query}
-                ) sub WHERE ROWNUM <= {offset + limit}
-            ) WHERE rn > {offset}
-            """
-
-            df = db_manager.execute_query_pandas(paginated_query)
-
-            # Get total count
-            count_query = f"SELECT COUNT(*) as total_count FROM ({query})"
-            count_result = db_manager.execute_query(count_query)
-            total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
-
-            table_data = {
-                "columns": df.columns.tolist(),
-                "data": df.values.tolist(),
-                "total_count": total_count,
-            }
-
-            return QueryResult(
-                success=True, data=table_data, execution_time=time.time() - start_time
-            )
-        except Exception as e:
-            return QueryResult(
-                success=False, error=str(e), execution_time=time.time() - start_time
-            )
 
 
 class MenuService:
@@ -231,7 +127,7 @@ class QueryService:
             query = """
             SELECT id, name, description, sql_query, chart_type, chart_config, 
                    menu_item_id, is_active, created_at
-            FROM app_queries WHERE id = ? AND is_active = 1
+            FROM app_queries WHERE id = :1 AND is_active = 1
             """
             result = db_manager.execute_query(query, (query_id,))
 
@@ -259,6 +155,47 @@ class QueryService:
         except Exception as e:
             logger.error(f"Error getting query by ID: {e}")
             return None
+
+    @staticmethod
+    def get_queries_by_menu(menu_item_id: int) -> List[Query]:
+        """Return all active queries that belong to a given menu item (report section)."""
+        try:
+            query_sql = """
+            SELECT id, name, description, sql_query, chart_type, chart_config,
+                   menu_item_id, is_active, created_at
+            FROM app_queries
+            WHERE menu_item_id = :1 AND is_active = 1
+            ORDER BY created_at DESC
+            """
+            rows = db_manager.execute_query(query_sql, (menu_item_id,))
+
+            queries: List[Query] = []
+            for row in rows:
+                chart_config = {}
+                if row["CHART_CONFIG"]:
+                    try:
+                        chart_config = json.loads(row["CHART_CONFIG"])
+                    except Exception:
+                        chart_config = {}
+
+                queries.append(
+                    Query(
+                        id=row["ID"],
+                        name=row["NAME"],
+                        description=row["DESCRIPTION"],
+                        sql_query=row["SQL_QUERY"],
+                        chart_type=row["CHART_TYPE"],
+                        chart_config=chart_config,
+                        menu_item_id=row["MENU_ITEM_ID"],
+                        is_active=bool(row["IS_ACTIVE"]),
+                        created_at=row["CREATED_AT"],
+                    )
+                )
+
+            return queries
+        except Exception as e:
+            logger.error(f"Error getting queries for menu {menu_item_id}: {e}")
+            return []
 
 
 class DashboardService:
@@ -341,6 +278,10 @@ async def health_check():
 # Authentication Routes
 @app.post("/auth/login", response_model=Token)
 async def login(user_login: UserLogin):
+    # Disallow form logins when SAML mode is enabled
+    if get_auth_mode() != "form":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Form-based authentication is disabled")
+
     user = authenticate_user(user_login.username, user_login.password)
     if not user:
         raise HTTPException(
@@ -367,6 +308,59 @@ async def get_authentication_mode():
     return APIResponse(success=True, data={"auth_mode": get_auth_mode()})
 
 
+# ---------------------------------------------------------------------------
+# SAML Authentication Routes
+# ---------------------------------------------------------------------------
+@app.get("/auth/saml/login")
+async def saml_login(request: Request):
+    if get_auth_mode() != "saml":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SAML authentication not enabled")
+
+    redirect_url = saml_auth.initiate_login(request)
+    return RedirectResponse(url=redirect_url)
+
+
+@app.post("/auth/saml/acs")
+async def saml_acs(request: Request):
+    if get_auth_mode() != "saml":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SAML authentication not enabled")
+
+    form = await request.form()
+    saml_response = form.get("SAMLResponse")
+    if not saml_response:
+        raise HTTPException(status_code=400, detail="Missing SAMLResponse in request")
+
+    user = saml_auth.handle_response(saml_response)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid SAML response")
+
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
+
+    # Return a small HTML page that stores the token and redirects to the dashboard
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang=\"en\">
+      <head>
+        <meta charset=\"UTF-8\">
+        <title>Login Successful</title>
+      </head>
+      <body>
+        <script>
+          (function() {{
+            var token = '{access_token}';
+            localStorage.setItem('auth_token', token);
+            document.cookie = 'auth_token=' + token + '; path=/; max-age=' + (7*24*60*60) + '; samesite=strict;';
+            window.location.href = '{settings.FRONTEND_BASE_URL.rstrip('/')}/dashboard';
+          }})();
+        </script>
+        <noscript>Login successful. You can now close this window.</noscript>
+      </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
 # Menu Routes
 @app.get("/api/menu", response_model=List[MenuItem])
 async def get_menu(current_user: User = Depends(get_current_user)):
@@ -389,7 +383,7 @@ async def get_widget_data(
         SELECT q.sql_query, q.chart_type, q.chart_config
         FROM app_dashboard_widgets w
         JOIN app_queries q ON w.query_id = q.id
-        WHERE w.id = ? AND w.is_active = 1 AND q.is_active = 1
+        WHERE w.id = :1 AND w.is_active = 1 AND q.is_active = 1
         """
         result = db_manager.execute_query(query, (widget_id,))
 
@@ -434,8 +428,10 @@ async def execute_query(
                 )
         elif request.sql_query:
             # Execute custom SQL
+            validate_sql(request.sql_query)
+            query_sql = request.sql_query
             return DataService.execute_query_for_table(
-                request.sql_query, request.limit, request.offset
+                query_sql, request.limit, request.offset
             )
         else:
             raise HTTPException(
@@ -460,6 +456,7 @@ async def export_data(
                 raise HTTPException(status_code=404, detail="Query not found")
             query_sql = query_obj.sql_query
         elif request.sql_query:
+            validate_sql(request.sql_query)
             query_sql = request.sql_query
         else:
             raise HTTPException(
@@ -497,6 +494,68 @@ async def export_data(
     except Exception as e:
         logger.error(f"Error exporting data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Reports Routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/reports/menu/{menu_item_id}", response_model=APIResponse)
+async def get_reports_by_menu(
+    menu_item_id: int, current_user: User = Depends(get_current_user)
+):
+    try:
+        queries = QueryService.get_queries_by_menu(menu_item_id)
+        return APIResponse(success=True, data=queries)
+    except Exception as e:
+        logger.error(f"Error retrieving reports for menu {menu_item_id}: {e}")
+        return APIResponse(success=False, error=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Query Detail and Filtered execution endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/query/{query_id}", response_model=APIResponse)
+async def get_query_detail(query_id: int, current_user: User = Depends(get_current_user)):
+    try:
+        query_obj = QueryService.get_query_by_id(query_id)
+        if not query_obj:
+            return APIResponse(success=False, error="Query not found")
+        return APIResponse(success=True, data=query_obj)
+    except Exception as e:
+        logger.error(f"Error getting query detail {query_id}: {e}")
+        return APIResponse(success=False, error=str(e))
+
+
+@app.post("/api/query/filtered", response_model=QueryResult)
+async def execute_filtered_query(
+    request: FilteredQueryRequest, current_user: User = Depends(get_current_user)
+):
+    try:
+        if request.query_id:
+            query_obj = QueryService.get_query_by_id(request.query_id)
+            if not query_obj:
+                raise HTTPException(status_code=404, detail="Query not found")
+            base_sql = query_obj.sql_query
+        elif request.sql_query:
+            validate_sql(request.sql_query)
+            base_sql = request.sql_query
+        else:
+            raise HTTPException(status_code=400, detail="Either query_id or sql_query must be provided")
+
+        # Apply filters
+        if request.filters:
+            filtered_sql = DataService.apply_filters(base_sql, request.filters)
+        else:
+            filtered_sql = base_sql
+
+        return DataService.execute_query_for_table(filtered_sql, request.limit or 1000, request.offset or 0)
+    except Exception as e:
+        logger.error(f"Error executing filtered query: {e}")
+        return QueryResult(success=False, error=str(e))
 
 
 if __name__ == "__main__":

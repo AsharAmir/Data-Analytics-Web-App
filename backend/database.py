@@ -1,4 +1,4 @@
-import cx_Oracle
+import oracledb
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from config import settings
@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        # Oracle connection string for cx_Oracle
-        self.dsn = cx_Oracle.makedsn(
+        # Oracle connection string for oracledb
+        self.dsn = oracledb.makedsn(
             settings.DB_HOST, settings.DB_PORT, service_name=settings.DB_SERVICE_NAME
         )
         self.username = settings.DB_USERNAME
@@ -19,7 +19,7 @@ class DatabaseManager:
     def get_connection(self):
         """Get database connection"""
         try:
-            return cx_Oracle.connect(
+            return oracledb.connect(
                 user=self.username, password=self.password, dsn=self.dsn
             )
         except Exception as e:
@@ -53,7 +53,24 @@ class DatabaseManager:
                         break
 
                     for row in rows:
-                        results.append(dict(zip(columns, row)))
+                        # Convert Oracle LOB objects to plain strings so that downstream
+                        # Pydantic models receive normal ``str`` instances instead of
+                        # ``oracledb.LOB`` which causes validation errors.
+                        converted: Dict[str, Any] = {}
+                        for col, val in zip(columns, row):
+                            if isinstance(val, oracledb.LOB):
+                                # ``read()`` will load the complete CLOB/BLOB content.
+                                # For text CLOBs this is fine because these are typically
+                                # small application-level strings (SQL text, JSON config, …).
+                                try:
+                                    converted[col] = val.read()
+                                except Exception:
+                                    # Fallback – if reading fails keep the original value so
+                                    # that at least the query doesn't crash.
+                                    converted[col] = str(val)
+                            else:
+                                converted[col] = val
+                        results.append(converted)
 
                 return results
 
@@ -64,24 +81,13 @@ class DatabaseManager:
     def execute_query_pandas(self, query: str, params: tuple = None) -> pd.DataFrame:
         """Execute query and return pandas DataFrame for large datasets"""
         try:
-            # Create connection string for pandas
-            connection_string = f"oracle+cx_oracle://{self.username}:{self.password}@{settings.DB_HOST}:{settings.DB_PORT}/?service_name={settings.DB_SERVICE_NAME}"
-
-            if params:
-                df = pd.read_sql(query, connection_string, params=params)
-            else:
-                df = pd.read_sql(query, connection_string)
+            # Use direct connection instead of SQLAlchemy to avoid compatibility issues
+            results = self.execute_query(query, params)
+            df = pd.DataFrame(results)
             return df
         except Exception as e:
             logger.error(f"Pandas query execution error: {e}")
-            # Fallback to manual conversion
-            try:
-                results = self.execute_query(query, params)
-                df = pd.DataFrame(results)
-                return df
-            except Exception as e2:
-                logger.error(f"Fallback pandas query execution error: {e2}")
-                raise
+            raise
 
     def execute_non_query(self, query: str, params: tuple = None) -> int:
         """Execute non-query (INSERT, UPDATE, DELETE) and return affected rows"""
@@ -225,7 +231,7 @@ def insert_default_data():
         for name, type_, icon, parent_id, sort_order in default_menus:
             try:
                 db_manager.execute_non_query(
-                    "INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order) VALUES (:1, :2, :3, :4, :5)",
                     (name, type_, icon, parent_id, sort_order),
                 )
             except Exception as e:
@@ -234,27 +240,27 @@ def insert_default_data():
         # Insert sample queries based on SAMPLE_BT table
         sample_queries = [
             (
-                "Monthly Transaction Volume",
-                "Monthly transaction volume analysis",
-                "SELECT TO_CHAR(TRANSACTION_DATE, 'YYYY-MM') as month, COUNT(*) as transaction_count FROM SAMPLE_BT GROUP BY TO_CHAR(TRANSACTION_DATE, 'YYYY-MM') ORDER BY month",
+                "Record Count by Report Type",
+                "Analysis of records by report type",
+                "SELECT REP_TYPE, COUNT(*) as record_count FROM SAMPLE_BT GROUP BY REP_TYPE ORDER BY record_count DESC",
                 "bar",
                 '{"responsive": true, "plugins": {"legend": {"position": "top"}}}',
                 3,
             ),
             (
-                "Account Type Distribution",
-                "Distribution of accounts by type",
-                "SELECT ACCOUNT_TYPE, COUNT(*) as count FROM SAMPLE_BT GROUP BY ACCOUNT_TYPE ORDER BY count DESC",
+                "Product Type Distribution",
+                "Distribution of records by product type",
+                "SELECT CT_PRINACT, COUNT(*) as count FROM SAMPLE_BT WHERE CT_PRINACT IS NOT NULL GROUP BY CT_PRINACT ORDER BY count DESC",
                 "pie",
                 '{"responsive": true}',
                 3,
             ),
             (
-                "Transaction Amount Trends",
-                "Transaction amount trends over time",
-                "SELECT TO_CHAR(TRANSACTION_DATE, 'YYYY-MM') as month, AVG(TRANSACTION_AMOUNT) as avg_amount FROM SAMPLE_BT GROUP BY TO_CHAR(TRANSACTION_DATE, 'YYYY-MM') ORDER BY month",
+                "Financial Value Analysis",
+                "Analysis of FCC_BKV values over records",
+                "SELECT CASE WHEN FCC_BKV = 0 THEN 'Zero' WHEN FCC_BKV > 0 AND FCC_BKV <= 1000 THEN 'Low' WHEN FCC_BKV > 1000 AND FCC_BKV <= 10000 THEN 'Medium' ELSE 'High' END as value_range, COUNT(*) as record_count FROM SAMPLE_BT GROUP BY CASE WHEN FCC_BKV = 0 THEN 'Zero' WHEN FCC_BKV > 0 AND FCC_BKV <= 1000 THEN 'Low' WHEN FCC_BKV > 1000 AND FCC_BKV <= 10000 THEN 'Medium' ELSE 'High' END ORDER BY record_count DESC",
                 "line",
-                '{"responsive": true, "scales": {"y": {"beginAtZero": false}}}',
+                '{"responsive": true, "scales": {"y": {"beginAtZero": true}}}',
                 4,
             ),
         ]
@@ -269,7 +275,7 @@ def insert_default_data():
         ) in sample_queries:
             try:
                 db_manager.execute_non_query(
-                    "INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id) VALUES (:1, :2, :3, :4, :5, :6)",
                     (
                         name,
                         description,
@@ -284,15 +290,15 @@ def insert_default_data():
 
         # Insert default dashboard widgets
         widget_queries = [
-            ("Monthly Transactions", 1, 0, 0, 6, 4),
-            ("Account Distribution", 2, 6, 0, 6, 4),
-            ("Amount Trends", 3, 0, 4, 12, 4),
+            ("Report Type Analysis", 1, 0, 0, 6, 4),
+            ("Product Distribution", 2, 6, 0, 6, 4),
+            ("Financial Value Ranges", 3, 0, 4, 12, 4),
         ]
 
         for title, query_id, pos_x, pos_y, width, height in widget_queries:
             try:
                 db_manager.execute_non_query(
-                    "INSERT INTO app_dashboard_widgets (title, query_id, position_x, position_y, width, height) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO app_dashboard_widgets (title, query_id, position_x, position_y, width, height) VALUES (:1, :2, :3, :4, :5, :6)",
                     (title, query_id, pos_x, pos_y, width, height),
                 )
             except Exception as e:

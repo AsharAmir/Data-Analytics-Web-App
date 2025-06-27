@@ -72,64 +72,65 @@ const defaultOptions = {
   },
 };
 
-const ChartComponent: React.FC<ChartComponentProps> = ({
-  data,
-  type,
-  config = {},
-  height = 400,
-  className = "",
-}) => {
-  // Merge default options with provided config
-  const options = {
-    ...defaultOptions,
-    ...config,
-    plugins: {
-      ...defaultOptions.plugins,
-      ...config.plugins,
-    },
-    scales:
-      type === "pie" || type === "doughnut"
-        ? undefined
-        : {
-            ...defaultOptions.scales,
-            ...config.scales,
-          },
-  };
+const ChartComponent = React.forwardRef<HTMLCanvasElement, ChartComponentProps>(
+  (
+    { data, type, config = {}, height = 400, className = "" },
+    ref
+  ) => {
+    // Merge default options with provided config
+    const options = {
+      ...defaultOptions,
+      ...config,
+      plugins: {
+        ...defaultOptions.plugins,
+        ...config.plugins,
+      },
+      scales:
+        type === "pie" || type === "doughnut"
+          ? undefined
+          : {
+              ...defaultOptions.scales,
+              ...config.scales,
+            },
+    };
 
-  const chartProps = {
-    data,
-    options,
-    height,
-  };
+    const chartProps = {
+      data,
+      options,
+      height,
+    };
 
-  const renderChart = () => {
-    switch (type) {
-      case "bar":
-        return <Bar {...chartProps} />;
-      case "line":
-        return <Line {...chartProps} />;
-      case "pie":
-        return <Pie {...chartProps} />;
-      case "doughnut":
-        return <Doughnut {...chartProps} />;
-      case "scatter":
-        return <Scatter {...chartProps} />;
-      case "bubble":
-        return <Bubble {...chartProps} />;
-      case "polarArea":
-        return <PolarArea {...chartProps} />;
-      case "radar":
-        return <Radar {...chartProps} />;
-      default:
-        return <Bar {...chartProps} />;
-    }
-  };
+    const renderChart = () => {
+      switch (type) {
+        case "bar":
+          return <Bar {...chartProps} />;
+        case "line":
+          return <Line {...chartProps} />;
+        case "pie":
+          return <Pie {...chartProps} />;
+        case "doughnut":
+          return <Doughnut {...chartProps} />;
+        case "scatter":
+          return <Scatter {...chartProps} />;
+        case "bubble":
+          return <Bubble {...chartProps} />;
+        case "polarArea":
+          return <PolarArea {...chartProps} />;
+        case "radar":
+          return <Radar {...chartProps} />;
+        default:
+          return <Bar {...chartProps} />;
+      }
+    };
 
-  return (
-    <div className={`relative ${className}`} style={{ height: `${height}px` }}>
-      {renderChart()}
-    </div>
-  );
-};
+    return (
+      <div className={`relative ${className}`} style={{ height: `${height}px` }}>
+        {React.cloneElement(renderChart() as React.ReactElement, { ref })}
+      </div>
+    );
+  }
+);
+
+ChartComponent.displayName = "ChartComponent";
 
 export default ChartComponent;
