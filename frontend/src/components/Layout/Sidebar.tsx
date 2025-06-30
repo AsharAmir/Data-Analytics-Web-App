@@ -1,12 +1,6 @@
 import React, { useState } from "react";
-import {
-  ChartBarIcon,
-  HomeIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  Bars3Icon,
-  XMarkIcon,
-} from "@heroicons/react/24/outline";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { MenuItem } from "../../types";
 
 interface SidebarProps {
@@ -17,14 +11,6 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
-const iconMap: Record<string, any> = {
-  dashboard: HomeIcon,
-  "chart-bar": ChartBarIcon,
-  "chart-line": ChartBarIcon,
-  "shield-exclamation": ChartBarIcon,
-  // Add more icons as needed
-};
-
 const Sidebar: React.FC<SidebarProps> = ({
   menuItems,
   currentPath,
@@ -32,7 +18,54 @@ const Sidebar: React.FC<SidebarProps> = ({
   collapsed = false,
   onToggleCollapse,
 }) => {
+  const router = useRouter();
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+
+  const sidebarWidth = collapsed ? "w-16" : "w-64";
+
+  // Icon components
+  const DashboardIcon = () => (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2V7z" />
+    </svg>
+  );
+
+  const ExplorerIcon = () => (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  );
+
+  const ReportsIcon = () => (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  );
+
+  const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
+    <svg 
+      className={`h-4 w-4 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} 
+      fill="none" 
+      stroke="currentColor" 
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  );
+
+  // Fixed navigation items
+  const navigationItems = [
+    {
+      name: "Dashboard",
+      path: "/dashboard",
+      icon: DashboardIcon,
+    },
+    {
+      name: "Data Explorer", 
+      path: "/data-explorer",
+      icon: ExplorerIcon,
+    },
+  ];
 
   const toggleExpanded = (itemId: number) => {
     const newExpanded = new Set(expandedItems);
@@ -44,56 +77,50 @@ const Sidebar: React.FC<SidebarProps> = ({
     setExpandedItems(newExpanded);
   };
 
+  const handleReportClick = (item: MenuItem) => {
+    if (item.type === "dashboard") {
+      router.push("/dashboard");
+    } else if (item.type === "report") {
+      router.push(`/reports?menu=${item.id}`);
+    }
+  };
+
   const renderMenuItem = (item: MenuItem, level: number = 0) => {
-    const IconComponent = iconMap[item.icon || "chart-bar"] || ChartBarIcon;
     const isExpanded = expandedItems.has(item.id);
     const hasChildren = item.children && item.children.length > 0;
-    const isActive = currentPath.includes(item.name.toLowerCase());
+    const isActive = currentPath.includes(`menu=${item.id}`) || 
+                    (currentPath === '/reports' && router.query.menu === item.id.toString());
 
     return (
-      <div key={item.id} className="relative">
+      <div key={item.id}>
         <div
           className={`
-            flex items-center px-4 py-3 text-sm font-medium cursor-pointer
-            transition-colors duration-200 group
-            ${level > 0 ? "pl-8" : ""}
+            flex items-center px-3 py-2 text-sm font-medium cursor-pointer rounded-lg
+            transition-all duration-200 group mb-1
+            ${level > 0 ? "ml-4" : ""}
             ${
               isActive
-                ? "bg-primary-100 text-primary-900 border-r-2 border-primary-500"
-                : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "text-gray-300 hover:bg-gray-700 hover:text-white"
             }
           `}
           onClick={() => {
             if (hasChildren) {
               toggleExpanded(item.id);
             } else {
-              onMenuClick(item);
+              handleReportClick(item);
             }
           }}
         >
-          <IconComponent
-            className={`
-              h-5 w-5 mr-3 flex-shrink-0
-              ${
-                isActive
-                  ? "text-primary-600"
-                  : "text-gray-400 group-hover:text-gray-500"
-              }
-              ${collapsed ? "mr-0" : "mr-3"}
-            `}
-          />
+          <div className="flex-shrink-0 mr-3">
+            <ReportsIcon />
+          </div>
 
           {!collapsed && (
             <>
               <span className="flex-1">{item.name}</span>
               {hasChildren && (
-                <div className="ml-auto">
-                  {isExpanded ? (
-                    <ChevronDownIcon className="h-4 w-4" />
-                  ) : (
-                    <ChevronRightIcon className="h-4 w-4" />
-                  )}
-                </div>
+                <ChevronIcon expanded={isExpanded} />
               )}
             </>
           )}
@@ -101,7 +128,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Render children */}
         {hasChildren && isExpanded && !collapsed && (
-          <div className="bg-gray-50">
+          <div className="ml-2">
             {item.children.map((child) => renderMenuItem(child, level + 1))}
           </div>
         )}
@@ -111,50 +138,89 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div
-      className={`
-      bg-white shadow-lg border-r border-gray-200 transition-all duration-300
-      ${collapsed ? "w-16" : "w-64"}
-      h-full flex flex-col
-    `}
+      className={`${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col transition-all duration-300 shadow-xl`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        {!collapsed && (
-          <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
-        )}
-        <button
-          onClick={onToggleCollapse}
-          className="p-1 rounded-md hover:bg-gray-100 transition-colors"
-        >
-          {collapsed ? (
-            <Bars3Icon className="h-5 w-5 text-gray-600" />
-          ) : (
-            <XMarkIcon className="h-5 w-5 text-gray-600" />
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex items-center justify-between">
+          {!collapsed && (
+            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Analytics Pro
+            </h2>
           )}
-        </button>
+          <button
+            onClick={onToggleCollapse}
+            className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            <svg
+              className={`h-5 w-5 transition-transform duration-300 ${
+                collapsed ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto">
-        <div className="py-2">
-          {menuItems.map((item) => renderMenuItem(item))}
-        </div>
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        {/* Fixed Navigation Items */}
+        {navigationItems.map((item) => {
+          const isActive = currentPath === item.path;
+          const IconComponent = item.icon;
+          return (
+            <Link key={item.path} href={item.path}>
+              <div
+                className={`flex items-center space-x-3 px-3 py-3 rounded-lg transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
+                    : "hover:bg-gray-700"
+                }`}
+              >
+                <IconComponent />
+                {!collapsed && (
+                  <span className="font-medium">{item.name}</span>
+                )}
+              </div>
+            </Link>
+          );
+        })}
+
+        {/* Reports Section */}
+        {menuItems.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="pt-4 pb-2">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+                  Reports
+                </h3>
+              </div>
+            )}
+            
+            {/* Dynamic Menu Items */}
+            {menuItems.filter((item) => item.type !== "dashboard").map((item) => renderMenuItem(item))}
+          </>
+        )}
       </nav>
 
-      {/* User section */}
-      {!collapsed && (
-        <div className="border-t border-gray-200 p-4">
-          <div className="flex items-center">
-            <div className="h-8 w-8 bg-primary-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-medium">U</span>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-900">User</p>
-              <p className="text-xs text-gray-500">Admin</p>
-            </div>
+      {/* Footer */}
+      <div className="p-4 border-t border-gray-700">
+        {!collapsed && (
+          <div className="text-xs text-gray-400 text-center">
+            <p>Analytics Platform v2.0</p>
+            <p className="mt-1">© 2024 Financial Systems</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

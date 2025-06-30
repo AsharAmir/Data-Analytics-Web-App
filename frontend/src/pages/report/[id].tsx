@@ -1,291 +1,366 @@
-import React, { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/router";
-import apiClient from "../../lib/api";
-import Sidebar from "../../components/Layout/Sidebar";
-import ChartComponent from "../../components/Charts/ChartComponent";
-import {
-  MenuItem,
-  Query,
-  ChartData,
-  TableData,
-  QueryResult,
-  TableFilter,
-  FilterCondition,
-} from "../../types";
-import { jsPDF } from "jspdf";
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import apiClient from '../../lib/api';
+import DataTable from '../../components/ui/DataTable';
+import ChartComponent from '../../components/Charts/ChartComponent';
+import { Query, QueryResult, TableData, ChartData } from '../../types';
 
-interface PaginationState {
-  page: number;
-  pageSize: number;
-}
-
-const ReportViewPage: React.FC = () => {
+const ReportDetailPage: React.FC = () => {
   const router = useRouter();
-  const chartRef = useRef<any>(null);
   const { id } = router.query;
 
   const [loading, setLoading] = useState(true);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [queryMeta, setQueryMeta] = useState<Query | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [pagination, setPagination] = useState<PaginationState>({ page: 1, pageSize: 1000 });
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [report, setReport] = useState<Query | null>(null);
+  const [chartData, setChartData] = useState<QueryResult | null>(null);
+  const [tableData, setTableData] = useState<QueryResult | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'chart'>('table');
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
+  const [error, setError] = useState<string>('');
 
-  /* -------------------------- Data loading -------------------------- */
   useEffect(() => {
-    if (!id || Array.isArray(id)) return;
+    if (!apiClient.isAuthenticated()) {
+      window.close(); // Close the tab if not authenticated
+      return;
+    }
 
-    const queryId = parseInt(id, 10);
-    if (isNaN(queryId)) return;
-
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [menuRes, detailRes] = await Promise.all([
-          apiClient.getMenuItems(),
-          apiClient.getQueryDetail(queryId),
-        ]);
-
-        setMenuItems(menuRes);
-        if (detailRes.success && detailRes.data) {
-          setQueryMeta(detailRes.data);
-        }
-
-        await fetchData(queryId, pagination.pageSize, (pagination.page - 1) * pagination.pageSize, filters);
-      } catch (err) {
-        console.error("Error loading report", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (id) {
+      loadReportData();
+    }
   }, [id]);
 
-  const fetchData = async (queryId: number, limit: number, offset: number, filterMap: Record<string, string>) => {
+  const loadReportData = async () => {
+    setLoading(true);
+    setError('');
+    
     try {
-      let requestBody: any = { query_id: queryId, limit, offset };
-
-      const conditions: FilterCondition[] = [];
-      Object.entries(filterMap).forEach(([col, val]) => {
-        if (val !== "") {
-          conditions.push({ column: col, operator: "like", value: val });
-        }
-      });
-      if (conditions.length) {
-        requestBody.filters = { conditions, logic: "AND" } as TableFilter;
+      const reportId = parseInt(id as string, 10);
+      if (isNaN(reportId)) {
+        setError('Invalid report ID');
+        return;
       }
 
-      const res = await apiClient.executeFilteredQuery(requestBody);
-      setResult(res);
-    } catch (e) {
-      console.error("Execute query failed", e);
-    }
-  };
+      // Get report details
+      const reportResponse = await apiClient.getQueryDetail(reportId);
+      if (!reportResponse.success || !reportResponse.data) {
+        setError('Report not found');
+        return;
+      }
 
-  /* -------------------------- Filtering -------------------------- */
-  const handleFilterChange = (col: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [col]: value }));
-  };
+      setReport(reportResponse.data);
 
-  const applyFilters = () => {
-    if (!queryMeta) return;
-    setPagination({ ...pagination, page: 1 });
-    fetchData(queryMeta.id, pagination.pageSize, 0, filters);
-  };
+      // Load both chart and table data
+      await Promise.all([
+        loadChartData(reportId),
+        loadTableData(reportId)
+      ]);
 
-  /* -------------------------- Pagination -------------------------- */
-  const changePage = (newPage: number) => {
-    if (!queryMeta) return;
-    const offset = (newPage - 1) * pagination.pageSize;
-    setPagination({ ...pagination, page: newPage });
-    fetchData(queryMeta.id, pagination.pageSize, offset, filters);
-  };
+      // Set initial view mode based on report configuration
+      if (reportResponse.data.chart_type) {
+        setViewMode('chart');
+        setChartType(reportResponse.data.chart_type as any);
+      }
 
-  /* -------------------------- Export -------------------------- */
-  const handleExport = async (format: "csv" | "excel") => {
-    if (!queryMeta) return;
-    try {
-      const blob = await apiClient.exportData({ query_id: queryMeta.id, format });
-      const filename = `${queryMeta.name}.${format === "csv" ? "csv" : "xlsx"}`;
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Export failed", err);
+      console.error('Error loading report:', err);
+      setError('Failed to load report data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const exportChartPDF = () => {
-    if (!result || !result.chart_type || !result.data || !chartRef.current) return;
-
-    const chartCanvas = chartRef.current.canvas as HTMLCanvasElement;
-    const imgData = chartCanvas.toDataURL("image/png");
-
-    const pdf = new jsPDF({ orientation: chartCanvas.width > chartCanvas.height ? "l" : "p" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-
-    pdf.addImage(imgData, "PNG", 10, 10, pageWidth - 20, (chartCanvas.height / chartCanvas.width) * (pageWidth - 20));
-    pdf.save(`${queryMeta?.name}.pdf`);
+  const loadChartData = async (reportId: number) => {
+    try {
+      // Execute the query to get chart data (use the original query endpoint which respects chart_type)
+      const response = await apiClient.executeQuery({
+        query_id: reportId,
+        limit: 1000
+      });
+      setChartData(response);
+    } catch (err) {
+      console.error('Error loading chart data:', err);
+    }
   };
 
-  const handleMenuClick = (item: MenuItem) => {
-    if (item.type === "dashboard") router.push("/dashboard");
-    else if (item.type === "report") router.push(`/reports?menu=${item.id}`);
+  const loadTableData = async (reportId: number) => {
+    try {
+      // Execute the query using filtered endpoint to get table data
+      const response = await apiClient.executeFilteredQuery({
+        query_id: reportId,
+        limit: 1000,
+        offset: 0
+      });
+      setTableData(response);
+    } catch (err) {
+      console.error('Error loading table data:', err);
+    }
   };
 
-  /* -------------------------- Render helpers -------------------------- */
-  const renderTable = (table: TableData) => {
+  const handleExport = (format: 'excel' | 'csv') => {
+    if (!report) return;
+    
+    // Use the export API
+    apiClient.exportData({
+      query_id: report.id,
+      format,
+      filename: `${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
+    }).then((blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${report.name.replace(/\s+/g, '_')}.${format}`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    }).catch(err => {
+      console.error('Export failed:', err);
+    });
+  };
+
+  const transformDataForChart = (tableData: TableData): ChartData => {
+    if (!tableData.data || tableData.data.length === 0) {
+      return { labels: [], datasets: [] };
+    }
+
+    // Take first 20 rows for chart
+    const chartData = tableData.data.slice(0, 20);
+    
+    // Try to find appropriate columns for chart
+    const columns = tableData.columns;
+    const labelColumnIndex = 0; // Use first column as labels
+    const valueColumnIndex = columns.findIndex((col, index) => {
+      if (index === 0) return false;
+      const sampleValue = chartData[0]?.[index];
+      return typeof sampleValue === 'number' || !isNaN(Number(sampleValue));
+    });
+
+    if (valueColumnIndex === -1) {
+      return { labels: [], datasets: [] };
+    }
+
+    const labels = chartData.map(row => row[labelColumnIndex]?.toString() || '');
+    const values = chartData.map(row => {
+      const val = row[valueColumnIndex];
+      return typeof val === 'number' ? val : parseFloat(val as string) || 0;
+    });
+
+    const colors = [
+      '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+      '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16'
+    ];
+
+    if (chartType === 'pie') {
+      return {
+        labels,
+        datasets: [{
+          label: columns[valueColumnIndex],
+          data: values,
+          backgroundColor: colors.slice(0, values.length),
+          borderWidth: 2
+        }]
+      };
+    }
+
+    return {
+      labels,
+      datasets: [{
+        label: columns[valueColumnIndex],
+        data: values,
+        backgroundColor: chartType === 'line' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.5)',
+        borderColor: '#3B82F6',
+        borderWidth: 2,
+        fill: chartType === 'line' ? false : true
+      }]
+    };
+  };
+
+  if (loading) {
     return (
-      <div className="overflow-x-auto border rounded">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              {table.columns.map((col) => (
-                <th key={col} className="px-3 py-2 text-left font-medium text-gray-600">
-                  {col}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {table.columns.map((col) => (
-                <th key={col} className="p-1">
-                  <input
-                    type="text"
-                    className="w-full border-gray-300 rounded text-xs px-1 py-0.5"
-                    placeholder="filter"
-                    value={filters[col] || ""}
-                    onChange={(e) => handleFilterChange(col, e.target.value)}
-                  />
-                </th>
-              ))}
-              <th className="p-1">
-                <button
-                  onClick={applyFilters}
-                  className="px-2 py-1 bg-primary-600 text-white text-xs rounded"
-                >
-                  Apply
-                </button>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {table.data.map((row, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
-                {row.map((cell, cidx) => (
-                  <td key={cidx} className="px-3 py-1 whitespace-nowrap">
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {/* Pagination controls */}
-        {table.total_count > pagination.pageSize && (
-          <div className="flex items-center justify-between p-2 text-xs text-gray-600">
-            <div>
-              Page {pagination.page} of {Math.ceil(table.total_count / pagination.pageSize)}
-            </div>
-            <div className="space-x-1">
-              <button
-                disabled={pagination.page === 1}
-                onClick={() => changePage(pagination.page - 1)}
-                className="px-2 py-1 border rounded disabled:opacity-50"
-              >
-                Prev
-              </button>
-              <button
-                disabled={pagination.page >= Math.ceil(table.total_count / pagination.pageSize)}
-                onClick={() => changePage(pagination.page + 1)}
-                className="px-2 py-1 border rounded disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  /* -------------------------- Main render -------------------------- */
-  if (loading || !queryMeta) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading report...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
+          <p className="text-lg text-gray-700 font-medium">Loading report...</p>
+          <p className="text-sm text-gray-500 mt-2">Executing your query</p>
         </div>
       </div>
     );
   }
 
-  const isChart = result?.chart_type && result?.data && "labels" in (result.data as any);
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="mx-auto h-16 w-16 text-red-500 mb-6">
+            <svg className="h-full w-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 15.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Report</h3>
+          <p className="text-gray-500">{error}</p>
+          <button
+            onClick={() => window.close()}
+            className="mt-4 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+          >
+            Close Tab
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar
-        menuItems={menuItems}
-        currentPath="/reports"
-        onMenuClick={handleMenuClick}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
-      <div className="flex-1 flex flex-col">
-        <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-900">{queryMeta.name}</h1>
-            <div className="space-x-2">
-              {isChart && (
-                <button
-                  onClick={exportChartPDF}
-                  className="px-3 py-1 bg-primary-600 text-white text-xs rounded"
-                >
-                  Export PDF
-                </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      {/* Header */}
+      <header className="bg-white shadow-lg border-b border-gray-200 backdrop-blur-sm bg-white/95">
+        <div className="px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-blue-600 bg-clip-text text-transparent">
+                {report?.name}
+              </h1>
+              {report?.description && (
+                <p className="text-gray-600 mt-1">{report.description}</p>
               )}
+              <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                <span>Report ID: {report?.id}</span>
+                <span>•</span>
+                <span>Created: {report?.created_at ? new Date(report.created_at).toLocaleDateString() : ''}</span>
+                {(chartData?.execution_time || tableData?.execution_time) && (
+                  <>
+                    <span>•</span>
+                    <span>Executed in {((chartData?.execution_time || tableData?.execution_time || 0) * 1000).toFixed(2)}ms</span>
+                  </>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              {/* View Toggle */}
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                {[
+                  { key: 'table', label: 'Table' },
+                  { key: 'chart', label: 'Chart' }
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setViewMode(key as any)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      viewMode === key
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Chart Type Selector */}
+              {viewMode === 'chart' && (
+                <select
+                  value={chartType}
+                  onChange={(e) => setChartType(e.target.value as any)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="bar">Bar Chart</option>
+                  <option value="line">Line Chart</option>
+                  <option value="pie">Pie Chart</option>
+                </select>
+              )}
+
+              {/* Export Buttons */}
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleExport('excel')}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                >
+                  Export Excel
+                </button>
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Export CSV
+                </button>
+              </div>
+
               <button
-                onClick={() => handleExport("excel")}
-                className="px-3 py-1 bg-primary-600 text-white text-xs rounded"
+                onClick={() => window.close()}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
               >
-                Export Excel
-              </button>
-              <button
-                onClick={() => handleExport("csv")}
-                className="px-3 py-1 bg-primary-600 text-white text-xs rounded"
-              >
-                Export CSV
+                Close
               </button>
             </div>
           </div>
-        </header>
-        <main className="flex-1 p-6">
-          {isChart && result?.data ? (
-            <ChartComponent
-              ref={chartRef}
-              data={result.data as ChartData}
-              type={result.chart_type as any}
-              config={result.chart_config}
-              height={400}
-            />
-          ) : result?.data ? (
-            renderTable(result.data as TableData)
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="p-8">
+        <div className="space-y-6">
+          {viewMode === 'table' ? (
+            // Table View
+            tableData && tableData.success && tableData.data && 'columns' in tableData.data ? (
+              <DataTable
+                data={tableData.data as TableData}
+                onSort={(column, direction) => {
+                  console.log('Sort:', column, direction);
+                }}
+                onExport={handleExport}
+              />
+            ) : (
+              <div className="bg-white rounded-lg shadow p-6 text-center">
+                <p className="text-gray-500">No table data available</p>
+                {tableData && !tableData.success && (
+                  <p className="text-red-500 mt-2">{tableData.error}</p>
+                )}
+              </div>
+            )
           ) : (
-            <p className="text-gray-500">No data available</p>
+            // Chart View
+            chartData && chartData.success && chartData.data ? (
+              'labels' in chartData.data ? (
+                // If chart data is already in chart format
+                <ChartComponent
+                  data={chartData.data as ChartData}
+                  type={chartType}
+                  title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`}
+                  description={`Visualization of data from ${report?.name}`}
+                  height={500}
+                  onExport={(format) => {
+                    console.log('Chart export:', format);
+                  }}
+                />
+              ) : (
+                // If chart data is in table format, transform it
+                tableData && tableData.success && tableData.data && 'columns' in tableData.data ? (
+                  <ChartComponent
+                    data={transformDataForChart(tableData.data as TableData)}
+                    type={chartType}
+                    title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`}
+                    description={`Visualization of ${(tableData.data as TableData).data.length} records`}
+                    height={500}
+                    onExport={(format) => {
+                      console.log('Chart export:', format);
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white rounded-lg shadow p-6 text-center">
+                    <p className="text-gray-500">No chart data available</p>
+                  </div>
+                )
+              )
+            ) : (
+              <div className="bg-white rounded-lg shadow p-6 text-center">
+                <p className="text-gray-500">No chart data available</p>
+                {chartData && !chartData.success && (
+                  <p className="text-red-500 mt-2">{chartData.error}</p>
+                )}
+              </div>
+            )
           )}
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };
 
-export default ReportViewPage; 
+export default ReportDetailPage; 
