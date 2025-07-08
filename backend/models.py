@@ -8,6 +8,15 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    role: str = "user"
+
+# Payload for partial user updates
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    role: Optional[str] = None  # 'admin' or 'user'
+    is_active: Optional[bool] = None
 
 
 class UserLogin(BaseModel):

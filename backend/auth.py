@@ -178,17 +178,65 @@ def create_user(user_create: UserCreate, role: str = "user") -> Optional[User]:
         # Hash password
         hashed_password = get_password_hash(user_create.password)
 
-        # Insert user with role
-        user_id = db_manager.execute_non_query(
-            """INSERT INTO app_users (username, email, password_hash, role) 
-               VALUES (:1, :2, :3, :4)""",
-            (user_create.username, user_create.email, hashed_password, role),
+        # Insert user with role, auto-creating column if necessary
+        insert_sql = (
+            "INSERT INTO app_users (username, email, password_hash, role) VALUES (:1, :2, :3, :4)"
         )
+
+        try:
+            user_id = db_manager.execute_non_query(
+                insert_sql,
+                (user_create.username, user_create.email, hashed_password, role),
+            )
+        except Exception as e:
+            # Handle Oracle unique constraint violation (username/email already exists)
+            if "ORA-00001" in str(e):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Username or email already exists",
+                )
+
+            # Handle cases where ROLE column is missing (e.g. legacy DB) – add it then retry
+            if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
+                try:
+                    logger.warning("ROLE column missing – adding column to app_users table on the fly")
+                    db_manager.execute_non_query(
+                        "ALTER TABLE app_users ADD (role VARCHAR2(20) DEFAULT 'user' NOT NULL)"
+                    )
+                    # Retry insert
+                    user_id = db_manager.execute_non_query(
+                        insert_sql,
+                        (
+                            user_create.username,
+                            user_create.email,
+                            hashed_password,
+                            role,
+                        ),
+                    )
+                except Exception as inner_exc:
+                    logger.error(f"Error adding ROLE column or retrying insert: {inner_exc}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create user (database schema update error)",
+                    )
+            else:
+                logger.error(f"Error inserting user: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create user",
+                )
 
         # Get created user
         return get_user_by_username(user_create.username)
 
     except Exception as e:
+        # Handle Oracle unique constraint violation (username/email already exists)
+        if "ORA-00001" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username or email already exists",
+            )
+
         logger.error(f"Error creating user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

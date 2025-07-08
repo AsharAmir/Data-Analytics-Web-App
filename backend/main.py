@@ -30,6 +30,7 @@ from auth import (
     create_user,
     require_admin,
     require_user_or_admin,
+    get_password_hash,
 )
 from models import (
     UserLogin,
@@ -47,6 +48,7 @@ from models import (
     APIResponse,
     PaginatedResponse,
     UserCreate,
+    UserUpdate,
 )
 from sql_utils import validate_sql
 from services import DataService  # NEW: use shared DataService implementation
@@ -583,7 +585,7 @@ async def create_user_admin(
 ):
     """Admin endpoint to create new users"""
     try:
-        new_user = create_user(request)
+        new_user = create_user(request, role=request.role)
 
         return APIResponse(
             success=True,
@@ -592,6 +594,7 @@ async def create_user_admin(
                 "user_id": new_user.id,
                 "username": new_user.username,
                 "email": new_user.email,
+                "role": new_user.role,
             },
         )
 
@@ -641,42 +644,72 @@ async def list_users(current_user: User = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
 
 
-@app.delete("/api/admin/user/{user_id}", response_model=APIResponse)
-async def delete_user(user_id: int, current_user: User = Depends(require_admin)):
-    """Admin endpoint to delete a user"""
+# ------------------ New User Management Endpoints ------------------
+
+
+@app.put("/api/admin/user/{user_id}", response_model=APIResponse)
+async def update_user_admin(
+    user_id: int,
+    request: UserUpdate,
+    current_user: User = Depends(require_admin),
+):
+    """Admin endpoint to update existing user"""
     try:
+        # Build dynamic update statement
+        fields = []
+        params = []
 
-        # Prevent admin from deleting themselves
-        if user_id == current_user.id:
-            raise HTTPException(
-                status_code=400, detail="Cannot delete your own account"
-            )
+        if request.username:
+            fields.append("username = :?")
+            params.append(request.username)
+        if request.email:
+            fields.append("email = :?")
+            params.append(request.email)
+        if request.password:
+            fields.append("password_hash = :?")
+            params.append(get_password_hash(request.password))
+        if request.role:
+            fields.append("role = :?")
+            params.append(request.role)
+        if request.is_active is not None:
+            fields.append("is_active = :?")
+            params.append(1 if request.is_active else 0)
 
-        # Check if user exists
-        check_query = "SELECT username FROM app_users WHERE id = :1"
-        result = db_manager.execute_query(check_query, (user_id,))
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields provided for update")
 
-        if not result:
-            raise HTTPException(status_code=404, detail="User not found")
+        # Oracle uses positional bind parameters; convert ? placeholders to numbers
+        set_clause = ", ".join(
+            field.replace(":?", f":{i+1}") for i, field in enumerate(fields)
+        )
+        sql = f"UPDATE app_users SET {set_clause} WHERE id = :{len(params)+1}"
+        params.append(user_id)
 
-        username = result[0]["USERNAME"]
+        db_manager.execute_non_query(sql, tuple(params))
 
-        # Delete the user
-        delete_query = "DELETE FROM app_users WHERE id = :1"
-        affected_rows = db_manager.execute_non_query(delete_query, (user_id,))
+        return APIResponse(success=True, message="User updated successfully")
 
-        if affected_rows > 0:
-            return APIResponse(
-                success=True, message=f"User '{username}' deleted successfully"
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to delete user")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user")
+
+
+@app.delete("/api/admin/user/{user_id}", response_model=APIResponse)
+async def delete_user_admin(
+    user_id: int, current_user: User = Depends(require_admin)
+):
+    """Admin endpoint to delete user"""
+    try:
+        db_manager.execute_non_query("DELETE FROM app_users WHERE id = :1", (user_id,))
+        return APIResponse(success=True, message="User deleted successfully")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete user")
 
 
 @app.post("/api/admin/query", response_model=APIResponse)

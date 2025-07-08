@@ -66,10 +66,14 @@ class ApiClient {
 
   // Token management
   private getToken(): string | null {
+    if (typeof window === 'undefined') {
+      return null; // SSR safeguard
+    }
     return Cookies.get('auth_token') || localStorage.getItem('auth_token');
   }
 
   private setToken(token: string): void {
+    if (typeof window === 'undefined') return; // SSR safeguard
     // Set cookie with proper settings for development/production
     const isSecure = window.location.protocol === 'https:';
     Cookies.set('auth_token', token, { 
@@ -81,6 +85,7 @@ class ApiClient {
   }
 
   private removeToken(): void {
+    if (typeof window === 'undefined') return; // SSR safeguard
     Cookies.remove('auth_token');
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user');
@@ -88,10 +93,14 @@ class ApiClient {
 
   // User management
   private setUser(user: User): void {
-    localStorage.setItem('user', JSON.stringify(user));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(user));
+    }
   }
 
   public getUser(): User | null {
+    if (typeof window === 'undefined') return null; // SSR safeguard
+
     const userStr = localStorage.getItem('user');
     if (userStr) {
       try {
@@ -293,6 +302,25 @@ class ApiClient {
       throw error;
     }
   }
+
+  // User admin methods
+  async updateUser(userId: number, data: Partial<User>): Promise<APIResponse> {
+    try {
+      const response = await this.client.put(`/api/admin/user/${userId}`, data);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async deleteUser(userId: number): Promise<APIResponse> {
+    try {
+      const response = await this.client.delete(`/api/admin/user/${userId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
 }
 
 // Create and export a singleton instance
@@ -316,5 +344,7 @@ export const {
   isAuthenticated,
   getUser,
   downloadFile,
-  getQueryDetail
+  getQueryDetail,
+  updateUser,
+  deleteUser
 } = apiClient; 

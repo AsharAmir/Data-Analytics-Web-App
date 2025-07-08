@@ -4,6 +4,7 @@ import { toast } from "react-hot-toast";
 import {
   PlusIcon,
   TrashIcon,
+  PencilSquareIcon,
   ChartBarIcon,
   Cog6ToothIcon,
   EyeIcon,
@@ -59,6 +60,7 @@ const AdminPage: React.FC = () => {
   const [showQueryForm, setShowQueryForm] = useState(false);
   const [showWidgetForm, setShowWidgetForm] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [queryForm, setQueryForm] = useState({
     name: "",
     description: "",
@@ -79,6 +81,7 @@ const AdminPage: React.FC = () => {
     username: "",
     email: "",
     password: "",
+    role: "user" as "user" | "admin",
   });
 
   useEffect(() => {
@@ -95,10 +98,11 @@ const AdminPage: React.FC = () => {
         apiClient.get("/api/admin/users"),
       ]);
 
-      setQueries(queriesRes.data.data || []);
-      setWidgets(widgetsRes.data.data || []);
-      setMenuItems(menuRes.data || []);
-      setUsers(usersRes.data.data || []);
+      // Endpoints return different shapes; normalize here
+      setQueries((queriesRes as any).data ?? queriesRes ?? []);
+      setWidgets((widgetsRes as any).data ?? widgetsRes ?? []);
+      setMenuItems(menuRes ?? []);
+      setUsers((usersRes as any).data ?? usersRes ?? []);
     } catch (error) {
       toast.error("Failed to load admin data");
       console.error(error);
@@ -598,6 +602,9 @@ const AdminPage: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -634,6 +641,40 @@ const AdminPage: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(user.created_at).toLocaleDateString()}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex space-x-3">
+                          <button
+                            onClick={() => {
+                              setEditingUserId(user.id);
+                              setUserForm({
+                                username: user.username,
+                                email: user.email,
+                                password: "",
+                                role: user.is_admin ? "admin" : "user",
+                              });
+                              setShowUserForm(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                            title="Edit"
+                          >
+                            <PencilSquareIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Delete this user?")) return;
+                              try {
+                                await apiClient.deleteUser(user.id);
+                                toast.success("User deleted");
+                                loadData();
+                              } catch (error: any) {
+                                toast.error(error.response?.data?.detail || "Failed to delete user");
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                            title="Delete"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -645,7 +686,7 @@ const AdminPage: React.FC = () => {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                   <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                     <h3 className="text-lg font-medium mb-4">
-                      Create New User
+                      {editingUserId ? "Edit User" : "Create New User"}
                     </h3>
                     <div className="space-y-4">
                       <input
@@ -675,21 +716,57 @@ const AdminPage: React.FC = () => {
                         }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       />
+                      <select
+                        value={userForm.role}
+                        onChange={(e) =>
+                          setUserForm({
+                            ...userForm,
+                            role: e.target.value as "user" | "admin",
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      >
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                      </select>
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">
                       <button
-                        onClick={() => setShowUserForm(false)}
+                        onClick={() => {
+                          setShowUserForm(false);
+                          setEditingUserId(null);
+                          setUserForm({ username: "", email: "", password: "", role: "user" });
+                        }}
                         className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
                         Cancel
                       </button>
                       <button
-                        onClick={() => {
-                          // Implement user creation logic here
+                        onClick={async () => {
+                          try {
+                            setLoading(true);
+                            if (editingUserId) {
+                              await apiClient.updateUser(editingUserId, userForm);
+                              toast.success("User updated successfully");
+                            } else {
+                              await apiClient.post("/api/admin/user", userForm);
+                              toast.success("User created successfully");
+                            }
+                            setShowUserForm(false);
+                            setEditingUserId(null);
+                            setUserForm({ username: "", email: "", password: "", role: "user" });
+                            loadData();
+                          } catch (error: any) {
+                            toast.error(
+                              error.response?.data?.detail || "Operation failed"
+                            );
+                          } finally {
+                            setLoading(false);
+                          }
                         }}
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                       >
-                        Create User
+                        {editingUserId ? "Update User" : "Create User"}
                       </button>
                     </div>
                   </div>

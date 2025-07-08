@@ -11,7 +11,11 @@ sys.path.append("backend")
 
 from backend.auth import create_user, get_password_hash
 from backend.models import UserCreate
-from backend.database import db_manager
+from backend.database import db_manager, init_database
+
+
+# Initialize database (ensure tables & columns exist)
+init_database()
 
 
 def create_normal_user():

@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -28,7 +29,8 @@ import {
   ArrowsPointingOutIcon, 
   ArrowDownTrayIcon,
   EyeIcon,
-  Cog6ToothIcon 
+  Cog6ToothIcon,
+  XMarkIcon 
 } from '@heroicons/react/24/outline';
 
 // Register Chart.js components
@@ -75,8 +77,19 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
 
-  // Enhanced default options
-  const defaultOptions = {
+  // Prevent body scroll when fullscreen overlay is open
+  useEffect(() => {
+    if (isFullscreen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isFullscreen]);
+
+  // Enhanced default options (memoized)
+  const defaultOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -165,31 +178,43 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         onDataPointClick(datasetIndex, index, value);
       }
     },
-  };
+  }), [type, data, onDataPointClick]);
 
-  // Merge options
-  const options = {
+  // Merge options (memoized)
+  const options = useMemo(() => ({
     ...defaultOptions,
     ...config,
     plugins: {
       ...defaultOptions.plugins,
-      ...config.plugins,
+      ...(config.plugins || {}),
     },
     scales: type !== 'pie' && type !== 'doughnut' && type !== 'polarArea' ? {
       ...defaultOptions.scales,
-      ...config.scales,
+      ...(config.scales || {}),
     } : config.scales,
-  };
+  }), [defaultOptions, config, type]);
 
-  // Prepare data for area charts
-  const processedData = type === 'area' ? {
-    ...data,
-    datasets: data.datasets.map(dataset => ({
-      ...dataset,
-      fill: true,
-      backgroundColor: dataset.backgroundColor + '20', // Add transparency
-    }))
-  } : data;
+  // Prepare data for area charts (memoized)
+  const processedData = useMemo(() => {
+    if (type === 'area') {
+      return {
+        ...data,
+        datasets: data.datasets.map(dataset => ({
+          ...dataset,
+          fill: true,
+          // Keep provided backgroundColor; if missing, apply a subtle default tint
+          backgroundColor:
+            dataset.backgroundColor ||
+            (Array.isArray(dataset.borderColor)
+              ? dataset.borderColor.map((c) => `${c}33`)
+              : typeof dataset.borderColor === 'string'
+              ? `${dataset.borderColor}33`
+              : 'rgba(0,0,0,0.1)'),
+        })),
+      };
+    }
+    return data;
+  }, [type, data]);
 
   const exportChart = (format: 'png' | 'pdf') => {
     if (chartRef.current) {
@@ -210,13 +235,13 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     setIsFullscreen(!isFullscreen);
   };
 
-  const renderChart = () => {
+  const renderChart = (ref: any, targetHeight: number) => {
     const chartProps = {
-      ref: chartRef,
+      ref,
       data: processedData,
       options,
-      height,
-    };
+      height: targetHeight,
+    } as any;
 
     switch (type) {
       case 'bar':
@@ -254,9 +279,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   }
 
   const chartContent = (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 ${className} ${
-      isFullscreen ? 'fixed inset-0 z-50 m-4' : ''
-    }`}>
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 ${className}`}> 
       {/* Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -340,15 +363,46 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
       <div className="p-6">
         <div 
           className="relative" 
-          style={{ height: isFullscreen ? 'calc(100vh - 200px)' : `${height}px` }}
+          style={{ height: `${height}px` }}
         >
-          {renderChart()}
+          {renderChart(chartRef, height)}
         </div>
       </div>
     </div>
   );
 
-  return chartContent;
-};
+  // Fullscreen overlay (separate window on same page)
+  const overlayChartRef = useRef<any>(null);
 
-export default ChartComponent; 
+  const fullscreenOverlay = isFullscreen
+    ? createPortal(
+        <div className="fixed inset-0 z-50 bg-white p-6 overflow-auto">
+          <div className="flex items-center justify-between mb-4">
+            {title && (
+              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            )}
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+              title="Close"
+            >
+              <XMarkIcon className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="relative" style={{ height: '80vh' }}>
+            {renderChart(overlayChartRef, 600)}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      {chartContent}
+      {fullscreenOverlay}
+    </>
+  );
+}; 
+
+export default React.memo(ChartComponent); 

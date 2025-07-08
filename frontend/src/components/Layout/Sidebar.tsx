@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { MenuItem } from "../../types";
+import { MenuItem, User as UserType } from "../../types";
 import apiClient from "../../lib/api";
 
 interface SidebarProps {
@@ -129,8 +129,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     </svg>
   );
 
-  // Get current user info
-  const currentUser = apiClient.getUser();
+  // Get current user info (client-side only to avoid SSR mismatch)
+  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
+
+  useEffect(() => {
+    setCurrentUser(apiClient.getUser());
+  }, []);
+
   const isAdmin = currentUser?.role === "admin";
 
   // Handle logout

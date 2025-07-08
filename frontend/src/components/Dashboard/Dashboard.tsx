@@ -22,6 +22,15 @@ const Dashboard: React.FC = () => {
   const [widgetData, setWidgetData] = useState<Record<number, QueryResult>>({});
   const [selectedView, setSelectedView] = useState<'overview' | 'charts' | 'tables'>('overview');
 
+  // KPI customization state
+  const [kpiPrefs, setKpiPrefs] = useState<Record<string, boolean>>({
+    totalRecords: true,
+    activeCharts: true,
+    dataTables: true,
+    avgQueryTime: true,
+  });
+  const [showKpiConfig, setShowKpiConfig] = useState(false);
+
   // Icon components
   const CurrencyIcon = () => (
     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,7 +126,7 @@ const Dashboard: React.FC = () => {
 
   // Calculate KPIs from actual widget data
   const calculateKPIs = () => {
-    const kpis = [];
+    const kpis: any[] = [];
     
     // Get metrics from actual widget data
     const widgetDataValues = Object.values(widgetData);
@@ -162,6 +171,7 @@ const Dashboard: React.FC = () => {
     avgExecutionTime = executionTimeCount > 0 ? avgExecutionTime / executionTimeCount : 0;
 
     kpis.push({
+      id: 'totalRecords',
       title: 'Total Records',
       value: totalRecords.toLocaleString(),
       change: { value: 0, type: 'neutral' as const, period: 'from all data sources' },
@@ -170,6 +180,7 @@ const Dashboard: React.FC = () => {
     });
 
     kpis.push({
+      id: 'activeCharts',
       title: 'Active Charts',
       value: totalCharts.toString(),
       change: { value: 0, type: 'neutral' as const, period: 'dashboard widgets' },
@@ -178,6 +189,7 @@ const Dashboard: React.FC = () => {
     });
 
     kpis.push({
+      id: 'dataTables',
       title: 'Data Tables',
       value: totalTables.toString(),
       change: { value: 0, type: 'neutral' as const, period: 'active tables' },
@@ -186,6 +198,7 @@ const Dashboard: React.FC = () => {
     });
 
     kpis.push({
+      id: 'avgQueryTime',
       title: 'Avg Query Time',
       value: avgExecutionTime > 0 ? `${(avgExecutionTime * 1000).toFixed(1)}ms` : 'N/A',
       change: { value: 0, type: 'neutral' as const, period: 'execution performance' },
@@ -256,6 +269,43 @@ const Dashboard: React.FC = () => {
 
   const kpis = calculateKPIs();
 
+  // Component for KPI configuration modal
+  const KpiConfigModal = () => {
+    if (!showKpiConfig) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+        <div className="bg-white rounded-xl shadow-lg p-6 w-80">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Customize Summary Widgets</h3>
+          <div className="space-y-3">
+            {Object.entries(kpiPrefs).map(([key, value]) => (
+              <label key={key} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 text-blue-600"
+                  checked={value}
+                  onChange={() =>
+                    setKpiPrefs((prev) => ({ ...prev, [key]: !prev[key] }))
+                  }
+                />
+                <span className="capitalize text-sm text-gray-700">
+                  {key.replace(/([A-Z])/g, ' $1')}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={() => setShowKpiConfig(false)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex">
       {/* Sidebar */}
@@ -310,6 +360,15 @@ const Dashboard: React.FC = () => {
                   <TrendingIcon />
                   <span className="font-medium">Refresh</span>
                 </button>
+
+                {/* Customize KPI Button */}
+                <button
+                  onClick={() => setShowKpiConfig(true)}
+                  className="px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 flex items-center space-x-2 shadow-sm"
+                >
+                  <ClockIcon />
+                  <span className="font-medium text-sm">Customize Summary</span>
+                </button>
               </div>
             </div>
           </div>
@@ -320,7 +379,9 @@ const Dashboard: React.FC = () => {
           {/* KPI Cards - Only show if we have actual data */}
           {selectedView === 'overview' && Object.keys(widgetData).length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {kpis.map((kpi, index) => (
+              {kpis
+                .filter((kpi) => kpiPrefs[kpi.id])
+                .map((kpi, index) => (
                 <KPICard
                   key={index}
                   title={kpi.title}
@@ -379,6 +440,8 @@ const Dashboard: React.FC = () => {
               Active data sources: {Object.keys(widgetData).length}
             </p>
           </div>
+          {/* Modal Render */}
+          <KpiConfigModal />
         </main>
       </div>
     </div>
