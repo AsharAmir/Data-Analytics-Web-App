@@ -77,6 +77,7 @@ const AdminPage: React.FC = () => {
     width: 6,
     height: 4,
   });
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [userForm, setUserForm] = useState({
     username: "",
     email: "",
@@ -179,7 +180,12 @@ const AdminPage: React.FC = () => {
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative">
+        {loading && (
+          <div className="absolute inset-0 bg-white bg-opacity-60 flex items-center justify-center z-50">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600"></div>
+          </div>
+        )}
         {/* Header */}
         <header className="bg-white shadow-sm border-b border-gray-200">
           <div className="px-6 py-4">
@@ -334,56 +340,59 @@ const AdminPage: React.FC = () => {
                           </option>
                         ))}
                       </select>
-                      <div className="grid grid-cols-2 gap-4">
-                        <input
-                          type="number"
-                          placeholder="Position X"
-                          value={widgetForm.position_x}
-                          onChange={(e) =>
-                            setWidgetForm({
-                              ...widgetForm,
-                              position_x: parseInt(e.target.value),
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                        <input
-                          type="number"
-                          placeholder="Position Y"
-                          value={widgetForm.position_y}
-                          onChange={(e) =>
-                            setWidgetForm({
-                              ...widgetForm,
-                              position_y: parseInt(e.target.value),
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                        <input
-                          type="number"
-                          placeholder="Width"
-                          value={widgetForm.width}
-                          onChange={(e) =>
-                            setWidgetForm({
-                              ...widgetForm,
-                              width: parseInt(e.target.value),
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                        <input
-                          type="number"
-                          placeholder="Height"
-                          value={widgetForm.height}
-                          onChange={(e) =>
-                            setWidgetForm({
-                              ...widgetForm,
-                              height: parseInt(e.target.value),
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                      </div>
+                      {/* Size preset */}
+                      <select
+                        value={`${widgetForm.width}x${widgetForm.height}`}
+                        onChange={(e) => {
+                          const [w, h] = e.target.value.split("x").map(Number);
+                          setWidgetForm({ ...widgetForm, width: w, height: h });
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      >
+                        <option value="4x3">Small (4 × 3)</option>
+                        <option value="6x4">Medium (6 × 4)</option>
+                        <option value="12x6">Large (12 × 6)</option>
+                      </select>
+
+                      {/* Advanced positioning toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        {showAdvanced ? "Hide" : "Show"} advanced options
+                      </button>
+
+                      {showAdvanced && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <input
+                            type="number"
+                            placeholder="Column (0 = leftmost)"
+                            value={widgetForm.position_x ?? ""}
+                            onChange={(e) =>
+                              setWidgetForm({
+                                ...widgetForm,
+                                position_x: e.target.value === "" ? undefined : parseInt(e.target.value),
+                              })
+                            }
+                            className="px-3 py-2 border border-gray-300 rounded-lg"
+                            min={0}
+                          />
+                          <input
+                            type="number"
+                            placeholder="Row (0 = top)"
+                            value={widgetForm.position_y ?? ""}
+                            onChange={(e) =>
+                              setWidgetForm({
+                                ...widgetForm,
+                                position_y: e.target.value === "" ? undefined : parseInt(e.target.value),
+                              })
+                            }
+                            className="px-3 py-2 border border-gray-300 rounded-lg"
+                            min={0}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">
                       <button
@@ -438,6 +447,9 @@ const AdminPage: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -463,6 +475,23 @@ const AdminPage: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(query.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Delete this query?")) return;
+                              try {
+                                await apiClient.deleteQuery(query.id);
+                                toast.success("Query deleted");
+                                loadData();
+                              } catch (error: any) {
+                                toast.error(error.response?.data?.detail || "Failed to delete query");
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
                         </td>
                       </tr>
                     ))}

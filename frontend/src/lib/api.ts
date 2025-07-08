@@ -321,6 +321,15 @@ class ApiClient {
       throw error;
     }
   }
+
+  async deleteQuery(queryId: number): Promise<APIResponse> {
+    try {
+      const response = await this.client.delete(`/api/admin/query/${queryId}`);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
 }
 
 // Create and export a singleton instance
@@ -346,5 +355,6 @@ export const {
   downloadFile,
   getQueryDetail,
   updateUser,
-  deleteUser
+  deleteUser,
+  deleteQuery
 } = apiClient; 

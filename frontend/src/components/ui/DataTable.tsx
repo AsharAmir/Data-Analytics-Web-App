@@ -114,41 +114,37 @@ const DataTable: React.FC<DataTableProps> = ({
       <div className="p-4 lg:p-6 border-b border-gray-200 flex-shrink-0">
         <div className="flex flex-col space-y-4">
           {/* Title and Stats Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center space-x-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Data Table
-              </h3>
-              <span className="text-sm text-gray-500">
-                {filteredData.length} of {data.total_count} records
-              </span>
-            </div>
+          <div className="flex items-center flex-wrap gap-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Data Table
+            </h3>
+            <span className="text-sm text-gray-500">
+              {filteredData.length} of {data.total_count} records
+            </span>
 
-            <div className="flex items-center space-x-2">
-              {/* Export */}
-              {onExport && (
-                <div className="relative group">
-                  <button className="px-3 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 text-gray-700 hover:bg-gray-50 transition-colors">
-                    <ArrowDownTrayIcon className="h-4 w-4" />
-                    <span className="hidden sm:inline">Export</span>
+            {/* Export */}
+            {onExport && (
+              <div className="relative group">
+                <button className="px-3 py-2 border border-gray-300 rounded-lg flex items-center space-x-2 text-gray-700 hover:bg-gray-50 transition-colors">
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+                <div className="absolute left-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                  <button
+                    onClick={() => onExport("excel")}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Excel
                   </button>
-                  <div className="absolute right-0 mt-2 w-32 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
-                    <button
-                      onClick={() => onExport("excel")}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Excel
-                    </button>
-                    <button
-                      onClick={() => onExport("csv")}
-                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      CSV
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => onExport("csv")}
+                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    CSV
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Search and Filter Row */}
@@ -299,17 +295,8 @@ const DataTable: React.FC<DataTableProps> = ({
 
       {/* Pagination Footer */}
       <div className="px-4 lg:px-6 py-3 bg-gray-50 border-t border-gray-200 flex-shrink-0">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="text-sm text-gray-700">
-            Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-            <span className="font-medium">
-              {Math.min(startIndex + pageSize, filteredData.length)}
-            </span>{" "}
-            of <span className="font-medium">{filteredData.length}</span>{" "}
-            results
-          </div>
-
-          <div className="flex items-center space-x-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center space-x-2 order-first">
             <button
               onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
@@ -334,6 +321,15 @@ const DataTable: React.FC<DataTableProps> = ({
               <span className="hidden sm:inline mr-1">Next</span>
               <ChevronRightIcon className="h-4 w-4" />
             </button>
+          </div>
+
+          <div className="text-sm text-gray-700">
+            Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
+            <span className="font-medium">
+              {Math.min(startIndex + pageSize, filteredData.length)}
+            </span>{" "}
+            of <span className="font-medium">{filteredData.length}</span>{" "}
+            results (Page {currentPage} of {totalPages})
           </div>
         </div>
       </div>

@@ -1,19 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     StreamingResponse,
-    JSONResponse,
     RedirectResponse,
     HTMLResponse,
 )
-from fastapi.security import HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 import uvicorn
 import logging
 import io
 import json
 import pandas as pd
-import time
 from datetime import timedelta, datetime
 from typing import List, Optional
 
@@ -29,7 +26,6 @@ from auth import (
     init_default_user,
     create_user,
     require_admin,
-    require_user_or_admin,
     get_password_hash,
 )
 from models import (
@@ -46,7 +42,6 @@ from models import (
     ExportRequest,
     FilteredQueryRequest,
     APIResponse,
-    PaginatedResponse,
     UserCreate,
     UserUpdate,
 )
@@ -646,6 +641,26 @@ async def list_users(current_user: User = Depends(require_admin)):
 
 # ------------------ New User Management Endpoints ------------------
 
+# Query deletion
+
+
+@app.delete("/api/admin/query/{query_id}", response_model=APIResponse)
+async def delete_query_admin(query_id: int, current_user: User = Depends(require_admin)):
+    """Delete a query by ID"""
+    try:
+        # Ensure query exists
+        exists = db_manager.execute_query("SELECT id FROM app_queries WHERE id = :1", (query_id,))
+        if not exists:
+            raise HTTPException(status_code=404, detail="Query not found")
+
+        db_manager.execute_non_query("DELETE FROM app_queries WHERE id = :1", (query_id,))
+        return APIResponse(success=True, message="Query deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting query: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete query")
+
 
 @app.put("/api/admin/user/{user_id}", response_model=APIResponse)
 async def update_user_admin(
@@ -719,11 +734,7 @@ async def create_query(
     """Create a new query for dashboard widgets or reports"""
     try:
         # Validate SQL query first
-        if not validate_sql(request.sql_query):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid SQL query. Only SELECT statements are allowed.",
-            )
+        validate_sql(request.sql_query)
 
         # Insert the new query
         query = """
