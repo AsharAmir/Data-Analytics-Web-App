@@ -1,21 +1,30 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
+from enum import Enum
 
 
 # Authentication Models
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    CEO = "CEO"
+    FINANCE_USER = "FINANCE_USER"
+    TECH_USER = "TECH_USER"
+    USER = "user"
+
+
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
-    role: str = "user"
+    role: UserRole = UserRole.USER
 
 # Payload for partial user updates
 class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
-    role: Optional[str] = None  # 'admin' or 'user'
+    role: Optional[UserRole] = None  # New roles supported
     is_active: Optional[bool] = None
 
 
@@ -28,7 +37,7 @@ class User(BaseModel):
     id: int
     username: str
     email: str
-    role: str = "user"  # 'admin' or 'user'
+    role: UserRole = UserRole.USER
     is_active: bool
     created_at: datetime
 
@@ -67,6 +76,7 @@ class QueryCreate(BaseModel):
     chart_type: Optional[str] = None
     chart_config: Optional[Dict[str, Any]] = None
     menu_item_id: Optional[int] = None
+    role: Optional[UserRole] = UserRole.USER
 
 
 class Query(BaseModel):
@@ -79,6 +89,7 @@ class Query(BaseModel):
     menu_item_id: Optional[int] = None
     is_active: bool = True
     created_at: datetime
+    role: Optional[UserRole] = UserRole.USER
 
 
 class QueryExecute(BaseModel):

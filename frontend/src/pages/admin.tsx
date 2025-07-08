@@ -12,7 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
-import { MenuItem, User as UserType } from "../types";
+import { MenuItem, User as UserType, UserRole } from "../types";
 
 interface Query {
   id: number;
@@ -41,12 +41,20 @@ interface AdminUser {
   email: string;
   is_active: boolean;
   created_at: string;
-  is_admin: boolean;
+  role: UserRole;
 }
+
+const roleDisplayNames: Record<UserRole, string> = {
+  [UserRole.ADMIN]: "Admin",
+  [UserRole.CEO]: "CEO",
+  [UserRole.FINANCE_USER]: "Finance",
+  [UserRole.TECH_USER]: "Tech",
+  [UserRole.USER]: "User",
+};
 
 const AdminPage: React.FC = () => {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"widgets" | "queries" | "users">(
+  const [activeTab, setActiveTab] = useState<"widgets" | "queries" | "users" | "menus">(
     "widgets"
   );
   const [queries, setQueries] = useState<Query[]>([]);
@@ -68,6 +76,7 @@ const AdminPage: React.FC = () => {
     chart_type: "bar",
     chart_config: {},
     menu_item_id: null as number | null,
+    role: UserRole.USER,
   });
   const [widgetForm, setWidgetForm] = useState({
     title: "",
@@ -82,7 +91,16 @@ const AdminPage: React.FC = () => {
     username: "",
     email: "",
     password: "",
-    role: "user" as "user" | "admin",
+    role: UserRole.USER,
+  });
+  const [showMenuForm, setShowMenuForm] = useState(false);
+  const [editingMenuId, setEditingMenuId] = useState<number | null>(null);
+  const [menuForm, setMenuForm] = useState({
+    name: "",
+    type: "dashboard" as "dashboard" | "report",
+    icon: "",
+    parent_id: null as number | null,
+    sort_order: 0,
   });
 
   useEffect(() => {
@@ -124,6 +142,7 @@ const AdminPage: React.FC = () => {
         chart_type: "bar",
         chart_config: {},
         menu_item_id: null,
+        role: UserRole.USER,
       });
       loadData();
     } catch (error: any) {
@@ -167,6 +186,35 @@ const AdminPage: React.FC = () => {
       router.push("/dashboard");
     } else {
       router.push(`/report/${item.id}`);
+    }
+  };
+
+  const createOrUpdateMenu = async () => {
+    try {
+      if (editingMenuId) {
+        await apiClient.put(`/api/admin/menu/${editingMenuId}`, menuForm);
+        toast.success("Menu updated successfully!");
+      } else {
+        await apiClient.post("/api/admin/menu", menuForm);
+        toast.success("Menu created successfully!");
+      }
+      setShowMenuForm(false);
+      setEditingMenuId(null);
+      setMenuForm({ name: "", type: "dashboard", icon: "", parent_id: null, sort_order: 0 });
+      loadData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to save menu");
+    }
+  };
+
+  const deleteMenu = async (menuId: number) => {
+    if (!confirm("Are you sure you want to delete this menu item?")) return;
+    try {
+      await apiClient.delete(`/api/admin/menu/${menuId}`);
+      toast.success("Menu deleted successfully!");
+      loadData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to delete menu");
     }
   };
 
@@ -241,6 +289,17 @@ const AdminPage: React.FC = () => {
                 >
                   <EyeIcon className="h-5 w-5 inline mr-2" />
                   Users ({users.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab("menus")}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === "menus"
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <Cog6ToothIcon className="h-5 w-5 inline mr-2" />
+                  Menus ({menuItems.length})
                 </button>
               </nav>
             </div>
@@ -574,6 +633,20 @@ const AdminPage: React.FC = () => {
                           ))}
                         </select>
                       </div>
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                        <select
+                          value={queryForm.role}
+                          onChange={(e) => setQueryForm({ ...queryForm, role: e.target.value as any })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        >
+                          {Object.values(UserRole).map((role) => (
+                            <option key={role} value={role}>
+                              {roleDisplayNames[role]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">
                       <button
@@ -626,7 +699,7 @@ const AdminPage: React.FC = () => {
                         Active
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Admin
+                        Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
@@ -663,7 +736,7 @@ const AdminPage: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
                             <div className="text-sm text-gray-900">
-                              {user.is_admin ? "Yes" : "No"}
+                              {roleDisplayNames[user.role]}
                             </div>
                           </div>
                         </td>
@@ -678,7 +751,7 @@ const AdminPage: React.FC = () => {
                                 username: user.username,
                                 email: user.email,
                                 password: "",
-                                role: user.is_admin ? "admin" : "user",
+                                role: user.role,
                               });
                               setShowUserForm(true);
                             }}
@@ -750,13 +823,16 @@ const AdminPage: React.FC = () => {
                         onChange={(e) =>
                           setUserForm({
                             ...userForm,
-                            role: e.target.value as "user" | "admin",
+                            role: e.target.value as UserRole,
                           })
                         }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       >
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
+                        {Object.values(UserRole).map((role) => (
+                          <option key={role} value={role}>
+                            {roleDisplayNames[role]}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">
@@ -764,7 +840,7 @@ const AdminPage: React.FC = () => {
                         onClick={() => {
                           setShowUserForm(false);
                           setEditingUserId(null);
-                          setUserForm({ username: "", email: "", password: "", role: "user" });
+                          setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
                         }}
                         className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
                       >
@@ -783,7 +859,7 @@ const AdminPage: React.FC = () => {
                             }
                             setShowUserForm(false);
                             setEditingUserId(null);
-                            setUserForm({ username: "", email: "", password: "", role: "user" });
+                            setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
                             loadData();
                           } catch (error: any) {
                             toast.error(
@@ -796,6 +872,160 @@ const AdminPage: React.FC = () => {
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                       >
                         {editingUserId ? "Update User" : "Create User"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Menus Tab */}
+          {activeTab === "menus" && (
+            <div>
+              <div className="flex justify-between mb-4">
+                <h2 className="text-xl font-semibold">Menu Items</h2>
+                <button
+                  onClick={() => {
+                    setEditingMenuId(null);
+                    setMenuForm({ name: "", type: "dashboard", icon: "", parent_id: null, sort_order: 0 });
+                    setShowMenuForm(true);
+                  }}
+                  className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <PlusIcon className="h-5 w-5 mr-1" /> Add Menu
+                </button>
+              </div>
+
+              <div className="overflow-x-auto bg-white shadow rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {menuItems.map((menu) => (
+                      <tr key={menu.id}>
+                        <td className="px-6 py-3 whitespace-nowrap">{menu.name}</td>
+                        <td className="px-6 py-3 whitespace-nowrap">{menu.type}</td>
+                        <td className="px-6 py-3 whitespace-nowrap text-right space-x-3">
+                          <button
+                            onClick={() => {
+                              setEditingMenuId(menu.id);
+                              setMenuForm({
+                                name: menu.name,
+                                type: menu.type as any,
+                                icon: menu.icon || "",
+                                parent_id: menu.parent_id,
+                                sort_order: menu.sort_order,
+                              });
+                              setShowMenuForm(true);
+                            }}
+                            className="text-blue-600 hover:underline text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteMenu(menu.id)}
+                            className="text-red-600 hover:underline text-sm"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Menu Form Modal */}
+              {showMenuForm && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-xl shadow-lg max-w-lg w-full">
+                    <div className="px-6 py-4 border-b flex justify-between items-center">
+                      <h3 className="text-lg font-semibold">
+                        {editingMenuId ? "Edit Menu" : "Add Menu"}
+                      </h3>
+                      <button onClick={() => setShowMenuForm(false)} className="text-gray-500 hover:text-gray-700">
+                        ✕
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input
+                          type="text"
+                          value={menuForm.name}
+                          onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                        <select
+                          value={menuForm.type}
+                          onChange={(e) => setMenuForm({ ...menuForm, type: e.target.value as any })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        >
+                          <option value="dashboard">Dashboard</option>
+                          <option value="report">Report</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Icon (optional)</label>
+                        <input
+                          type="text"
+                          value={menuForm.icon}
+                          onChange={(e) => setMenuForm({ ...menuForm, icon: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Parent Menu (optional)</label>
+                        <select
+                          value={menuForm.parent_id ?? ""}
+                          onChange={(e) =>
+                            setMenuForm({ ...menuForm, parent_id: e.target.value ? parseInt(e.target.value) : null })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        >
+                          <option value="">None</option>
+                          {menuItems.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                        <input
+                          type="number"
+                          value={menuForm.sort_order}
+                          onChange={(e) => setMenuForm({ ...menuForm, sort_order: parseInt(e.target.value) || 0 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div className="px-6 py-4 bg-gray-50 rounded-b-xl flex justify-end space-x-3">
+                      <button
+                        onClick={() => setShowMenuForm(false)}
+                        className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={createOrUpdateMenu}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                      >
+                        {editingMenuId ? "Update" : "Create"}
                       </button>
                     </div>
                   </div>

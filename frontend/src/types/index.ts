@@ -1,9 +1,17 @@
 // User and Authentication Types
+export enum UserRole {
+  ADMIN = "admin",
+  CEO = "CEO",
+  FINANCE_USER = "FINANCE_USER",
+  TECH_USER = "TECH_USER",
+  USER = "user",
+}
+
 export interface User {
   id: number;
   username: string;
   email: string;
-  role?: "user" | "admin";
+  role?: UserRole;
   is_active: boolean;
   created_at: string;
 }

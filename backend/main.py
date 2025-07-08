@@ -44,6 +44,8 @@ from models import (
     APIResponse,
     UserCreate,
     UserUpdate,
+    UserRole,
+    MenuItemCreate,
 )
 from sql_utils import validate_sql
 from services import DataService  # NEW: use shared DataService implementation
@@ -130,11 +132,22 @@ class MenuService:
 
 class QueryService:
     @staticmethod
+    def _ensure_role_column():
+        """Add ROLE column to APP_QUERIES if it doesn't exist."""
+        try:
+            db_manager.execute_non_query(
+                "ALTER TABLE app_queries ADD (role VARCHAR2(30) DEFAULT 'user')"
+            )
+        except Exception:
+            # Ignore if already exists or cannot add
+            pass
+
+    @staticmethod
     def get_query_by_id(query_id: int) -> Optional[Query]:
         try:
             query = """
             SELECT id, name, description, sql_query, chart_type, chart_config, 
-                   menu_item_id, is_active, created_at
+                   menu_item_id, role, is_active, created_at
             FROM app_queries WHERE id = :1 AND is_active = 1
             """
             result = db_manager.execute_query(query, (query_id,))
@@ -156,54 +169,87 @@ class QueryService:
                     chart_type=row["CHART_TYPE"],
                     chart_config=chart_config,
                     menu_item_id=row["MENU_ITEM_ID"],
+                    role=row.get("ROLE", "user"),
                     is_active=bool(row["IS_ACTIVE"]),
                     created_at=row["CREATED_AT"],
                 )
             return None
         except Exception as e:
-            logger.error(f"Error getting query by ID: {e}")
+            if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
+                QueryService._ensure_role_column()
+                result = db_manager.execute_query(query, (query_id,))
+            else:
+                raise
+
+            if result:
+                row = result[0]
+                chart_config = {}
+                if row["CHART_CONFIG"]:
+                    try:
+                        chart_config = json.loads(row["CHART_CONFIG"])
+                    except:
+                        chart_config = {}
+
+                return Query(
+                    id=row["ID"],
+                    name=row["NAME"],
+                    description=row["DESCRIPTION"],
+                    sql_query=row["SQL_QUERY"],
+                    chart_type=row["CHART_TYPE"],
+                    chart_config=chart_config,
+                    menu_item_id=row["MENU_ITEM_ID"],
+                    role=row.get("ROLE", "user"),
+                    is_active=bool(row["IS_ACTIVE"]),
+                    created_at=row["CREATED_AT"],
+                )
             return None
 
     @staticmethod
     def get_queries_by_menu(menu_item_id: int) -> List[Query]:
         """Return all active queries that belong to a given menu item (report section)."""
+        query_sql = """
+        SELECT id, name, description, sql_query, chart_type, chart_config,
+               menu_item_id, role, is_active, created_at
+        FROM app_queries
+        WHERE menu_item_id = :1 AND is_active = 1
+        ORDER BY created_at DESC
+        """
+
         try:
-            query_sql = """
-            SELECT id, name, description, sql_query, chart_type, chart_config,
-                   menu_item_id, is_active, created_at
-            FROM app_queries
-            WHERE menu_item_id = :1 AND is_active = 1
-            ORDER BY created_at DESC
-            """
             rows = db_manager.execute_query(query_sql, (menu_item_id,))
-
-            queries: List[Query] = []
-            for row in rows:
-                chart_config = {}
-                if row["CHART_CONFIG"]:
-                    try:
-                        chart_config = json.loads(row["CHART_CONFIG"])
-                    except Exception:
-                        chart_config = {}
-
-                queries.append(
-                    Query(
-                        id=row["ID"],
-                        name=row["NAME"],
-                        description=row["DESCRIPTION"],
-                        sql_query=row["SQL_QUERY"],
-                        chart_type=row["CHART_TYPE"],
-                        chart_config=chart_config,
-                        menu_item_id=row["MENU_ITEM_ID"],
-                        is_active=bool(row["IS_ACTIVE"]),
-                        created_at=row["CREATED_AT"],
-                    )
-                )
-
-            return queries
         except Exception as e:
-            logger.error(f"Error getting queries for menu {menu_item_id}: {e}")
-            return []
+            if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
+                QueryService._ensure_role_column()
+                rows = db_manager.execute_query(query_sql, (menu_item_id,))
+            else:
+                logger.error(f"Error getting queries for menu {menu_item_id}: {e}")
+                return []
+
+        queries: List[Query] = []
+        for row in rows:
+            chart_config = {}
+            if row["CHART_CONFIG"]:
+                try:
+                    chart_config = json.loads(row["CHART_CONFIG"])
+                except Exception:
+                    chart_config = {}
+
+            queries.append(
+                Query(
+                    id=row["ID"],
+                    name=row["NAME"],
+                    description=row["DESCRIPTION"],
+                    sql_query=row["SQL_QUERY"],
+                    chart_type=row["CHART_TYPE"],
+                    chart_config=chart_config,
+                    menu_item_id=row["MENU_ITEM_ID"],
+                    role=row["ROLE"],
+                    is_active=bool(row["IS_ACTIVE"]),
+                    created_at=row["CREATED_AT"],
+                )
+            )
+
+        return queries
 
 
 class DashboardService:
@@ -389,7 +435,12 @@ async def get_menu(current_user: User = Depends(get_current_user)):
 # Dashboard Routes
 @app.get("/api/dashboard", response_model=List[DashboardWidget])
 async def get_dashboard(current_user: User = Depends(get_current_user)):
-    return DashboardService.get_dashboard_layout()
+    widgets = DashboardService.get_dashboard_layout()
+    if current_user.role != UserRole.ADMIN:
+        widgets = [
+            w for w in widgets if (not w.query) or (w.query.role in (None, "", current_user.role))
+        ]
+    return widgets
 
 
 @app.post("/api/dashboard/widget/{widget_id}/data", response_model=QueryResult)
@@ -436,6 +487,10 @@ async def execute_query(
             query_obj = QueryService.get_query_by_id(request.query_id)
             if not query_obj:
                 raise HTTPException(status_code=404, detail="Query not found")
+
+            # Role authorization: admin can run anything; others only if role matches
+            if current_user.role != UserRole.ADMIN and query_obj.role not in (None, "", current_user.role):
+                raise HTTPException(status_code=403, detail="Not authorized for this query")
 
             if query_obj.chart_type:
                 return DataService.execute_query_for_chart(
@@ -531,6 +586,8 @@ async def get_reports_by_menu(
 ):
     try:
         queries = QueryService.get_queries_by_menu(menu_item_id)
+        if current_user.role != UserRole.ADMIN:
+            queries = [q for q in queries if q.role in (None, "", current_user.role)]
         return APIResponse(success=True, data=queries)
     except Exception as e:
         logger.error(f"Error retrieving reports for menu {menu_item_id}: {e}")
@@ -562,8 +619,7 @@ async def execute_filtered_query(
 ):
     """Execute a filtered query with sorting and pagination"""
     try:
-        data_service = DataService()
-        return data_service.execute_filtered_query(request)
+        return DataService.execute_filtered_query(request)
     except Exception as e:
         logger.error(f"Error executing filtered query: {e}")
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
@@ -733,47 +789,45 @@ async def create_query(
 ):
     """Create a new query for dashboard widgets or reports"""
     try:
-        # Validate SQL query first
-        validate_sql(request.sql_query)
-
-        # Insert the new query
-        query = """
-        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id)
-        VALUES (:1, :2, :3, :4, :5, :6)
+        # Insert including role column; add column if missing
+        insert_sql = """
+        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role)
+        VALUES (:1, :2, :3, :4, :5, :6, :7)
         """
-
-        chart_config_str = (
-            json.dumps(request.chart_config) if request.chart_config else None
-        )
-
-        affected_rows = db_manager.execute_non_query(
-            query,
-            (
-                request.name,
-                request.description,
-                request.sql_query,
-                request.chart_type,
-                chart_config_str,
-                request.menu_item_id,
-            ),
-        )
-
-        if affected_rows > 0:
-            # Get the ID of the newly created query
-            result = db_manager.execute_query(
-                "SELECT id FROM app_queries WHERE name = :1 ORDER BY created_at DESC",
-                (request.name,),
+        try:
+            db_manager.execute_non_query(
+                insert_sql,
+                (
+                    request.name,
+                    request.description,
+                    request.sql_query,
+                    request.chart_type,
+                    json.dumps(request.chart_config or {}),
+                    request.menu_item_id,
+                    request.role or "user",
+                ),
             )
+        except Exception as e:
+            if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
+                # Add ROLE column then retry
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(30) DEFAULT 'user')")
+                db_manager.execute_non_query(
+                    insert_sql,
+                    (
+                        request.name,
+                        request.description,
+                        request.sql_query,
+                        request.chart_type,
+                        json.dumps(request.chart_config or {}),
+                        request.menu_item_id,
+                        request.role or "user",
+                    ),
+                )
+            else:
+                logger.error(f"Error creating query: {e}")
+                raise HTTPException(status_code=500, detail="Failed to create query")
 
-            new_query_id = result[0]["ID"] if result else None
-
-            return APIResponse(
-                success=True,
-                message=f"Query '{request.name}' created successfully",
-                data={"query_id": new_query_id},
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create query")
+        return APIResponse(success=True, message="Query created")
 
     except HTTPException:
         raise
@@ -955,6 +1009,59 @@ async def list_dashboard_widgets(current_user: User = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error listing dashboard widgets: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list widgets: {str(e)}")
+
+
+@app.post("/api/admin/menu", response_model=APIResponse)
+async def create_menu_item(request: MenuItemCreate, current_user: User = Depends(require_admin)):
+    try:
+        insert_sql = "INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, is_active) VALUES (:1, :2, :3, :4, :5, 1)"
+        db_manager.execute_non_query(
+            insert_sql,
+            (
+                request.name,
+                request.type,
+                request.icon,
+                request.parent_id,
+                request.sort_order,
+            ),
+        )
+        return APIResponse(success=True, message="Menu item created")
+    except Exception as e:
+        logger.error(f"Error creating menu item: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create menu item")
+
+
+@app.put("/api/admin/menu/{menu_id}", response_model=APIResponse)
+async def update_menu_item(menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)):
+    try:
+        update_sql = """
+        UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5 WHERE id=:6
+        """
+        db_manager.execute_non_query(
+            update_sql,
+            (
+                request.name,
+                request.type,
+                request.icon,
+                request.parent_id,
+                request.sort_order,
+                menu_id,
+            ),
+        )
+        return APIResponse(success=True, message="Menu item updated")
+    except Exception as e:
+        logger.error(f"Error updating menu item: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update menu item")
+
+
+@app.delete("/api/admin/menu/{menu_id}", response_model=APIResponse)
+async def delete_menu_item(menu_id: int, current_user: User = Depends(require_admin)):
+    try:
+        db_manager.execute_non_query("DELETE FROM app_menu_items WHERE id = :1", (menu_id,))
+        return APIResponse(success=True, message="Menu item deleted")
+    except Exception as e:
+        logger.error(f"Error deleting menu item: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete menu item")
 
 
 if __name__ == "__main__":

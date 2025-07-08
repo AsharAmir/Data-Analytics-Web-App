@@ -108,6 +108,72 @@ class DataService:
             )
 
     @staticmethod
+    def execute_filtered_query(request: "FilteredQueryRequest") -> QueryResult:
+        """Execute a filtered, sorted, and paginated query"""
+        start_time = time.time()
+
+        try:
+            # 1. Get base query
+            base_query = ""
+            if request.query_id:
+                query_obj = QueryService.get_query_by_id(request.query_id)
+                if not query_obj:
+                    raise ValueError("Query not found")
+                base_query = query_obj.sql_query
+            elif request.sql_query:
+                base_query = request.sql_query
+            else:
+                raise ValueError("Either query_id or sql_query must be provided")
+
+            # 2. Apply filters
+            filtered_query = DataService.apply_filters(base_query, request.filters)
+
+            # 3. Get total count
+            count_query = f"SELECT COUNT(*) as total_count FROM ({filtered_query})"
+            count_result = db_manager.execute_query(count_query)
+            total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
+
+            # 4. Apply sorting
+            if request.sort_column:
+                direction = "DESC" if request.sort_direction and request.sort_direction.upper() == "DESC" else "ASC"
+                # Basic protection against injection by ensuring column is alphanumeric with underscores
+                safe_sort_column = "".join(c for c in request.sort_column if c.isalnum() or c == '_')
+                sorted_query = f"{filtered_query} ORDER BY {safe_sort_column} {direction}"
+            else:
+                sorted_query = filtered_query
+
+            # 5. Apply pagination
+            paginated_query = f"""
+            SELECT * FROM (
+                SELECT ROWNUM as rn, sub.* FROM (
+                    {sorted_query}
+                ) sub
+                WHERE ROWNUM <= {request.offset + request.limit}
+            )
+            WHERE rn > {request.offset}
+            """
+
+            # 6. Execute query
+            df = db_manager.execute_query_pandas(paginated_query)
+
+            # 7. Format data for table
+            table_data = TableData(
+                columns=df.columns.tolist(),
+                data=df.values.tolist(),
+                total_count=total_count,
+            )
+
+            return QueryResult(
+                success=True, data=table_data, execution_time=time.time() - start_time
+            )
+
+        except Exception as e:
+            logger.error(f"Filtered query execution error: {e}")
+            return QueryResult(
+                success=False, error=str(e), execution_time=time.time() - start_time
+            )
+
+    @staticmethod
     def _format_chart_data(df: pd.DataFrame, chart_type: str) -> ChartData:
         """Format DataFrame for different chart types"""
 

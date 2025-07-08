@@ -357,4 +357,8 @@ export const {
   updateUser,
   deleteUser,
   deleteQuery
-} = apiClient; 
+} = apiClient;
+
+export async function createQuery(data: any) {
+  return (await apiClient.post("/api/admin/query", { ...data, role: data.role || "user" })).data;
+} 
