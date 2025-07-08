@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
-import apiClient from '../../lib/api';
-import DataTable from '../../components/ui/DataTable';
-import ChartComponent from '../../components/Charts/ChartComponent';
-import { Query, QueryResult, TableData, ChartData } from '../../types';
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import apiClient from "../../lib/api";
+import DataTable from "../../components/ui/DataTable";
+import ChartComponent from "../../components/Charts/ChartComponent";
+import { Query, QueryResult, TableData, ChartData } from "../../types";
 
 const ReportDetailPage: React.FC = () => {
   const router = useRouter();
@@ -13,9 +13,9 @@ const ReportDetailPage: React.FC = () => {
   const [report, setReport] = useState<Query | null>(null);
   const [chartData, setChartData] = useState<QueryResult | null>(null);
   const [tableData, setTableData] = useState<QueryResult | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'chart'>('table');
-  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
-  const [error, setError] = useState<string>('');
+  const [viewMode, setViewMode] = useState<"table" | "chart">("table");
+  const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     if (!apiClient.isAuthenticated()) {
@@ -30,39 +30,35 @@ const ReportDetailPage: React.FC = () => {
 
   const loadReportData = async () => {
     setLoading(true);
-    setError('');
-    
+    setError("");
+
     try {
       const reportId = parseInt(id as string, 10);
       if (isNaN(reportId)) {
-        setError('Invalid report ID');
+        setError("Invalid report ID");
         return;
       }
 
       // Get report details
       const reportResponse = await apiClient.getQueryDetail(reportId);
       if (!reportResponse.success || !reportResponse.data) {
-        setError('Report not found');
+        setError("Report not found");
         return;
       }
 
       setReport(reportResponse.data);
 
       // Load both chart and table data
-      await Promise.all([
-        loadChartData(reportId),
-        loadTableData(reportId)
-      ]);
+      await Promise.all([loadChartData(reportId), loadTableData(reportId)]);
 
       // Set initial view mode based on report configuration
       if (reportResponse.data.chart_type) {
-        setViewMode('chart');
+        setViewMode("chart");
         setChartType(reportResponse.data.chart_type as any);
       }
-
     } catch (err) {
-      console.error('Error loading report:', err);
-      setError('Failed to load report data');
+      console.error("Error loading report:", err);
+      setError("Failed to load report data");
     } finally {
       setLoading(false);
     }
@@ -73,11 +69,11 @@ const ReportDetailPage: React.FC = () => {
       // Execute the query to get chart data (use the original query endpoint which respects chart_type)
       const response = await apiClient.executeQuery({
         query_id: reportId,
-        limit: 1000
+        limit: 1000,
       });
       setChartData(response);
     } catch (err) {
-      console.error('Error loading chart data:', err);
+      console.error("Error loading chart data:", err);
     }
   };
 
@@ -87,32 +83,38 @@ const ReportDetailPage: React.FC = () => {
       const response = await apiClient.executeFilteredQuery({
         query_id: reportId,
         limit: 1000,
-        offset: 0
+        offset: 0,
       });
       setTableData(response);
     } catch (err) {
-      console.error('Error loading table data:', err);
+      console.error("Error loading table data:", err);
     }
   };
 
-  const handleExport = (format: 'excel' | 'csv') => {
+  const handleExport = (format: "excel" | "csv") => {
     if (!report) return;
-    
+
     // Use the export API
-    apiClient.exportData({
-      query_id: report.id,
-      format,
-      filename: `${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`
-    }).then((blob) => {
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${report.name.replace(/\s+/g, '_')}.${format}`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-    }).catch(err => {
-      console.error('Export failed:', err);
-    });
+    apiClient
+      .exportData({
+        query_id: report.id,
+        format,
+        filename: `${report.name.replace(/\s+/g, "_")}_${
+          new Date().toISOString().split("T")[0]
+        }`,
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        const extension = format === "excel" ? "xlsx" : "csv";
+        link.download = `${report.name.replace(/\s+/g, "_")}.${extension}`;
+        link.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((err) => {
+        console.error("Export failed:", err);
+      });
   };
 
   const transformDataForChart = (tableData: TableData): ChartData => {
@@ -122,53 +124,70 @@ const ReportDetailPage: React.FC = () => {
 
     // Take first 20 rows for chart
     const chartData = tableData.data.slice(0, 20);
-    
+
     // Try to find appropriate columns for chart
     const columns = tableData.columns;
     const labelColumnIndex = 0; // Use first column as labels
     const valueColumnIndex = columns.findIndex((col, index) => {
       if (index === 0) return false;
       const sampleValue = chartData[0]?.[index];
-      return typeof sampleValue === 'number' || !isNaN(Number(sampleValue));
+      return typeof sampleValue === "number" || !isNaN(Number(sampleValue));
     });
 
     if (valueColumnIndex === -1) {
       return { labels: [], datasets: [] };
     }
 
-    const labels = chartData.map(row => row[labelColumnIndex]?.toString() || '');
-    const values = chartData.map(row => {
+    const labels = chartData.map(
+      (row) => row[labelColumnIndex]?.toString() || ""
+    );
+    const values = chartData.map((row) => {
       const val = row[valueColumnIndex];
-      return typeof val === 'number' ? val : parseFloat(val as string) || 0;
+      return typeof val === "number" ? val : parseFloat(val as string) || 0;
     });
 
     const colors = [
-      '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-      '#EC4899', '#14B8A6', '#F97316', '#6366F1', '#84CC16'
+      "#3B82F6",
+      "#EF4444",
+      "#10B981",
+      "#F59E0B",
+      "#8B5CF6",
+      "#EC4899",
+      "#14B8A6",
+      "#F97316",
+      "#6366F1",
+      "#84CC16",
     ];
 
-    if (chartType === 'pie') {
+    if (chartType === "pie") {
       return {
         labels,
-        datasets: [{
-          label: columns[valueColumnIndex],
-          data: values,
-          backgroundColor: colors.slice(0, values.length),
-          borderWidth: 2
-        }]
+        datasets: [
+          {
+            label: columns[valueColumnIndex],
+            data: values,
+            backgroundColor: colors.slice(0, values.length),
+            borderWidth: 2,
+          },
+        ],
       };
     }
 
     return {
       labels,
-      datasets: [{
-        label: columns[valueColumnIndex],
-        data: values,
-        backgroundColor: chartType === 'line' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.5)',
-        borderColor: '#3B82F6',
-        borderWidth: 2,
-        fill: chartType === 'line' ? false : true
-      }]
+      datasets: [
+        {
+          label: columns[valueColumnIndex],
+          data: values,
+          backgroundColor:
+            chartType === "line"
+              ? "rgba(59, 130, 246, 0.1)"
+              : "rgba(59, 130, 246, 0.5)",
+          borderColor: "#3B82F6",
+          borderWidth: 2,
+          fill: chartType === "line" ? false : true,
+        },
+      ],
     };
   };
 
@@ -189,11 +208,23 @@ const ReportDetailPage: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="mx-auto h-16 w-16 text-red-500 mb-6">
-            <svg className="h-full w-full" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 15.5c-.77.833.192 2.5 1.732 2.5z" />
+            <svg
+              className="h-full w-full"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 15.5c-.77.833.192 2.5 1.732 2.5z"
+              />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Report</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            Error Loading Report
+          </h3>
           <p className="text-gray-500">{error}</p>
           <button
             onClick={() => window.close()}
@@ -222,30 +253,43 @@ const ReportDetailPage: React.FC = () => {
               <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                 <span>Report ID: {report?.id}</span>
                 <span>•</span>
-                <span>Created: {report?.created_at ? new Date(report.created_at).toLocaleDateString() : ''}</span>
+                <span>
+                  Created:{" "}
+                  {report?.created_at
+                    ? new Date(report.created_at).toLocaleDateString()
+                    : ""}
+                </span>
                 {(chartData?.execution_time || tableData?.execution_time) && (
                   <>
                     <span>•</span>
-                    <span>Executed in {((chartData?.execution_time || tableData?.execution_time || 0) * 1000).toFixed(2)}ms</span>
+                    <span>
+                      Executed in{" "}
+                      {(
+                        (chartData?.execution_time ||
+                          tableData?.execution_time ||
+                          0) * 1000
+                      ).toFixed(2)}
+                      ms
+                    </span>
                   </>
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               {/* View Toggle */}
               <div className="flex bg-gray-100 rounded-lg p-1">
                 {[
-                  { key: 'table', label: 'Table' },
-                  { key: 'chart', label: 'Chart' }
+                  { key: "table", label: "Table" },
+                  { key: "chart", label: "Chart" },
                 ].map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => setViewMode(key as any)}
                     className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                       viewMode === key
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
+                        ? "bg-white text-blue-600 shadow-sm"
+                        : "text-gray-600 hover:text-gray-900"
                     }`}
                   >
                     {label}
@@ -254,7 +298,7 @@ const ReportDetailPage: React.FC = () => {
               </div>
 
               {/* Chart Type Selector */}
-              {viewMode === 'chart' && (
+              {viewMode === "chart" && (
                 <select
                   value={chartType}
                   onChange={(e) => setChartType(e.target.value as any)}
@@ -269,13 +313,13 @@ const ReportDetailPage: React.FC = () => {
               {/* Export Buttons */}
               <div className="flex space-x-2">
                 <button
-                  onClick={() => handleExport('excel')}
+                  onClick={() => handleExport("excel")}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
                 >
                   Export Excel
                 </button>
                 <button
-                  onClick={() => handleExport('csv')}
+                  onClick={() => handleExport("csv")}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
                   Export CSV
@@ -296,13 +340,17 @@ const ReportDetailPage: React.FC = () => {
       {/* Content */}
       <main className="p-8">
         <div className="space-y-6">
-          {viewMode === 'table' ? (
+          {viewMode === "table" ? (
             // Table View
-            tableData && tableData.success && tableData.data && 'columns' in tableData.data ? (
+            tableData &&
+            tableData.success &&
+            tableData.data &&
+            "columns" in tableData.data ? (
               <DataTable
                 data={tableData.data as TableData}
+                maxHeight="70vh"
                 onSort={(column, direction) => {
-                  console.log('Sort:', column, direction);
+                  console.log("Sort:", column, direction);
                 }}
                 onExport={handleExport}
               />
@@ -314,48 +362,53 @@ const ReportDetailPage: React.FC = () => {
                 )}
               </div>
             )
-          ) : (
-            // Chart View
-            chartData && chartData.success && chartData.data ? (
-              'labels' in chartData.data ? (
-                // If chart data is already in chart format
-                <ChartComponent
-                  data={chartData.data as ChartData}
-                  type={chartType}
-                  title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`}
-                  description={`Visualization of data from ${report?.name}`}
-                  height={500}
-                  onExport={(format) => {
-                    console.log('Chart export:', format);
-                  }}
-                />
-              ) : (
-                // If chart data is in table format, transform it
-                tableData && tableData.success && tableData.data && 'columns' in tableData.data ? (
-                  <ChartComponent
-                    data={transformDataForChart(tableData.data as TableData)}
-                    type={chartType}
-                    title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`}
-                    description={`Visualization of ${(tableData.data as TableData).data.length} records`}
-                    height={500}
-                    onExport={(format) => {
-                      console.log('Chart export:', format);
-                    }}
-                  />
-                ) : (
-                  <div className="bg-white rounded-lg shadow p-6 text-center">
-                    <p className="text-gray-500">No chart data available</p>
-                  </div>
-                )
-              )
+          ) : // Chart View
+          chartData && chartData.success && chartData.data ? (
+            "labels" in chartData.data ? (
+              // If chart data is already in chart format
+              <ChartComponent
+                data={chartData.data as ChartData}
+                type={chartType}
+                title={`${report?.name} - ${
+                  chartType.charAt(0).toUpperCase() + chartType.slice(1)
+                } Chart`}
+                description={`Visualization of data from ${report?.name}`}
+                height={500}
+                onExport={(format) => {
+                  console.log("Chart export:", format);
+                }}
+              />
+            ) : // If chart data is in table format, transform it
+            tableData &&
+              tableData.success &&
+              tableData.data &&
+              "columns" in tableData.data ? (
+              <ChartComponent
+                data={transformDataForChart(tableData.data as TableData)}
+                type={chartType}
+                title={`${report?.name} - ${
+                  chartType.charAt(0).toUpperCase() + chartType.slice(1)
+                } Chart`}
+                description={`Visualization of ${
+                  (tableData.data as TableData).data.length
+                } records`}
+                height={500}
+                onExport={(format) => {
+                  console.log("Chart export:", format);
+                }}
+              />
             ) : (
               <div className="bg-white rounded-lg shadow p-6 text-center">
                 <p className="text-gray-500">No chart data available</p>
-                {chartData && !chartData.success && (
-                  <p className="text-red-500 mt-2">{chartData.error}</p>
-                )}
               </div>
             )
+          ) : (
+            <div className="bg-white rounded-lg shadow p-6 text-center">
+              <p className="text-gray-500">No chart data available</p>
+              {chartData && !chartData.success && (
+                <p className="text-red-500 mt-2">{chartData.error}</p>
+              )}
+            </div>
           )}
         </div>
       </main>
@@ -363,4 +416,4 @@ const ReportDetailPage: React.FC = () => {
   );
 };
 
-export default ReportDetailPage; 
+export default ReportDetailPage;

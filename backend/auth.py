@@ -87,7 +87,7 @@ def get_user_by_username(username: str) -> Optional[User]:
     """Get user by username from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, is_active, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, role, is_active, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if result:
@@ -96,6 +96,7 @@ def get_user_by_username(username: str) -> Optional[User]:
                 id=user_data["ID"],
                 username=user_data["USERNAME"],
                 email=user_data["EMAIL"],
+                role=user_data.get("ROLE", "user"),
                 is_active=bool(user_data["IS_ACTIVE"]),
                 created_at=user_data["CREATED_AT"],
             )
@@ -109,7 +110,7 @@ def get_user_by_email(email: str) -> Optional[User]:
     """Get user by email from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, is_active, created_at FROM app_users WHERE email = :1",
+            "SELECT id, username, email, role, is_active, created_at FROM app_users WHERE email = :1",
             (email,),
         )
         if result:
@@ -118,6 +119,7 @@ def get_user_by_email(email: str) -> Optional[User]:
                 id=user_data["ID"],
                 username=user_data["USERNAME"],
                 email=user_data["EMAIL"],
+                role=user_data.get("ROLE", "user"),
                 is_active=bool(user_data["IS_ACTIVE"]),
                 created_at=user_data["CREATED_AT"],
             )
@@ -131,7 +133,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
     """Authenticate user with username and password"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, password_hash, is_active, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, password_hash, role, is_active, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if not result:
@@ -148,6 +150,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
             id=user_data["ID"],
             username=user_data["USERNAME"],
             email=user_data["EMAIL"],
+            role=user_data.get("ROLE", "user"),
             is_active=bool(user_data["IS_ACTIVE"]),
             created_at=user_data["CREATED_AT"],
         )
@@ -156,8 +159,8 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
         return None
 
 
-def create_user(user_create: UserCreate) -> Optional[User]:
-    """Create new user"""
+def create_user(user_create: UserCreate, role: str = "user") -> Optional[User]:
+    """Create new user with specified role"""
     try:
         # Check if user already exists
         if get_user_by_username(user_create.username):
@@ -175,11 +178,11 @@ def create_user(user_create: UserCreate) -> Optional[User]:
         # Hash password
         hashed_password = get_password_hash(user_create.password)
 
-        # Insert user
+        # Insert user with role
         user_id = db_manager.execute_non_query(
-            """INSERT INTO app_users (username, email, password_hash) 
-               VALUES (:1, :2, :3)""",
-            (user_create.username, user_create.email, hashed_password),
+            """INSERT INTO app_users (username, email, password_hash, role) 
+               VALUES (:1, :2, :3, :4)""",
+            (user_create.username, user_create.email, hashed_password, role),
         )
 
         # Get created user
@@ -211,7 +214,9 @@ class SAMLAuth:
 
     def __init__(self):
         self.idp_url = settings.SAML_SSO_URL
-        self.sp_entity_id = settings.SAML_ENTITY_ID or "http://localhost:8000/metadata"  # default entity ID
+        self.sp_entity_id = (
+            settings.SAML_ENTITY_ID or "http://localhost:8000/metadata"
+        )  # default entity ID
         self.cert_path = settings.SAML_X509_CERT
         self._saml_available = None  # Will be checked lazily
 
@@ -226,6 +231,7 @@ class SAMLAuth:
                 from onelogin.saml2.settings import OneLogin_Saml2_Settings  # noqa
                 from onelogin.saml2.auth import OneLogin_Saml2_Auth  # noqa
                 from onelogin.saml2.utils import OneLogin_Saml2_Utils  # noqa
+
                 self._saml_available = True
             except ImportError:
                 self._saml_available = False
@@ -278,7 +284,10 @@ class SAMLAuth:
         saml_request_data = {
             "https": "on" if request and request.url.scheme == "https" else "off",
             "http_host": request.url.hostname if request else "localhost",
-            "server_port": str(request.url.port or (443 if (request and request.url.scheme == "https") else 80)),
+            "server_port": str(
+                request.url.port
+                or (443 if (request and request.url.scheme == "https") else 80)
+            ),
             "script_name": request.url.path if request else "",
             "get_data": request.query_params if request else {},
             "post_data": {},
@@ -305,7 +314,9 @@ class SAMLAuth:
             settings_dict = self._build_settings()
             from onelogin.saml2.settings import OneLogin_Saml2_Settings
 
-            saml_settings = OneLogin_Saml2_Settings(settings_dict, raise_exceptions=True)
+            saml_settings = OneLogin_Saml2_Settings(
+                settings_dict, raise_exceptions=True
+            )
             response = OneLogin_Saml2_Response(saml_settings, saml_response)
 
             if not response.is_valid():
@@ -326,8 +337,14 @@ class SAMLAuth:
             # ------------------------------------------------------------------
             user = get_user_by_username(username)
             if not user:
-                random_password = jwt.encode({"rnd": username}, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-                new_user = UserCreate(username=username, email=email, password=random_password)
+                random_password = jwt.encode(
+                    {"rnd": username},
+                    settings.JWT_SECRET_KEY,
+                    algorithm=settings.JWT_ALGORITHM,
+                )
+                new_user = UserCreate(
+                    username=username, email=email, password=random_password
+                )
                 user = create_user(new_user)
 
             return user
@@ -356,18 +373,26 @@ def init_default_user():
                 email="admin@example.com",
                 password="admin123",  # Change this in production!
             )
-            create_user(admin_user)
+            create_user(admin_user, role="admin")
             logger.info("Default admin user created")
     except Exception as e:
         logger.error(f"Error creating default user: {e}")
 
 
-# Optional: Role-based access control
+# Role-based access control
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
     """Require admin role for certain endpoints"""
-    # You can extend this to check user roles from database
-    if current_user.username != "admin":
+    if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
+    return current_user
+
+
+def require_user_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Allow access to users and admins"""
+    if current_user.role not in ["user", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="User access required"
         )
     return current_user

@@ -123,6 +123,7 @@ def init_database():
         username VARCHAR2(50) UNIQUE NOT NULL,
         email VARCHAR2(100) UNIQUE NOT NULL,
         password_hash VARCHAR2(255) NOT NULL,
+        role VARCHAR2(20) DEFAULT 'user' NOT NULL,
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -200,6 +201,34 @@ def init_database():
 
             except Exception as e:
                 logger.warning(f"Table creation warning for {table_name}: {e}")
+
+        # Check and add role column to existing app_users table if missing
+        try:
+            check_column_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_USERS' AND column_name = 'ROLE'
+            """
+            result = db_manager.execute_query(check_column_query)
+
+            if result[0]["COUNT(*)"] == 0:
+                # Add role column to existing table
+                alter_table_sql = """
+                    ALTER TABLE app_users ADD (role VARCHAR2(20) DEFAULT 'user' NOT NULL)
+                """
+                db_manager.execute_non_query(alter_table_sql)
+                logger.info("Added role column to app_users table")
+
+                # Update admin user to have admin role
+                update_admin_sql = """
+                    UPDATE app_users SET role = 'admin' WHERE username = 'admin'
+                """
+                db_manager.execute_non_query(update_admin_sql)
+                logger.info("Updated admin user with admin role")
+            else:
+                logger.info("Role column already exists in app_users table")
+
+        except Exception as e:
+            logger.warning(f"Error updating app_users table schema: {e}")
 
         # Insert default data
         insert_default_data()

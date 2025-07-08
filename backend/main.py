@@ -1,6 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import (
+    StreamingResponse,
+    JSONResponse,
+    RedirectResponse,
+    HTMLResponse,
+)
 from fastapi.security import HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 import uvicorn
@@ -22,6 +27,9 @@ from auth import (
     get_auth_mode,
     saml_auth,
     init_default_user,
+    create_user,
+    require_admin,
+    require_user_or_admin,
 )
 from models import (
     UserLogin,
@@ -32,10 +40,13 @@ from models import (
     QueryExecute,
     QueryResult,
     DashboardWidget,
+    DashboardWidgetCreate,
+    QueryCreate,
     ExportRequest,
     FilteredQueryRequest,
     APIResponse,
     PaginatedResponse,
+    UserCreate,
 )
 from sql_utils import validate_sql
 from services import DataService  # NEW: use shared DataService implementation
@@ -280,7 +291,10 @@ async def health_check():
 async def login(user_login: UserLogin):
     # Disallow form logins when SAML mode is enabled
     if get_auth_mode() != "form":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Form-based authentication is disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Form-based authentication is disabled",
+        )
 
     user = authenticate_user(user_login.username, user_login.password)
     if not user:
@@ -314,7 +328,10 @@ async def get_authentication_mode():
 @app.get("/auth/saml/login")
 async def saml_login(request: Request):
     if get_auth_mode() != "saml":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SAML authentication not enabled")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SAML authentication not enabled",
+        )
 
     redirect_url = saml_auth.initiate_login(request)
     return RedirectResponse(url=redirect_url)
@@ -323,7 +340,10 @@ async def saml_login(request: Request):
 @app.post("/auth/saml/acs")
 async def saml_acs(request: Request):
     if get_auth_mode() != "saml":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SAML authentication not enabled")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SAML authentication not enabled",
+        )
 
     form = await request.form()
     saml_response = form.get("SAMLResponse")
@@ -335,7 +355,9 @@ async def saml_acs(request: Request):
         raise HTTPException(status_code=401, detail="Invalid SAML response")
 
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
 
     # Return a small HTML page that stores the token and redirects to the dashboard
     html_content = f"""
@@ -469,7 +491,7 @@ async def export_data(
         if request.format.lower() == "csv":
             csv_data = df.to_csv(index=False)
             return StreamingResponse(
-                io.StringIO(csv_data),
+                io.BytesIO(csv_data.encode("utf-8")),
                 media_type="text/csv",
                 headers={
                     "Content-Disposition": f"attachment; filename={request.filename or 'export.csv'}"
@@ -481,12 +503,17 @@ async def export_data(
                 df.to_excel(writer, sheet_name="Data", index=False)
             output.seek(0)
 
+            # Ensure correct file extension
+            filename = request.filename or "export.xlsx"
+            if not filename.endswith(".xlsx"):
+                filename = filename.replace(".excel", ".xlsx")
+                if not filename.endswith(".xlsx"):
+                    filename += ".xlsx"
+
             return StreamingResponse(
                 output,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={
-                    "Content-Disposition": f"attachment; filename={request.filename or 'export.xlsx'}"
-                },
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
         else:
             raise HTTPException(status_code=400, detail="Unsupported export format")
@@ -519,7 +546,9 @@ async def get_reports_by_menu(
 
 
 @app.get("/api/query/{query_id}", response_model=APIResponse)
-async def get_query_detail(query_id: int, current_user: User = Depends(get_current_user)):
+async def get_query_detail(
+    query_id: int, current_user: User = Depends(get_current_user)
+):
     try:
         query_obj = QueryService.get_query_by_id(query_id)
         if not query_obj:
@@ -534,28 +563,354 @@ async def get_query_detail(query_id: int, current_user: User = Depends(get_curre
 async def execute_filtered_query(
     request: FilteredQueryRequest, current_user: User = Depends(get_current_user)
 ):
+    """Execute a filtered query with sorting and pagination"""
     try:
-        if request.query_id:
-            query_obj = QueryService.get_query_by_id(request.query_id)
-            if not query_obj:
-                raise HTTPException(status_code=404, detail="Query not found")
-            base_sql = query_obj.sql_query
-        elif request.sql_query:
-            validate_sql(request.sql_query)
-            base_sql = request.sql_query
-        else:
-            raise HTTPException(status_code=400, detail="Either query_id or sql_query must be provided")
-
-        # Apply filters
-        if request.filters:
-            filtered_sql = DataService.apply_filters(base_sql, request.filters)
-        else:
-            filtered_sql = base_sql
-
-        return DataService.execute_query_for_table(filtered_sql, request.limit or 1000, request.offset or 0)
+        data_service = DataService()
+        return data_service.execute_filtered_query(request)
     except Exception as e:
         logger.error(f"Error executing filtered query: {e}")
-        return QueryResult(success=False, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
+
+# ==============================================
+# ADMIN ENDPOINTS FOR DASHBOARD CUSTOMIZATION
+# ==============================================
+
+
+@app.post("/api/admin/user", response_model=APIResponse)
+async def create_user_admin(
+    request: UserCreate, current_user: User = Depends(require_admin)
+):
+    """Admin endpoint to create new users"""
+    try:
+        new_user = create_user(request)
+
+        return APIResponse(
+            success=True,
+            message=f"User '{request.username}' created successfully",
+            data={
+                "user_id": new_user.id,
+                "username": new_user.username,
+                "email": new_user.email,
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+
+@app.get("/api/admin/users", response_model=APIResponse)
+async def list_users(current_user: User = Depends(require_admin)):
+    """Admin endpoint to list all users"""
+    try:
+        query = """
+        SELECT id, username, email, role, is_active, created_at
+        FROM app_users
+        ORDER BY created_at DESC
+        """
+
+        result = db_manager.execute_query(query)
+
+        users = []
+        for row in result:
+            users.append(
+                {
+                    "id": row["ID"],
+                    "username": row["USERNAME"],
+                    "email": row["EMAIL"],
+                    "role": row.get("ROLE", "user"),
+                    "is_active": bool(row["IS_ACTIVE"]),
+                    "created_at": (
+                        row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None
+                    ),
+                    "is_admin": row.get("ROLE", "user") == "admin",
+                }
+            )
+
+        return APIResponse(
+            success=True, message=f"Found {len(users)} users", data=users
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing users: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+
+
+@app.delete("/api/admin/user/{user_id}", response_model=APIResponse)
+async def delete_user(user_id: int, current_user: User = Depends(require_admin)):
+    """Admin endpoint to delete a user"""
+    try:
+
+        # Prevent admin from deleting themselves
+        if user_id == current_user.id:
+            raise HTTPException(
+                status_code=400, detail="Cannot delete your own account"
+            )
+
+        # Check if user exists
+        check_query = "SELECT username FROM app_users WHERE id = :1"
+        result = db_manager.execute_query(check_query, (user_id,))
+
+        if not result:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        username = result[0]["USERNAME"]
+
+        # Delete the user
+        delete_query = "DELETE FROM app_users WHERE id = :1"
+        affected_rows = db_manager.execute_non_query(delete_query, (user_id,))
+
+        if affected_rows > 0:
+            return APIResponse(
+                success=True, message=f"User '{username}' deleted successfully"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete user")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+
+@app.post("/api/admin/query", response_model=APIResponse)
+async def create_query(
+    request: QueryCreate, current_user: User = Depends(require_admin)
+):
+    """Create a new query for dashboard widgets or reports"""
+    try:
+        # Validate SQL query first
+        if not validate_sql(request.sql_query):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid SQL query. Only SELECT statements are allowed.",
+            )
+
+        # Insert the new query
+        query = """
+        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id)
+        VALUES (:1, :2, :3, :4, :5, :6)
+        """
+
+        chart_config_str = (
+            json.dumps(request.chart_config) if request.chart_config else None
+        )
+
+        affected_rows = db_manager.execute_non_query(
+            query,
+            (
+                request.name,
+                request.description,
+                request.sql_query,
+                request.chart_type,
+                chart_config_str,
+                request.menu_item_id,
+            ),
+        )
+
+        if affected_rows > 0:
+            # Get the ID of the newly created query
+            result = db_manager.execute_query(
+                "SELECT id FROM app_queries WHERE name = :1 ORDER BY created_at DESC",
+                (request.name,),
+            )
+
+            new_query_id = result[0]["ID"] if result else None
+
+            return APIResponse(
+                success=True,
+                message=f"Query '{request.name}' created successfully",
+                data={"query_id": new_query_id},
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create query")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating query: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create query: {str(e)}")
+
+
+@app.post("/api/admin/dashboard/widget", response_model=APIResponse)
+async def create_dashboard_widget(
+    request: DashboardWidgetCreate, current_user: User = Depends(get_current_user)
+):
+    """Create a new dashboard widget"""
+    try:
+        # Verify the query exists
+        query_check = db_manager.execute_query(
+            "SELECT id FROM app_queries WHERE id = :1 AND is_active = 1",
+            (request.query_id,),
+        )
+
+        if not query_check:
+            raise HTTPException(status_code=404, detail="Query not found or inactive")
+
+        # Insert the new widget
+        query = """
+        INSERT INTO app_dashboard_widgets (title, query_id, position_x, position_y, width, height)
+        VALUES (:1, :2, :3, :4, :5, :6)
+        """
+
+        affected_rows = db_manager.execute_non_query(
+            query,
+            (
+                request.title,
+                request.query_id,
+                request.position_x,
+                request.position_y,
+                request.width,
+                request.height,
+            ),
+        )
+
+        if affected_rows > 0:
+            # Get the ID of the newly created widget
+            result = db_manager.execute_query(
+                "SELECT id FROM app_dashboard_widgets WHERE title = :1 ORDER BY created_at DESC",
+                (request.title,),
+            )
+
+            new_widget_id = result[0]["ID"] if result else None
+
+            return APIResponse(
+                success=True,
+                message=f"Dashboard widget '{request.title}' created successfully",
+                data={"widget_id": new_widget_id},
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create widget")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating dashboard widget: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create widget: {str(e)}"
+        )
+
+
+@app.get("/api/admin/queries", response_model=APIResponse)
+async def list_all_queries(current_user: User = Depends(get_current_user)):
+    """List all queries available for dashboard widgets"""
+    try:
+        query = """
+        SELECT q.id, q.name, q.description, q.chart_type, q.created_at,
+               m.name as menu_name
+        FROM app_queries q
+        LEFT JOIN app_menu_items m ON q.menu_item_id = m.id
+        WHERE q.is_active = 1
+        ORDER BY q.created_at DESC
+        """
+
+        result = db_manager.execute_query(query)
+
+        queries = []
+        for row in result:
+            queries.append(
+                {
+                    "id": row["ID"],
+                    "name": row["NAME"],
+                    "description": row["DESCRIPTION"],
+                    "chart_type": row["CHART_TYPE"],
+                    "menu_name": row["MENU_NAME"],
+                    "created_at": (
+                        row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None
+                    ),
+                }
+            )
+
+        return APIResponse(
+            success=True, message=f"Found {len(queries)} queries", data=queries
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing queries: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list queries: {str(e)}")
+
+
+@app.delete("/api/admin/dashboard/widget/{widget_id}", response_model=APIResponse)
+async def delete_dashboard_widget(
+    widget_id: int, current_user: User = Depends(get_current_user)
+):
+    """Delete a dashboard widget"""
+    try:
+        # Check if widget exists
+        check_query = "SELECT id FROM app_dashboard_widgets WHERE id = :1"
+        result = db_manager.execute_query(check_query, (widget_id,))
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Widget not found")
+
+        # Delete the widget
+        delete_query = "DELETE FROM app_dashboard_widgets WHERE id = :1"
+        affected_rows = db_manager.execute_non_query(delete_query, (widget_id,))
+
+        if affected_rows > 0:
+            return APIResponse(
+                success=True, message=f"Widget {widget_id} deleted successfully"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete widget")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting widget: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete widget: {str(e)}"
+        )
+
+
+@app.get("/api/admin/dashboard/widgets", response_model=APIResponse)
+async def list_dashboard_widgets(current_user: User = Depends(get_current_user)):
+    """List all dashboard widgets with their query information"""
+    try:
+        query = """
+        SELECT w.id, w.title, w.position_x, w.position_y, w.width, w.height,
+               w.created_at, q.name as query_name, q.chart_type
+        FROM app_dashboard_widgets w
+        JOIN app_queries q ON w.query_id = q.id
+        WHERE w.is_active = 1 AND q.is_active = 1
+        ORDER BY w.position_y, w.position_x
+        """
+
+        result = db_manager.execute_query(query)
+
+        widgets = []
+        for row in result:
+            widgets.append(
+                {
+                    "id": row["ID"],
+                    "title": row["TITLE"],
+                    "position_x": row["POSITION_X"],
+                    "position_y": row["POSITION_Y"],
+                    "width": row["WIDTH"],
+                    "height": row["HEIGHT"],
+                    "query_name": row["QUERY_NAME"],
+                    "chart_type": row["CHART_TYPE"],
+                    "created_at": (
+                        row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None
+                    ),
+                }
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"Found {len(widgets)} dashboard widgets",
+            data=widgets,
+        )
+
+    except Exception as e:
+        logger.error(f"Error listing dashboard widgets: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list widgets: {str(e)}")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ class User(BaseModel):
     id: int
     username: str
     email: str
+    role: str = "user"  # 'admin' or 'user'
     is_active: bool
     created_at: datetime
 

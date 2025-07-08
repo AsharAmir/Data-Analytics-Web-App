@@ -70,7 +70,13 @@ class ApiClient {
   }
 
   private setToken(token: string): void {
-    Cookies.set('auth_token', token, { expires: 7, secure: true, sameSite: 'strict' });
+    // Set cookie with proper settings for development/production
+    const isSecure = window.location.protocol === 'https:';
+    Cookies.set('auth_token', token, { 
+      expires: 7, 
+      secure: isSecure, 
+      sameSite: isSecure ? 'strict' : 'lax' 
+    });
     localStorage.setItem('auth_token', token);
   }
 
