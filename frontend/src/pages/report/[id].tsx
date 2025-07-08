@@ -52,9 +52,11 @@ const ReportDetailPage: React.FC = () => {
       await Promise.all([loadChartData(reportId), loadTableData(reportId)]);
 
       // Set initial view mode based on report configuration
-      if (reportResponse.data.chart_type) {
+      if (reportResponse.data.chart_type && reportResponse.data.chart_type !== 'table') {
         setViewMode("chart");
         setChartType(reportResponse.data.chart_type as any);
+      } else {
+        setViewMode("table");
       }
     } catch (err) {
       console.error("Error loading report:", err);

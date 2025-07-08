@@ -76,7 +76,7 @@ class QueryCreate(BaseModel):
     chart_type: Optional[str] = None
     chart_config: Optional[Dict[str, Any]] = None
     menu_item_id: Optional[int] = None
-    role: Optional[UserRole] = UserRole.USER
+    role: Optional[Union[UserRole, List[UserRole]]] = UserRole.USER
 
 
 class Query(BaseModel):

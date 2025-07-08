@@ -21,6 +21,7 @@ interface Query {
   chart_type: string;
   menu_name: string;
   created_at: string;
+  role: string;
 }
 
 interface Widget {
@@ -76,7 +77,7 @@ const AdminPage: React.FC = () => {
     chart_type: "bar",
     chart_config: {},
     menu_item_id: null as number | null,
-    role: UserRole.USER,
+    role: [] as UserRole[],
   });
   const [widgetForm, setWidgetForm] = useState({
     title: "",
@@ -142,7 +143,7 @@ const AdminPage: React.FC = () => {
         chart_type: "bar",
         chart_config: {},
         menu_item_id: null,
-        role: UserRole.USER,
+        role: [],
       });
       loadData();
     } catch (error: any) {
@@ -504,6 +505,9 @@ const AdminPage: React.FC = () => {
                         Menu
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Role
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Created
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -531,6 +535,16 @@ const AdminPage: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {query.menu_name || "No menu"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                            {query.role && typeof query.role === 'string'
+                              ? query.role
+                                  .split(',')
+                                  .map((r) => roleDisplayNames[r.trim() as UserRole] || r.trim())
+                                  .join(', ')
+                              : 'user'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(query.created_at).toLocaleDateString()}
@@ -614,6 +628,7 @@ const AdminPage: React.FC = () => {
                           <option value="line">Line Chart</option>
                           <option value="pie">Pie Chart</option>
                           <option value="doughnut">Doughnut Chart</option>
+                          <option value="table">Table</option>
                         </select>
                         <select
                           value={queryForm.menu_item_id || ""}
@@ -634,18 +649,27 @@ const AdminPage: React.FC = () => {
                         </select>
                       </div>
                       <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                        <select
-                          value={queryForm.role}
-                          onChange={(e) => setQueryForm({ ...queryForm, role: e.target.value as any })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        >
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Roles</label>
+                        <div className="p-3 border border-gray-300 rounded-lg space-y-2 max-h-40 overflow-y-auto bg-gray-50">
                           {Object.values(UserRole).map((role) => (
-                            <option key={role} value={role}>
-                              {roleDisplayNames[role]}
-                            </option>
+                            <label key={role} className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-1 rounded">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                checked={queryForm.role.includes(role)}
+                                onChange={() => {
+                                  setQueryForm((prevForm) => {
+                                    const newRoles = prevForm.role.includes(role)
+                                      ? prevForm.role.filter((r) => r !== role)
+                                      : [...prevForm.role, role];
+                                    return { ...prevForm, role: newRoles };
+                                  });
+                                }}
+                              />
+                              <span className="text-gray-800 text-sm">{roleDisplayNames[role]}</span>
+                            </label>
                           ))}
-                        </select>
+                        </div>
                       </div>
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">

@@ -136,7 +136,7 @@ class QueryService:
         """Add ROLE column to APP_QUERIES if it doesn't exist."""
         try:
             db_manager.execute_non_query(
-                "ALTER TABLE app_queries ADD (role VARCHAR2(30) DEFAULT 'user')"
+                "ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')"
             )
         except Exception:
             # Ignore if already exists or cannot add
@@ -489,14 +489,18 @@ async def execute_query(
                 raise HTTPException(status_code=404, detail="Query not found")
 
             # Role authorization: admin can run anything; others only if role matches
-            if current_user.role != UserRole.ADMIN and query_obj.role not in (None, "", current_user.role):
-                raise HTTPException(status_code=403, detail="Not authorized for this query")
+            # Role authorization: admin can run anything; others only if role matches
+            if current_user.role != UserRole.ADMIN:
+                assigned_roles = {r.strip() for r in (query_obj.role or "").split(",") if r.strip()}
+                if not assigned_roles or current_user.role not in assigned_roles:
+                    raise HTTPException(status_code=403, detail="Not authorized for this query")
 
-            if query_obj.chart_type:
+            if query_obj.chart_type and query_obj.chart_type != 'table':
                 return DataService.execute_query_for_chart(
                     query_obj.sql_query, query_obj.chart_type, query_obj.chart_config
                 )
             else:
+                # Default to table for 'table' chart_type or no type
                 return DataService.execute_query_for_table(
                     query_obj.sql_query, request.limit, request.offset
                 )
@@ -587,7 +591,9 @@ async def get_reports_by_menu(
     try:
         queries = QueryService.get_queries_by_menu(menu_item_id)
         if current_user.role != UserRole.ADMIN:
-            queries = [q for q in queries if q.role in (None, "", current_user.role)]
+            queries = [
+                q for q in queries if not q.role or current_user.role in {r.strip() for r in q.role.split(",")}
+            ]
         return APIResponse(success=True, data=queries)
     except Exception as e:
         logger.error(f"Error retrieving reports for menu {menu_item_id}: {e}")
@@ -804,13 +810,13 @@ async def create_query(
                     request.chart_type,
                     json.dumps(request.chart_config or {}),
                     request.menu_item_id,
-                    request.role or "user",
+                    ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
                 ),
             )
         except Exception as e:
             if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
                 # Add ROLE column then retry
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(30) DEFAULT 'user')")
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -820,7 +826,7 @@ async def create_query(
                         request.chart_type,
                         json.dumps(request.chart_config or {}),
                         request.menu_item_id,
-                        request.role or "user",
+                        ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
                     ),
                 )
             else:
@@ -900,7 +906,7 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
     """List all queries available for dashboard widgets"""
     try:
         query = """
-        SELECT q.id, q.name, q.description, q.chart_type, q.created_at,
+        SELECT q.id, q.name, q.description, q.chart_type, q.created_at, q.role,
                m.name as menu_name
         FROM app_queries q
         LEFT JOIN app_menu_items m ON q.menu_item_id = m.id
@@ -919,6 +925,7 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
                     "description": row["DESCRIPTION"],
                     "chart_type": row["CHART_TYPE"],
                     "menu_name": row["MENU_NAME"],
+                    "role": row.get("ROLE", "user"),
                     "created_at": (
                         row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None
                     ),
