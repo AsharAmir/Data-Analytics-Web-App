@@ -74,6 +74,7 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   onExport,
 }) => {
   const chartRef = useRef<any>(null);
+  const overlayChartRef = useRef<any>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
 
@@ -372,7 +373,6 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   );
 
   // Fullscreen overlay (separate window on same page)
-  const overlayChartRef = useRef<any>(null);
 
   const fullscreenOverlay = isFullscreen
     ? createPortal(

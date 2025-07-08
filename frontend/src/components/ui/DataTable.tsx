@@ -223,7 +223,7 @@ const DataTable: React.FC<DataTableProps> = ({
       {/* Scrollable Table Container */}
       <div className="flex-1 overflow-hidden">
         <div
-          className="overflow-auto border-b border-gray-200"
+          className="w-full overflow-auto border-b border-gray-200"
           style={{ maxHeight }}
         >
           <table className="min-w-full divide-y divide-gray-200">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
@@ -14,15 +14,7 @@ const ReportsPage: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedSection, setSelectedSection] = useState<string>("");
 
-  useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      router.push("/login");
-      return;
-    }
-    loadData();
-  }, [router, menu]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const menuResponse = await apiClient.getMenuItems();
@@ -48,7 +40,15 @@ const ReportsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [menu]);
+
+  useEffect(() => {
+    if (!apiClient.isAuthenticated()) {
+      router.push("/login");
+      return;
+    }
+    loadData();
+  }, [router, loadData]);
 
   const handleMenuClick = (item: MenuItem) => {
     if (item.type === "dashboard") {
@@ -160,30 +160,47 @@ const ReportsPage: React.FC = () => {
       
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-white shadow-lg border-b border-gray-200 backdrop-blur-sm bg-white/95">
-          <div className="px-8 py-6">
+        <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-50/30 via-transparent to-indigo-50/30"></div>
+          
+          <div className="relative px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-blue-600 bg-clip-text text-transparent">
-                  {selectedSection ? `${selectedSection} Reports` : 'All Reports'}
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  {selectedSection 
-                    ? `Browse reports in the ${selectedSection} section`
-                    : 'Browse all available report sections and individual reports'
-                  }
-                </p>
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-md">
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 via-purple-700 to-blue-600 bg-clip-text text-transparent">
+                    {selectedSection ? `${selectedSection} Reports` : 'Reports'}
+                  </h1>
+                  <p className="text-sm text-gray-500 -mt-0.5">
+                    {selectedSection 
+                      ? `Browse ${selectedSection} section reports`
+                      : 'Browse all available report sections'
+                    }
+                  </p>
+                </div>
+                
+                {/* Report count indicator */}
+                <div className="flex items-center space-x-1.5 text-xs text-gray-500 ml-6">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>{selectedSection ? reports.length : menuItems.length} {selectedSection ? 'reports' : 'sections'}</span>
+                </div>
               </div>
               
               {selectedSection && (
                 <button
                   onClick={() => router.push('/reports')}
-                  className="px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl"
+                  className="px-4 py-2 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 flex items-center space-x-1.5 shadow-md hover:shadow-lg text-sm font-medium"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
-                  <span className="font-medium">Back to All Reports</span>
+                  <span>Back to All</span>
                 </button>
               )}
             </div>

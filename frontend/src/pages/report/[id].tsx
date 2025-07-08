@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import apiClient from "../../lib/api";
 import DataTable from "../../components/ui/DataTable";
@@ -17,18 +17,7 @@ const ReportDetailPage: React.FC = () => {
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
   const [error, setError] = useState<string>("");
 
-  useEffect(() => {
-    if (!apiClient.isAuthenticated()) {
-      window.close(); // Close the tab if not authenticated
-      return;
-    }
-
-    if (id) {
-      loadReportData();
-    }
-  }, [id]);
-
-  const loadReportData = async () => {
+  const loadReportData = useCallback(async () => {
     setLoading(true);
     setError("");
 
@@ -64,7 +53,18 @@ const ReportDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (!apiClient.isAuthenticated()) {
+      window.close(); // Close the tab if not authenticated
+      return;
+    }
+
+    if (id) {
+      loadReportData();
+    }
+  }, [id, loadReportData]);
 
   const loadChartData = async (reportId: number) => {
     try {

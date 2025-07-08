@@ -27,7 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   // Icon components
   const DashboardIcon = () => (
     <svg
-      className="h-5 w-5"
+      className="h-5 w-5 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -43,7 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const ExplorerIcon = () => (
     <svg
-      className="h-5 w-5"
+      className="h-5 w-5 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -59,7 +59,39 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const ReportsIcon = () => (
     <svg
-      className="h-5 w-5"
+      className="h-5 w-5 flex-shrink-0"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+
+  const FolderIcon = () => (
+    <svg
+      className="h-5 w-5 flex-shrink-0"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2V7z"
+      />
+    </svg>
+  );
+
+  const DocumentIcon = () => (
+    <svg
+      className="h-5 w-5 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -75,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
     <svg
-      className={`h-4 w-4 transition-transform duration-200 ${
+      className={`h-4 w-4 flex-shrink-0 transition-transform duration-200 ${
         expanded ? "rotate-90" : ""
       }`}
       fill="none"
@@ -93,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const AdminIcon = () => (
     <svg
-      className="h-5 w-5"
+      className="h-5 w-5 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -115,7 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const LogoutIcon = () => (
     <svg
-      className="h-5 w-5"
+      className="h-5 w-5 flex-shrink-0"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -137,6 +169,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   }, []);
 
   const isAdmin = currentUser?.role === "admin";
+
+  // Get appropriate icon for menu item
+  const getMenuItemIcon = (item: MenuItem) => {
+    if (item.type === "dashboard") {
+      return DashboardIcon;
+    } else if (item.type === "report") {
+      // If it has children, it's a folder/category
+      if (item.children && item.children.length > 0) {
+        return FolderIcon;
+      } else {
+        return DocumentIcon;
+      }
+    }
+    return ReportsIcon; // Default fallback
+  };
 
   // Handle logout
   const handleLogout = () => {
@@ -191,13 +238,16 @@ const Sidebar: React.FC<SidebarProps> = ({
       currentPath.includes(`menu=${item.id}`) ||
       (currentPath === "/reports" && router.query.menu === item.id.toString());
 
+    const IconComponent = getMenuItemIcon(item);
+
     return (
       <div key={item.id}>
         <div
           className={`
-            flex items-center px-3 py-2 text-sm font-medium cursor-pointer rounded-lg
-            transition-all duration-200 group mb-1
-            ${level > 0 ? "ml-4" : ""}
+            flex items-center text-sm font-medium cursor-pointer rounded-lg
+            transition-all duration-200 group mb-1 relative
+            ${level > 0 && !collapsed ? "ml-4" : ""}
+            ${collapsed ? "justify-center px-3 py-3" : "px-3 py-2"}
             ${
               isActive
                 ? "bg-blue-600 text-white shadow-lg"
@@ -211,16 +261,29 @@ const Sidebar: React.FC<SidebarProps> = ({
               handleReportClick(item);
             }
           }}
+          title={collapsed ? item.name : undefined}
         >
-          <div className="flex-shrink-0 mr-3">
-            <ReportsIcon />
+          <div className={`flex-shrink-0 ${!collapsed ? "mr-3" : ""}`}>
+            <IconComponent />
           </div>
 
           {!collapsed && (
             <>
-              <span className="flex-1">{item.name}</span>
-              {hasChildren && <ChevronIcon expanded={isExpanded} />}
+              <span className="flex-1 truncate">{item.name}</span>
+              {hasChildren && (
+                <div className="ml-2">
+                  <ChevronIcon expanded={isExpanded} />
+                </div>
+              )}
             </>
+          )}
+
+          {/* Tooltip for collapsed state */}
+          {collapsed && (
+            <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+              {item.name}
+              <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+            </div>
           )}
         </div>
 
@@ -236,10 +299,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div
-      className={`${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col transition-all duration-300 shadow-xl`}
+      className={`${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col transition-all duration-300 shadow-xl overflow-x-hidden`}
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-700">
+      <div className="p-4 border-b border-gray-700 overflow-hidden">
         <div className="flex items-center justify-between">
           {!collapsed && (
             <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
@@ -270,7 +333,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
         {/* Fixed Navigation Items */}
         {navigationItems.map((item) => {
           const isActive = currentPath === item.path;
@@ -278,14 +341,25 @@ const Sidebar: React.FC<SidebarProps> = ({
           return (
             <Link key={item.path} href={item.path}>
               <div
-                className={`flex items-center space-x-3 px-3 py-3 rounded-lg transition-all duration-200 cursor-pointer ${
+                className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group ${
+                  collapsed ? "justify-center px-3 py-3" : "space-x-3 px-3 py-3"
+                } ${
                   isActive
                     ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
                     : "hover:bg-gray-700"
                 }`}
+                title={collapsed ? item.name : undefined}
               >
                 <IconComponent />
                 {!collapsed && <span className="font-medium">{item.name}</span>}
+                
+                {/* Tooltip for collapsed state */}
+                {collapsed && (
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                    {item.name}
+                    <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+                  </div>
+                )}
               </div>
             </Link>
           );
@@ -328,13 +402,21 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Logout Button */}
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 ${
+            className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 relative group ${
               collapsed ? "justify-center" : "space-x-3"
             }`}
-            title="Logout"
+            title={collapsed ? "Logout" : undefined}
           >
             <LogoutIcon />
             {!collapsed && <span>Logout</span>}
+            
+            {/* Tooltip for collapsed state */}
+            {collapsed && (
+              <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                Logout
+                <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+              </div>
+            )}
           </button>
         </div>
 
