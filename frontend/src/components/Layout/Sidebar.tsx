@@ -5,19 +5,37 @@ import { MenuItem, User as UserType } from "../../types";
 import apiClient from "../../lib/api";
 
 interface SidebarProps {
+  /**
+   * Hierarchical list of menu items returned from the backend.
+   */
   menuItems: MenuItem[];
+  /**
+   * Current pathname (used for active link highlighting).
+   */
   currentPath: string;
-  onMenuClick: (item: MenuItem) => void;
-  collapsed?: boolean;
+  /**
+   * Optional callback invoked whenever the hamburger / chevron icon is
+   * clicked to collapse or expand the sidebar.
+   */
   onToggleCollapse?: () => void;
+  /**
+   * Optional external click-handler. If provided, this will be used when a
+   * menu item without children is clicked. This allows parent components
+   * (e.g. pages) to decide the navigation behaviour themselves.
+   */
+  onMenuClick?: (item: MenuItem) => void;
+  /**
+   * Whether the sidebar is currently collapsed (small width).
+   */
+  collapsed?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
   menuItems,
   currentPath,
-  onMenuClick,
   collapsed = false,
   onToggleCollapse,
+  onMenuClick,
 }) => {
   const router = useRouter();
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
@@ -223,7 +241,12 @@ const Sidebar: React.FC<SidebarProps> = ({
     setExpandedItems(newExpanded);
   };
 
-  const handleReportClick = (item: MenuItem) => {
+  /**
+   * Default navigation handler if the caller did **not** supply an
+   * `onMenuClick` prop (for backward compatibility). Falls back to the
+   * original behaviour that was hard-coded in this component.
+   */
+  const defaultMenuClick = (item: MenuItem) => {
     if (item.type === "dashboard") {
       router.push("/dashboard");
     } else if (item.type === "report") {
@@ -258,7 +281,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             if (hasChildren) {
               toggleExpanded(item.id);
             } else {
-              handleReportClick(item);
+              // Prefer external handler if present so pages can decide
+              // custom navigation; otherwise fall back to default logic.
+              (onMenuClick ?? defaultMenuClick)(item);
             }
           }}
           title={collapsed ? item.name : undefined}

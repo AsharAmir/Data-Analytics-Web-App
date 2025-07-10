@@ -506,6 +506,11 @@ class QueryService:
             logger.error(f"Error getting query by ID: {e}")
             return None
 
+    @staticmethod
+    def get_queries_by_menu(menu_item_id: int) -> List[Query]:
+        """Alias for get_queries_by_menu_item to maintain backward compatibility with routers."""
+        return QueryService.get_queries_by_menu_item(menu_item_id)
+
 
 class DashboardService:
     """Service for managing dashboard widgets"""

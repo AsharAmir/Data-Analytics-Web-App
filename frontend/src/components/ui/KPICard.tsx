@@ -5,7 +5,7 @@ interface KPICardProps {
   value: string | number;
   change?: {
     value: number;
-    type: 'increase' | 'decrease';
+    type: 'increase' | 'decrease' | 'neutral';
     period: string;
   };
   icon?: React.ReactNode;
@@ -113,9 +113,19 @@ const KPICard: React.FC<KPICardProps> = ({
       {change && (
         <div className="flex items-center">
           <div className={`flex items-center ${
-            change.type === 'increase' ? 'text-green-600' : 'text-red-600'
+            change.type === 'increase' 
+              ? 'text-green-600' 
+              : change.type === 'decrease' 
+                ? 'text-red-600' 
+                : 'text-gray-600'
           }`}>
-            {change.type === 'increase' ? <ArrowUpIcon /> : <ArrowDownIcon />}
+            {change.type === 'increase' && <ArrowUpIcon />}
+            {change.type === 'decrease' && <ArrowDownIcon />}
+            {change.type === 'neutral' && (
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+              </svg>
+            )}
             <span className="text-sm font-medium ml-1">
               {Math.abs(change.value)}%
             </span>

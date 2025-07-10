@@ -69,7 +69,7 @@ const DataTable: React.FC<DataTableProps> = ({
   const startIndex = (currentPage - 1) * pageSize;
   const paginatedData = filteredData.slice(startIndex, startIndex + pageSize);
 
-  const handleSort = (column: string, index: number) => {
+  const handleSort = (column: string) => {
     const newDirection =
       sortColumn === column && sortDirection === "ASC" ? "DESC" : "ASC";
     setSortColumn(column);
@@ -234,7 +234,7 @@ const DataTable: React.FC<DataTableProps> = ({
                   <th
                     key={index}
                     className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors border-b border-gray-200"
-                    onClick={() => handleSort(column, index)}
+                    onClick={() => handleSort(column)}
                   >
                     <div className="flex items-center space-x-1 min-w-0">
                       <span className="truncate" title={column}>

@@ -13,6 +13,19 @@ import {
   QueryResult 
 } from '../../types';
 
+interface Kpi {
+  id: string;
+  title: string;
+  value: string;
+  change: {
+    value: number;
+    type: 'neutral' | 'increase' | 'decrease';
+    period: string;
+  };
+  icon: React.ReactNode;
+  color: 'green' | 'blue' | 'purple' | 'indigo';
+}
+
 const Dashboard: React.FC = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -116,17 +129,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleMenuClick = (item: MenuItem) => {
-    if (item.type === 'dashboard') {
-      window.scrollTo(0, 0);
-    } else if (item.type === 'report') {
-      router.push(`/reports?menu=${item.id}`);
-    }
-  };
 
   // Calculate KPIs from actual widget data
   const calculateKPIs = () => {
-    const kpis: any[] = [];
+    const kpis: Kpi[] = [];
     
     // Get metrics from actual widget data
     const widgetDataValues = Object.values(widgetData);
@@ -230,7 +236,7 @@ const Dashboard: React.FC = () => {
       return (
         <ChartComponent
           data={data.data as ChartData}
-          type={data.chart_type as any}
+          type={data.chart_type as 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'bubble' | 'polarArea' | 'radar' | 'area'}
           config={data.chart_config}
           title={widget.title}
           description={`Executed in ${(data.execution_time! * 1000).toFixed(2)}ms`}
@@ -312,7 +318,6 @@ const Dashboard: React.FC = () => {
       <Sidebar
         menuItems={menuItems}
         currentPath="/dashboard"
-        onMenuClick={handleMenuClick}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
@@ -364,7 +369,7 @@ const Dashboard: React.FC = () => {
                   ].map(({ key, label, icon: Icon }) => (
                     <button
                       key={key}
-                      onClick={() => setSelectedView(key as any)}
+                      onClick={() => setSelectedView(key as 'overview' | 'charts' | 'tables')}
                       className={`px-3 py-1.5 rounded-md flex items-center space-x-1.5 transition-all duration-200 text-xs font-medium ${
                         selectedView === key
                           ? 'bg-white text-blue-600 shadow-sm'

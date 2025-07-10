@@ -12,7 +12,8 @@ import {
   FilteredQueryRequest,
   ExportRequest,
   APIResponse,
-  Query
+  Query,
+  QueryFormData
 } from '../types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -127,7 +128,7 @@ class ApiClient {
       this.setUser(user);
       
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -137,7 +138,7 @@ class ApiClient {
       const response: AxiosResponse<User> = await this.client.get('/auth/me');
       this.setUser(response.data);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -146,7 +147,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<APIResponse<{ auth_mode: string }>> = await this.client.get('/auth/mode');
       return response.data.data?.auth_mode || 'form';
-    } catch (error) {
+    } catch (error: unknown) {
       return 'form';
     }
   }
@@ -161,7 +162,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<APIResponse> = await this.client.get('/health');
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -171,7 +172,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<MenuItem[]> = await this.client.get('/api/menu');
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -181,7 +182,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<DashboardWidget[]> = await this.client.get('/api/dashboard');
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -190,7 +191,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<QueryResult> = await this.client.post(`/api/dashboard/widget/${widgetId}/data`);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -200,7 +201,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<QueryResult> = await this.client.post('/api/query/execute', request);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -209,7 +210,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<QueryResult> = await this.client.post('/api/query/filtered', request);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -221,7 +222,7 @@ class ApiClient {
         responseType: 'blob',
       });
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -231,7 +232,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<APIResponse<Query[]>> = await this.client.get(`/api/reports/menu/${menuItemId}`);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -241,13 +242,13 @@ class ApiClient {
     try {
       const response: AxiosResponse<APIResponse<Query>> = await this.client.get(`/api/query/${queryId}`);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
 
   // Generic methods for custom requests
-  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     try {
       const response: AxiosResponse<T> = await this.client.get(url, config);
       return response.data;
@@ -256,7 +257,7 @@ class ApiClient {
     }
   }
 
-  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     try {
       const response: AxiosResponse<T> = await this.client.post(url, data, config);
       return response.data;
@@ -265,16 +266,16 @@ class ApiClient {
     }
   }
 
-  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     try {
       const response: AxiosResponse<T> = await this.client.put(url, data, config);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
 
-  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
     try {
       const response: AxiosResponse<T> = await this.client.delete(url, config);
       return response.data;
@@ -303,7 +304,7 @@ class ApiClient {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -313,7 +314,7 @@ class ApiClient {
     try {
       const response = await this.client.put(`/api/admin/user/${userId}`, data);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -322,7 +323,7 @@ class ApiClient {
     try {
       const response = await this.client.delete(`/api/admin/user/${userId}`);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -331,7 +332,7 @@ class ApiClient {
     try {
       const response = await this.client.delete(`/api/admin/query/${queryId}`);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       throw error;
     }
   }
@@ -364,6 +365,10 @@ export const {
   deleteQuery
 } = apiClient;
 
-export async function createQuery(data: any) {
-  return (await apiClient.post("/api/admin/query", { ...data, role: data.role || "user" })).data;
-} 
+export async function createQuery(data: QueryFormData & { role?: string[] }) {
+  const response = await apiClient.post<APIResponse<Query>>("/api/admin/query", { ...data, role: data.role || ["user"] });
+  if (response.success && response.data) {
+    return response.data;
+  }
+  throw new Error(response.message || 'Failed to create query');
+}

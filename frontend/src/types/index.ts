@@ -46,7 +46,7 @@ export interface Query {
   description?: string;
   sql_query: string;
   chart_type?: string;
-  chart_config?: Record<string, any>;
+  chart_config?: Record<string, unknown>;
   menu_item_id?: number;
   is_active: boolean;
   created_at: string;
@@ -78,14 +78,14 @@ export interface ChartConfig {
   responsive?: boolean;
   maintainAspectRatio?: boolean;
   indexAxis?: 'x' | 'y';
-  scales?: Record<string, any>;
-  plugins?: Record<string, any>;
+  scales?: Record<string, unknown>;
+  plugins?: Record<string, unknown>;
 }
 
 // Table Types
 export interface TableData {
   columns: string[];
-  data: any[][];
+  data: (string | number | null)[][];
   total_count: number;
 }
 
@@ -94,12 +94,12 @@ export interface QueryResult {
   success: boolean;
   data?: ChartData | TableData;
   chart_type?: string;
-  chart_config?: Record<string, any>;
+  chart_config?: Record<string, unknown>;
   error?: string;
   execution_time?: number;
 }
 
-export interface APIResponse<T = any> {
+export interface APIResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
@@ -190,7 +190,7 @@ export interface QueryFormData {
   description?: string;
   sql_query: string;
   chart_type?: string;
-  chart_config?: Record<string, any>;
+  chart_config?: Record<string, unknown>;
   menu_item_id?: number;
 }
 
@@ -229,7 +229,7 @@ export interface PaginatedResponse<T> {
 export interface ErrorInfo {
   message: string;
   code?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 // Theme Types
@@ -271,5 +271,5 @@ export interface WidgetConfig {
   custom_query?: string;
   chart_type?: string;
   refresh_interval?: number; // in seconds
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 } 

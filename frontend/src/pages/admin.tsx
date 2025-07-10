@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/router";
 import { toast } from "react-hot-toast";
 import {
   PlusIcon,
@@ -12,7 +11,11 @@ import {
 } from "@heroicons/react/24/outline";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
-import { MenuItem, User as UserType, UserRole } from "../types";
+import { MenuItem, UserRole } from "../types";
+import QueryFormModal from "../components/Admin/QueryFormModal";
+import UserFormModal from "../components/Admin/UserFormModal";
+import MenuFormModal from "../components/Admin/MenuFormModal";
+import WidgetsSection from "../components/Admin/WidgetsSection";
 
 interface Query {
   id: number;
@@ -54,7 +57,6 @@ const roleDisplayNames: Record<UserRole, string> = {
 };
 
 const AdminPage: React.FC = () => {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"widgets" | "queries" | "users" | "menus">(
     "widgets"
   );
@@ -104,6 +106,19 @@ const AdminPage: React.FC = () => {
     sort_order: 0,
   });
 
+  const flattenMenuItems = (items: MenuItem[]): MenuItem[] => {
+    const flat: MenuItem[] = [];
+    items.forEach((item) => {
+      flat.push(item);
+      if (item.children && item.children.length > 0) {
+        flat.push(...flattenMenuItems(item.children));
+      }
+    });
+    return flat;
+  };
+  // Pre-compute a flattened view for easy rendering in the table
+  const allMenuItems = flattenMenuItems(menuItems);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -112,17 +127,17 @@ const AdminPage: React.FC = () => {
     setLoading(true);
     try {
       const [queriesRes, widgetsRes, menuRes, usersRes] = await Promise.all([
-        apiClient.get("/api/admin/queries"),
-        apiClient.get("/api/admin/dashboard/widgets"),
-        apiClient.get("/api/menu"),
-        apiClient.get("/api/admin/users"),
+        apiClient.get<{ data?: Query[] } | Query[]>("/api/admin/queries"),
+        apiClient.get<{ data?: Widget[] } | Widget[]>("/api/admin/dashboard/widgets"),
+        apiClient.get<{ data?: MenuItem[] } | MenuItem[]>("/api/menu"),
+        apiClient.get<{ data?: AdminUser[] } | AdminUser[]>("/api/admin/users"),
       ]);
 
       // Endpoints return different shapes; normalize here
-      setQueries((queriesRes as any).data ?? queriesRes ?? []);
-      setWidgets((widgetsRes as any).data ?? widgetsRes ?? []);
-      setMenuItems(menuRes ?? []);
-      setUsers((usersRes as any).data ?? usersRes ?? []);
+      setQueries((queriesRes as { data?: Query[] }).data ?? (queriesRes as Query[]) ?? []);
+      setWidgets((widgetsRes as { data?: Widget[] }).data ?? (widgetsRes as Widget[]) ?? []);
+      setMenuItems((menuRes as { data?: MenuItem[] }).data ?? (menuRes as MenuItem[]) ?? []);
+      setUsers((usersRes as { data?: AdminUser[] }).data ?? (usersRes as AdminUser[]) ?? []);
     } catch (error) {
       toast.error("Failed to load admin data");
       console.error(error);
@@ -146,8 +161,11 @@ const AdminPage: React.FC = () => {
         role: [],
       });
       loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Failed to create query");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+        : "Failed to create query";
+      toast.error(errorMessage || "Failed to create query");
     }
   };
 
@@ -165,8 +183,11 @@ const AdminPage: React.FC = () => {
         height: 4,
       });
       loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Failed to create widget");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+        : "Failed to create widget";
+      toast.error(errorMessage || "Failed to create widget");
     }
   };
 
@@ -177,18 +198,14 @@ const AdminPage: React.FC = () => {
       await apiClient.delete(`/api/admin/dashboard/widget/${widgetId}`);
       toast.success("Widget deleted successfully!");
       loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Failed to delete widget");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+        : "Failed to delete widget";
+      toast.error(errorMessage || "Failed to delete widget");
     }
   };
 
-  const handleMenuClick = (item: MenuItem) => {
-    if (item.type === "dashboard") {
-      router.push("/dashboard");
-    } else {
-      router.push(`/report/${item.id}`);
-    }
-  };
 
   const createOrUpdateMenu = async () => {
     try {
@@ -203,8 +220,11 @@ const AdminPage: React.FC = () => {
       setEditingMenuId(null);
       setMenuForm({ name: "", type: "dashboard", icon: "", parent_id: null, sort_order: 0 });
       loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Failed to save menu");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+        : "Failed to save menu";
+      toast.error(errorMessage || "Failed to save menu");
     }
   };
 
@@ -214,8 +234,11 @@ const AdminPage: React.FC = () => {
       await apiClient.delete(`/api/admin/menu/${menuId}`);
       toast.success("Menu deleted successfully!");
       loadData();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Failed to delete menu");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+        : "Failed to delete menu";
+      toast.error(errorMessage || "Failed to delete menu");
     }
   };
 
@@ -224,7 +247,6 @@ const AdminPage: React.FC = () => {
       <Sidebar
         menuItems={menuItems}
         currentPath="/admin"
-        onMenuClick={handleMenuClick}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
@@ -308,170 +330,18 @@ const AdminPage: React.FC = () => {
 
           {/* Widgets Tab */}
           {activeTab === "widgets" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Dashboard Widgets
-                </h2>
-                <button
-                  onClick={() => setShowWidgetForm(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Create Widget
-                </button>
-              </div>
-
-              {/* Widgets Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {widgets.map((widget) => (
-                  <div
-                    key={widget.id}
-                    className="bg-white rounded-lg shadow p-6"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {widget.title}
-                      </h3>
-                      <button
-                        onClick={() => deleteWidget(widget.id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <p>
-                        <strong>Query:</strong> {widget.query_name}
-                      </p>
-                      <p>
-                        <strong>Chart Type:</strong> {widget.chart_type}
-                      </p>
-                      <p>
-                        <strong>Position:</strong> ({widget.position_x},{" "}
-                        {widget.position_y})
-                      </p>
-                      <p>
-                        <strong>Size:</strong> {widget.width} × {widget.height}
-                      </p>
-                      <p>
-                        <strong>Created:</strong>{" "}
-                        {new Date(widget.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Widget Form Modal */}
-              {showWidgetForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 w-full max-w-md">
-                    <h3 className="text-lg font-medium mb-4">
-                      Create Dashboard Widget
-                    </h3>
-                    <div className="space-y-4">
-                      <input
-                        type="text"
-                        placeholder="Widget Title"
-                        value={widgetForm.title}
-                        onChange={(e) =>
-                          setWidgetForm({
-                            ...widgetForm,
-                            title: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                      <select
-                        value={widgetForm.query_id || ""}
-                        onChange={(e) =>
-                          setWidgetForm({
-                            ...widgetForm,
-                            query_id: parseInt(e.target.value),
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      >
-                        <option value="">Select Query</option>
-                        {queries.map((query) => (
-                          <option key={query.id} value={query.id}>
-                            {query.name} ({query.chart_type})
-                          </option>
-                        ))}
-                      </select>
-                      {/* Size preset */}
-                      <select
-                        value={`${widgetForm.width}x${widgetForm.height}`}
-                        onChange={(e) => {
-                          const [w, h] = e.target.value.split("x").map(Number);
-                          setWidgetForm({ ...widgetForm, width: w, height: h });
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      >
-                        <option value="4x3">Small (4 × 3)</option>
-                        <option value="6x4">Medium (6 × 4)</option>
-                        <option value="12x6">Large (12 × 6)</option>
-                      </select>
-
-                      {/* Advanced positioning toggle */}
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvanced(!showAdvanced)}
-                        className="text-sm text-blue-600 hover:underline"
-                      >
-                        {showAdvanced ? "Hide" : "Show"} advanced options
-                      </button>
-
-                      {showAdvanced && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <input
-                            type="number"
-                            placeholder="Column (0 = leftmost)"
-                            value={widgetForm.position_x ?? ""}
-                            onChange={(e) =>
-                              setWidgetForm({
-                                ...widgetForm,
-                                position_x: e.target.value === "" ? undefined : parseInt(e.target.value),
-                              })
-                            }
-                            className="px-3 py-2 border border-gray-300 rounded-lg"
-                            min={0}
-                          />
-                          <input
-                            type="number"
-                            placeholder="Row (0 = top)"
-                            value={widgetForm.position_y ?? ""}
-                            onChange={(e) =>
-                              setWidgetForm({
-                                ...widgetForm,
-                                position_y: e.target.value === "" ? undefined : parseInt(e.target.value),
-                              })
-                            }
-                            className="px-3 py-2 border border-gray-300 rounded-lg"
-                            min={0}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex justify-end space-x-3 mt-6">
-                      <button
-                        onClick={() => setShowWidgetForm(false)}
-                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={createWidget}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                      >
-                        Create Widget
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <WidgetsSection
+              widgets={widgets}
+              queries={queries}
+              showWidgetForm={showWidgetForm}
+              setShowWidgetForm={setShowWidgetForm}
+              widgetForm={widgetForm}
+              setWidgetForm={setWidgetForm}
+              showAdvanced={showAdvanced}
+              setShowAdvanced={setShowAdvanced}
+              createWidget={createWidget}
+              deleteWidget={deleteWidget}
+            />
           )}
 
           {/* Queries Tab */}
@@ -557,8 +427,11 @@ const AdminPage: React.FC = () => {
                                 await apiClient.deleteQuery(query.id);
                                 toast.success("Query deleted");
                                 loadData();
-                              } catch (error: any) {
-                                toast.error(error.response?.data?.detail || "Failed to delete query");
+                              } catch (error: unknown) {
+                                const errorMessage = error instanceof Error && 'response' in error 
+                                  ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+                                  : "Failed to delete query";
+                                toast.error(errorMessage || "Failed to delete query");
                               }
                             }}
                             className="text-red-600 hover:text-red-800"
@@ -574,120 +447,14 @@ const AdminPage: React.FC = () => {
 
               {/* Query Form Modal */}
               {showQueryForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 className="text-lg font-medium mb-4">
-                      Create New Query
-                    </h3>
-                    <div className="space-y-4">
-                      <input
-                        type="text"
-                        placeholder="Query Name"
-                        value={queryForm.name}
-                        onChange={(e) =>
-                          setQueryForm({ ...queryForm, name: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                      <textarea
-                        placeholder="Description (optional)"
-                        value={queryForm.description}
-                        onChange={(e) =>
-                          setQueryForm({
-                            ...queryForm,
-                            description: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        rows={2}
-                      />
-                      <textarea
-                        placeholder="SQL Query (SELECT statements only)"
-                        value={queryForm.sql_query}
-                        onChange={(e) =>
-                          setQueryForm({
-                            ...queryForm,
-                            sql_query: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono"
-                        rows={6}
-                      />
-                      <div className="grid grid-cols-2 gap-4">
-                        <select
-                          value={queryForm.chart_type}
-                          onChange={(e) =>
-                            setQueryForm({
-                              ...queryForm,
-                              chart_type: e.target.value,
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="bar">Bar Chart</option>
-                          <option value="line">Line Chart</option>
-                          <option value="pie">Pie Chart</option>
-                          <option value="doughnut">Doughnut Chart</option>
-                          <option value="table">Table</option>
-                        </select>
-                        <select
-                          value={queryForm.menu_item_id || ""}
-                          onChange={(e) =>
-                            setQueryForm({
-                              ...queryForm,
-                              menu_item_id: parseInt(e.target.value) || null,
-                            })
-                          }
-                          className="px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="">No Menu</option>
-                          {menuItems.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Roles</label>
-                        <div className="p-3 border border-gray-300 rounded-lg space-y-2 max-h-40 overflow-y-auto bg-gray-50">
-                          {Object.values(UserRole).map((role) => (
-                            <label key={role} className="flex items-center space-x-3 cursor-pointer hover:bg-gray-100 p-1 rounded">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                checked={queryForm.role.includes(role)}
-                                onChange={() => {
-                                  setQueryForm((prevForm) => {
-                                    const newRoles = prevForm.role.includes(role)
-                                      ? prevForm.role.filter((r) => r !== role)
-                                      : [...prevForm.role, role];
-                                    return { ...prevForm, role: newRoles };
-                                  });
-                                }}
-                              />
-                              <span className="text-gray-800 text-sm">{roleDisplayNames[role]}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex justify-end space-x-3 mt-6">
-                      <button
-                        onClick={() => setShowQueryForm(false)}
-                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={createQuery}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                      >
-                        Create Query
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <QueryFormModal
+                  visible={showQueryForm}
+                  onClose={() => setShowQueryForm(false)}
+                  onCreate={createQuery}
+                  queryForm={queryForm}
+                  setQueryForm={setQueryForm}
+                  menuItems={menuItems}
+                />
               )}
             </div>
           )}
@@ -791,8 +558,11 @@ const AdminPage: React.FC = () => {
                                 await apiClient.deleteUser(user.id);
                                 toast.success("User deleted");
                                 loadData();
-                              } catch (error: any) {
-                                toast.error(error.response?.data?.detail || "Failed to delete user");
+                              } catch (error: unknown) {
+                                const errorMessage = error instanceof Error && 'response' in error 
+                                  ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+                                  : "Failed to delete user";
+                                toast.error(errorMessage || "Failed to delete user");
                               }
                             }}
                             className="text-red-600 hover:text-red-800"
@@ -809,97 +579,40 @@ const AdminPage: React.FC = () => {
 
               {/* User Form Modal */}
               {showUserForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 className="text-lg font-medium mb-4">
-                      {editingUserId ? "Edit User" : "Create New User"}
-                    </h3>
-                    <div className="space-y-4">
-                      <input
-                        type="text"
-                        placeholder="Username"
-                        value={userForm.username}
-                        onChange={(e) =>
-                          setUserForm({ ...userForm, username: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                      <input
-                        type="email"
-                        placeholder="Email"
-                        value={userForm.email}
-                        onChange={(e) =>
-                          setUserForm({ ...userForm, email: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                      <input
-                        type="password"
-                        placeholder="Password"
-                        value={userForm.password}
-                        onChange={(e) =>
-                          setUserForm({ ...userForm, password: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                      <select
-                        value={userForm.role}
-                        onChange={(e) =>
-                          setUserForm({
-                            ...userForm,
-                            role: e.target.value as UserRole,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      >
-                        {Object.values(UserRole).map((role) => (
-                          <option key={role} value={role}>
-                            {roleDisplayNames[role]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex justify-end space-x-3 mt-6">
-                      <button
-                        onClick={() => {
-                          setShowUserForm(false);
-                          setEditingUserId(null);
-                          setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
-                        }}
-                        className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            setLoading(true);
-                            if (editingUserId) {
-                              await apiClient.updateUser(editingUserId, userForm);
-                              toast.success("User updated successfully");
-                            } else {
-                              await apiClient.post("/api/admin/user", userForm);
-                              toast.success("User created successfully");
-                            }
-                            setShowUserForm(false);
-                            setEditingUserId(null);
-                            setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
-                            loadData();
-                          } catch (error: any) {
-                            toast.error(
-                              error.response?.data?.detail || "Operation failed"
-                            );
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                      >
-                        {editingUserId ? "Update User" : "Create User"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <UserFormModal
+                  visible={showUserForm}
+                  editing={editingUserId !== null}
+                  userForm={userForm}
+                  setUserForm={setUserForm}
+                  onSubmit={async () => {
+                    try {
+                      setLoading(true);
+                      if (editingUserId) {
+                        await apiClient.updateUser(editingUserId, userForm);
+                        toast.success("User updated successfully");
+                      } else {
+                        await apiClient.post("/api/admin/user", userForm);
+                        toast.success("User created successfully");
+                      }
+                      setShowUserForm(false);
+                      setEditingUserId(null);
+                      setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
+                      loadData();
+                    } catch (error: unknown) {
+                      const errorMessage = error instanceof Error && 'response' in error 
+                        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail 
+                        : "Operation failed";
+                      toast.error(errorMessage || "Operation failed");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  onClose={() => {
+                    setShowUserForm(false);
+                    setEditingUserId(null);
+                    setUserForm({ username: "", email: "", password: "", role: UserRole.USER });
+                  }}
+                />
               )}
             </div>
           )}
@@ -935,7 +648,7 @@ const AdminPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {menuItems.map((menu) => (
+                    {allMenuItems.map((menu) => (
                       <tr key={menu.id}>
                         <td className="px-6 py-3 whitespace-nowrap">{menu.name}</td>
                         <td className="px-6 py-3 whitespace-nowrap">{menu.type}</td>
@@ -971,89 +684,15 @@ const AdminPage: React.FC = () => {
 
               {/* Menu Form Modal */}
               {showMenuForm && (
-                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-xl shadow-lg max-w-lg w-full">
-                    <div className="px-6 py-4 border-b flex justify-between items-center">
-                      <h3 className="text-lg font-semibold">
-                        {editingMenuId ? "Edit Menu" : "Add Menu"}
-                      </h3>
-                      <button onClick={() => setShowMenuForm(false)} className="text-gray-500 hover:text-gray-700">
-                        ✕
-                      </button>
-                    </div>
-                    <div className="p-6 space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                        <input
-                          type="text"
-                          value={menuForm.name}
-                          onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                        <select
-                          value={menuForm.type}
-                          onChange={(e) => setMenuForm({ ...menuForm, type: e.target.value as any })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="dashboard">Dashboard</option>
-                          <option value="report">Report</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Icon (optional)</label>
-                        <input
-                          type="text"
-                          value={menuForm.icon}
-                          onChange={(e) => setMenuForm({ ...menuForm, icon: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Parent Menu (optional)</label>
-                        <select
-                          value={menuForm.parent_id ?? ""}
-                          onChange={(e) =>
-                            setMenuForm({ ...menuForm, parent_id: e.target.value ? parseInt(e.target.value) : null })
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        >
-                          <option value="">None</option>
-                          {menuItems.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-                        <input
-                          type="number"
-                          value={menuForm.sort_order}
-                          onChange={(e) => setMenuForm({ ...menuForm, sort_order: parseInt(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        />
-                      </div>
-                    </div>
-                    <div className="px-6 py-4 bg-gray-50 rounded-b-xl flex justify-end space-x-3">
-                      <button
-                        onClick={() => setShowMenuForm(false)}
-                        className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={createOrUpdateMenu}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg"
-                      >
-                        {editingMenuId ? "Update" : "Create"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <MenuFormModal
+                  visible={showMenuForm}
+                  editing={editingMenuId !== null}
+                  menuForm={menuForm}
+                  setMenuForm={setMenuForm}
+                  menuItems={menuItems}
+                  onSubmit={createOrUpdateMenu}
+                  onClose={() => setShowMenuForm(false)}
+                />
               )}
             </div>
           )}

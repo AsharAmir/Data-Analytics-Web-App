@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import apiClient from "../lib/api";
+import axios from "axios";
 import { LoginFormData } from "../types";
 
 const LoginPage: React.FC = () => {

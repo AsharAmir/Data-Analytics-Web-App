@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from models import User, UserCreate, UserLogin
@@ -13,18 +13,15 @@ import os
 logger = logging.getLogger(__name__)
 
 # Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a plain password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def get_password_hash(password: str) -> str:
-    """Hash a password"""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -159,7 +156,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
         return None
 
 
-def create_user(user_create: UserCreate, role: str = "user") -> Optional[User]:
+def create_user(user_create: UserCreate, role: Any = "user") -> Optional[User]:
     """Create new user with specified role"""
     try:
         # Check if user already exists
@@ -174,6 +171,10 @@ def create_user(user_create: UserCreate, role: str = "user") -> Optional[User]:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered",
             )
+
+        if not isinstance(role, str):  # covers Enum and any other object type
+            # Use `.value` for Enum, fallback to `str()` for anything else.
+            role = getattr(role, "value", str(role))
 
         # Hash password
         hashed_password = get_password_hash(user_create.password)
@@ -229,14 +230,9 @@ def create_user(user_create: UserCreate, role: str = "user") -> Optional[User]:
         # Get created user
         return get_user_by_username(user_create.username)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        # Handle Oracle unique constraint violation (username/email already exists)
-        if "ORA-00001" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username or email already exists",
-            )
-
         logger.error(f"Error creating user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
