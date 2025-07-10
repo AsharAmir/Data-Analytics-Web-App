@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import apiClient from '../../lib/api';
-import Sidebar from '../Layout/Sidebar';
-import KPICard from '../ui/KPICard';
-import ChartComponent from '../Charts/ChartComponent';
-import DataTable from '../ui/DataTable';
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/router";
+import apiClient from "../../lib/api";
+import Sidebar from "../Layout/Sidebar";
+import KPICard from "../ui/KPICard";
+import ChartComponent from "../Charts/ChartComponent";
+import DataTable from "../ui/DataTable";
 
-import { 
-  DashboardWidget, 
-  MenuItem, 
-  ChartData, 
+import {
+  DashboardWidget,
+  MenuItem,
+  ChartData,
   TableData,
-  QueryResult
-} from '../../types';
+  QueryResult,
+} from "../../types";
 
 interface Kpi {
   id: string;
@@ -20,21 +20,31 @@ interface Kpi {
   value: string;
   change: {
     value: number;
-    type: 'neutral' | 'increase' | 'decrease';
+    type: "neutral" | "increase" | "decrease";
     period: string;
   };
   icon: React.ReactNode;
-  color: 'green' | 'blue' | 'purple' | 'indigo';
+  color: "green" | "blue" | "purple" | "indigo";
+}
+
+interface BackendKPI {
+  id: number;
+  label: string;
+  value: number | string;
 }
 
 const Dashboard: React.FC = () => {
   const router = useRouter();
+  const { menu } = router.query;
   const [loading, setLoading] = useState(true);
   const [widgets, setWidgets] = useState<DashboardWidget[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [widgetData, setWidgetData] = useState<Record<number, QueryResult>>({});
+  const [currentMenuName, setCurrentMenuName] =
+    useState<string>("Default Dashboard");
+  const [backendKpis, setBackendKpis] = useState<BackendKPI[]>([]);
   /*
     Users can choose which widget should power the main summary metric KPI card.
     We no longer depend on a dedicated KPI API/table – instead we calculate the
@@ -43,8 +53,12 @@ const Dashboard: React.FC = () => {
     reloads.
   */
   const [summaryWidgetId, setSummaryWidgetId] = useState<number | null>(null);
-  const [selectedView, setSelectedView] = useState<'overview' | 'charts' | 'tables'>('overview');
-  const [widgetsLoading, setWidgetsLoading] = useState<Record<number, boolean>>({});
+  const [selectedView, setSelectedView] = useState<
+    "overview" | "charts" | "tables"
+  >("overview");
+  const [widgetsLoading, setWidgetsLoading] = useState<Record<number, boolean>>(
+    {},
+  );
 
   // KPI customization state
   const [kpiPrefs, setKpiPrefs] = useState<Record<string, boolean>>({
@@ -62,97 +76,178 @@ const Dashboard: React.FC = () => {
 
   const [showLayoutDropdown, setShowLayoutDropdown] = useState(false);
 
-
-
-
-
   // Icon components
   const CurrencyIcon = () => (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+    <svg
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
+      />
     </svg>
   );
 
   const UsersIcon = () => (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+    <svg
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
+      />
     </svg>
   );
 
   const TrendingIcon = () => (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    <svg
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+      />
     </svg>
   );
 
   const ClockIcon = () => (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <svg
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
     </svg>
   );
 
   const ChartIcon = () => (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+      />
     </svg>
   );
 
   const EyeIcon = () => (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+      />
     </svg>
   );
 
   // Check if cached data is still valid
   // Load widget data without caching
   const loadWidgetData = React.useCallback(async (widgetId: number) => {
-    setWidgetsLoading(prev => ({ ...prev, [widgetId]: true }));
-    
+    setWidgetsLoading((prev) => ({ ...prev, [widgetId]: true }));
+
     try {
       const data = await apiClient.getWidgetData(widgetId);
       if (data && data.success) {
-        setWidgetData(prev => ({ ...prev, [widgetId]: data }));
+        setWidgetData((prev) => ({ ...prev, [widgetId]: data }));
       } else {
-        console.warn(`Widget ${widgetId} returned unsuccessful response:`, data);
-        setWidgetData(prev => ({ 
-          ...prev, 
-          [widgetId]: { 
-            success: false, 
-            error: data?.error || 'Widget failed to load',
-            execution_time: 0
-          } 
+        console.warn(
+          `Widget ${widgetId} returned unsuccessful response:`,
+          data,
+        );
+        setWidgetData((prev) => ({
+          ...prev,
+          [widgetId]: {
+            success: false,
+            error: data?.error || "Widget failed to load",
+            execution_time: 0,
+          },
         }));
       }
     } catch (error) {
       console.error(`Error loading data for widget ${widgetId}:`, error);
-      setWidgetData(prev => ({ 
-        ...prev, 
-        [widgetId]: { 
-          success: false, 
-          error: 'Failed to load widget data.',
-          execution_time: 0
-        } 
+      setWidgetData((prev) => ({
+        ...prev,
+        [widgetId]: {
+          success: false,
+          error: "Failed to load widget data.",
+          execution_time: 0,
+        },
       }));
     } finally {
-      setWidgetsLoading(prev => ({ ...prev, [widgetId]: false }));
+      setWidgetsLoading((prev) => ({ ...prev, [widgetId]: false }));
     }
   }, []);
 
-  const loadDashboardData = React.useCallback(async (_forceRefresh = false) => {
+  const loadDashboardData = React.useCallback(async () => {
     setLoading(true);
     try {
-      // Load layout and menu first (fast operations)
-      const [menuResponse, widgetsResponse] = await Promise.all([
+      // Parse menu ID from query parameter
+      const menuId = menu ? parseInt(menu as string, 10) : undefined;
+
+      // Load layout, menu, and KPIs first (fast operations)
+      // Fetch KPI data from the correct backend endpoint. The backend exposes KPIs at `/api/kpis` (optionally filtered by `menu_id`)
+      // rather than `/api/dashboard/kpis`. Pointing to the wrong URL resulted in a 404 error during runtime.
+      // We keep the same conditional to append the menu filter when provided.
+      const kpisUrl = menuId ? `/api/kpis?menu_id=${menuId}` : "/api/kpis";
+      const [menuResponse, widgetsResponse, kpisResponse] = await Promise.all([
         apiClient.getMenuItems(),
-        apiClient.getDashboardLayout(),
+        apiClient.getDashboardLayout(menuId),
+        apiClient.get<BackendKPI[]>(kpisUrl).catch(() => []), // Fallback to empty array if fails
       ]);
 
       setMenuItems(menuResponse);
       setWidgets(widgetsResponse);
+      setBackendKpis(kpisResponse);
+
+      // Update current menu name
+      if (menuId) {
+        const selectedMenu = menuResponse.find((item) => item.id === menuId);
+        setCurrentMenuName(selectedMenu?.name || `Dashboard #${menuId}`);
+      } else {
+        setCurrentMenuName("Default Dashboard");
+      }
       // Load summary widget preference once
-      if (summaryWidgetId === null && typeof window !== 'undefined') {
-        const stored = localStorage.getItem('dashboard.summaryWidget');
+      if (summaryWidgetId === null && typeof window !== "undefined") {
+        const stored = localStorage.getItem("dashboard.summaryWidget");
         if (stored) {
           setSummaryWidgetId(parseInt(stored, 10));
         }
@@ -172,68 +267,81 @@ const Dashboard: React.FC = () => {
         return updated;
       });
 
-
-
       // Load widget data for all widgets
       widgetsResponse.forEach((widget) => {
         loadWidgetData(widget.id);
       });
-
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      console.error("Error loading dashboard data:", error);
       setLoading(false);
     }
-  }, [summaryWidgetId, loadWidgetData]);
+  }, [menu, summaryWidgetId, loadWidgetData]);
 
   useEffect(() => {
     if (!apiClient.isAuthenticated()) {
-      router.push('/login');
+      router.push("/login");
       return;
     }
-    loadDashboardData(false);
+    loadDashboardData();
   }, [router, loadDashboardData]);
 
   // Calculate KPIs from actual widget data
   const calculateKPIs = () => {
     const kpis: Kpi[] = [];
-    
-    // 1) If user selected a specific widget as summary metric and we have its data
+
+    // 1) Add backend KPIs first (custom KPIs from admin panel)
+    backendKpis.forEach((backendKpi) => {
+      kpis.push({
+        id: `backend-kpi-${backendKpi.id}`,
+        title: backendKpi.label,
+        value:
+          typeof backendKpi.value === "number"
+            ? backendKpi.value.toLocaleString()
+            : String(backendKpi.value),
+        change: { value: 0, type: "neutral" as const, period: "custom metric" },
+        icon: <CurrencyIcon />,
+        color: "green" as const,
+      });
+    });
+
+    // 2) If user selected a specific widget as summary metric and we have its data
     if (summaryWidgetId !== null && widgetData[summaryWidgetId]) {
       const data = widgetData[summaryWidgetId];
       let total = 0;
-      if (data.chart_type && data.data && 'labels' in data.data) {
+      if (data.chart_type && data.data && "labels" in data.data) {
         const chartData = data.data as ChartData;
-        chartData.datasets.forEach(ds => {
-          ds.data.forEach(v => {
-            if (typeof v === 'number') total += v;
+        chartData.datasets.forEach((ds) => {
+          ds.data.forEach((v) => {
+            if (typeof v === "number") total += v;
           });
         });
-      } else if (data.data && 'total_count' in data.data) {
+      } else if (data.data && "total_count" in data.data) {
         const tableData = data.data as TableData;
         total = tableData.total_count || tableData.data.length;
       }
 
-      const widgetTitle = widgets.find(w => w.id === summaryWidgetId)?.title || 'Summary';
+      const widgetTitle =
+        widgets.find((w) => w.id === summaryWidgetId)?.title || "Summary";
       kpis.push({
-        id: 'summaryMetric',
+        id: "summaryMetric",
         title: widgetTitle,
         value: total.toLocaleString(),
-        change: { value: 0, type: 'neutral', period: 'current snapshot' },
+        change: { value: 0, type: "neutral", period: "current snapshot" },
         icon: <CurrencyIcon />,
-        color: 'green'
+        color: "green",
       });
     } else {
       // Legacy Total Records
       // Get metrics from actual widget data
       const widgetDataValues = Object.values(widgetData);
-      
+
       // Calculate total records from all chart widgets
       let totalRecords = 0;
       let totalCharts = 0;
       let totalTables = 0;
       let avgExecutionTime = 0;
       let executionTimeCount = 0;
-      
+
       widgetDataValues.forEach((data) => {
         if (data && data.success) {
           // Count execution times for average
@@ -241,21 +349,21 @@ const Dashboard: React.FC = () => {
             avgExecutionTime += data.execution_time;
             executionTimeCount++;
           }
-          
-          if (data.chart_type && data.data && 'labels' in data.data) {
+
+          if (data.chart_type && data.data && "labels" in data.data) {
             totalCharts++;
             // Sum up data values from chart datasets
             const chartData = data.data as ChartData;
-            chartData.datasets.forEach(dataset => {
+            chartData.datasets.forEach((dataset) => {
               if (Array.isArray(dataset.data)) {
-                dataset.data.forEach(value => {
-                  if (typeof value === 'number') {
+                dataset.data.forEach((value) => {
+                  if (typeof value === "number") {
                     totalRecords += value;
                   }
                 });
               }
             });
-          } else if (data.data && 'columns' in data.data) {
+          } else if (data.data && "columns" in data.data) {
             totalTables++;
             const tableData = data.data as TableData;
             totalRecords += tableData.total_count || tableData.data.length;
@@ -264,42 +372,58 @@ const Dashboard: React.FC = () => {
       });
 
       // Calculate average execution time
-      avgExecutionTime = executionTimeCount > 0 ? avgExecutionTime / executionTimeCount : 0;
+      avgExecutionTime =
+        executionTimeCount > 0 ? avgExecutionTime / executionTimeCount : 0;
 
       kpis.push({
-        id: 'totalRecords',
-        title: 'Total Records',
+        id: "totalRecords",
+        title: "Total Records",
         value: totalRecords.toLocaleString(),
-        change: { value: 0, type: 'neutral' as const, period: 'from all data sources' },
+        change: {
+          value: 0,
+          type: "neutral" as const,
+          period: "from all data sources",
+        },
         icon: <CurrencyIcon />,
-        color: 'green' as const
+        color: "green" as const,
       });
 
       kpis.push({
-        id: 'activeCharts',
-        title: 'Active Charts',
+        id: "activeCharts",
+        title: "Active Charts",
         value: totalCharts.toString(),
-        change: { value: 0, type: 'neutral' as const, period: 'dashboard widgets' },
+        change: {
+          value: 0,
+          type: "neutral" as const,
+          period: "dashboard widgets",
+        },
         icon: <UsersIcon />,
-        color: 'blue' as const
+        color: "blue" as const,
       });
 
       kpis.push({
-        id: 'dataTables',
-        title: 'Data Tables',
+        id: "dataTables",
+        title: "Data Tables",
         value: totalTables.toString(),
-        change: { value: 0, type: 'neutral' as const, period: 'active tables' },
+        change: { value: 0, type: "neutral" as const, period: "active tables" },
         icon: <TrendingIcon />,
-        color: 'purple' as const
+        color: "purple" as const,
       });
 
       kpis.push({
-        id: 'avgQueryTime',
-        title: 'Avg Query Time',
-        value: avgExecutionTime > 0 ? `${(avgExecutionTime * 1000).toFixed(1)}ms` : 'N/A',
-        change: { value: 0, type: 'neutral' as const, period: 'execution performance' },
+        id: "avgQueryTime",
+        title: "Avg Query Time",
+        value:
+          avgExecutionTime > 0
+            ? `${(avgExecutionTime * 1000).toFixed(1)}ms`
+            : "N/A",
+        change: {
+          value: 0,
+          type: "neutral" as const,
+          period: "execution performance",
+        },
         icon: <ClockIcon />,
-        color: 'indigo' as const
+        color: "indigo" as const,
       });
     }
     return kpis;
@@ -339,9 +463,11 @@ const Dashboard: React.FC = () => {
           <div className="p-6 border-b border-red-200">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{widget.title}</h3>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {widget.title}
+                </h3>
                 <p className="text-sm text-red-600 mt-1">
-                  {data?.error || 'Failed to load widget data'}
+                  {data?.error || "Failed to load widget data"}
                 </p>
               </div>
               <div className="flex items-center space-x-2">
@@ -350,8 +476,18 @@ const Dashboard: React.FC = () => {
                   className="px-3 py-1 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 transition-colors"
                   title="Retry loading"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
                   </svg>
                 </button>
               </div>
@@ -359,12 +495,23 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="p-6">
             <div className="flex flex-col items-center justify-center h-80 text-gray-500">
-              <svg className="w-16 h-16 mb-4 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              <svg
+                className="w-16 h-16 mb-4 text-red-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+                />
               </svg>
               <p className="text-sm font-medium mb-2">Widget Error</p>
               <p className="text-xs text-center max-w-xs">
-                This widget couldn&apos;t load properly. Click the retry button above or refresh the dashboard.
+                This widget couldn&apos;t load properly. Click the retry button
+                above or refresh the dashboard.
               </p>
             </div>
           </div>
@@ -372,19 +519,30 @@ const Dashboard: React.FC = () => {
       );
     }
 
-    const isChartData = data.chart_type && data.data && 'labels' in data.data;
+    const isChartData = data.chart_type && data.data && "labels" in data.data;
 
     if (isChartData) {
       return (
         <ChartComponent
           data={data.data as ChartData}
-          type={data.chart_type as 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'bubble' | 'polarArea' | 'radar' | 'area'}
+          type={
+            data.chart_type as
+              | "bar"
+              | "line"
+              | "pie"
+              | "doughnut"
+              | "scatter"
+              | "bubble"
+              | "polarArea"
+              | "radar"
+              | "area"
+          }
           config={data.chart_config}
           title={widget.title}
           description={`Executed in ${(data.execution_time! * 1000).toFixed(2)}ms`}
           height={350}
           onDataPointClick={(datasetIndex, index, value) => {
-            console.log('Data point clicked:', { datasetIndex, index, value });
+            console.log("Data point clicked:", { datasetIndex, index, value });
           }}
         />
       );
@@ -393,10 +551,10 @@ const Dashboard: React.FC = () => {
         <DataTable
           data={data.data as TableData}
           onSort={(column, direction) => {
-            console.log('Sort:', column, direction);
+            console.log("Sort:", column, direction);
           }}
           onExport={(format) => {
-            console.log('Export:', format);
+            console.log("Export:", format);
           }}
         />
       );
@@ -408,8 +566,12 @@ const Dashboard: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
-          <p className="text-lg text-gray-700 font-medium">Loading your dashboard...</p>
-          <p className="text-sm text-gray-500 mt-2">Preparing the latest analytics</p>
+          <p className="text-lg text-gray-700 font-medium">
+            Loading your dashboard...
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            Preparing the latest analytics
+          </p>
         </div>
       </div>
     );
@@ -424,14 +586,26 @@ const Dashboard: React.FC = () => {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
         <div className="bg-white rounded-xl shadow-lg p-4 lg:p-6 w-full max-w-sm lg:w-80 max-h-screen overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Customize Summary Widgets</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Customize Summary Widgets
+            </h3>
             <button
               onClick={() => setShowKpiConfig(false)}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
               aria-label="Close modal"
             >
-              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-5 h-5 text-gray-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -447,7 +621,7 @@ const Dashboard: React.FC = () => {
                   }
                 />
                 <span className="capitalize text-sm text-gray-700">
-                  {key.replace(/([A-Z])/g, ' $1')}
+                  {key.replace(/([A-Z])/g, " $1")}
                 </span>
               </label>
             ))}
@@ -459,27 +633,37 @@ const Dashboard: React.FC = () => {
               </label>
               <select
                 className="w-full border-gray-300 rounded-md text-sm"
-                value={summaryWidgetId ?? ''}
+                value={summaryWidgetId ?? ""}
                 onChange={(e) => {
                   const wid = parseInt(e.target.value, 10);
                   setSummaryWidgetId(wid);
-                  if (typeof window !== 'undefined') {
-                    localStorage.setItem('dashboard.summaryWidget', String(wid));
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem(
+                      "dashboard.summaryWidget",
+                      String(wid),
+                    );
                   }
                 }}
               >
                 <option value="">-- Default (Total Records) --</option>
                 {widgets.map((w) => (
-                  <option key={w.id} value={w.id}>{w.title}</option>
+                  <option key={w.id} value={w.id}>
+                    {w.title}
+                  </option>
                 ))}
               </select>
             </div>
 
             {/* Divider */}
             <hr className="my-3" />
-            <h4 className="text-sm font-semibold text-gray-800 mb-2">Dashboard Widgets</h4>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">
+              Dashboard Widgets
+            </h4>
             {widgets.map((w) => (
-              <label key={`widget-toggle-${w.id}`} className="flex items-center space-x-2">
+              <label
+                key={`widget-toggle-${w.id}`}
+                className="flex items-center space-x-2"
+              >
                 <input
                   type="checkbox"
                   className="h-4 w-4 text-indigo-600"
@@ -491,8 +675,6 @@ const Dashboard: React.FC = () => {
                 <span className="text-sm text-gray-700">{w.title}</span>
               </label>
             ))}
-
-
           </div>
           <div className="mt-6 flex justify-end">
             <button
@@ -525,7 +707,7 @@ const Dashboard: React.FC = () => {
         <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden z-30">
           {/* Background decorative element */}
           <div className="absolute inset-0 bg-gradient-to-r from-blue-50/30 via-transparent to-indigo-50/30"></div>
-          
+
           <div className="relative px-4 lg:px-6 py-3 lg:py-4">
             <div className="flex items-center justify-between">
               {/* Left side - Mobile hamburger + Logo */}
@@ -536,26 +718,52 @@ const Dashboard: React.FC = () => {
                   className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
                   aria-label="Toggle menu"
                 >
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                  <svg
+                    className="w-6 h-6 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d={
+                        mobileMenuOpen
+                          ? "M6 18L18 6M6 6l12 12"
+                          : "M4 6h16M4 12h16M4 18h16"
+                      }
+                    />
                   </svg>
                 </button>
 
                 {/* Logo and title */}
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-md">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    <svg
+                      className="w-4 h-4 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                      />
                     </svg>
                   </div>
                   <div className="hidden sm:block">
                     <h1 className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-gray-900 via-blue-700 to-indigo-600 bg-clip-text text-transparent">
-                      Financial Analytics
+                      {currentMenuName}
                     </h1>
-                    <p className="text-xs lg:text-sm text-gray-500 -mt-0.5 hidden md:block">Real-time insights & reporting</p>
+                    <p className="text-xs lg:text-sm text-gray-500 -mt-0.5 hidden md:block">
+                      Real-time insights & reporting
+                    </p>
                   </div>
                 </div>
-                
+
                 {/* Compact status indicators - Hidden on small screens */}
                 <div className="hidden xl:flex items-center space-x-4 ml-6">
                   <div className="flex items-center space-x-1.5 text-xs text-gray-500">
@@ -563,30 +771,42 @@ const Dashboard: React.FC = () => {
                     <span>Live</span>
                   </div>
                   <div className="flex items-center space-x-1.5 text-xs text-gray-500">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                      />
                     </svg>
                     <span>{widgets.length} widgets</span>
                   </div>
                 </div>
               </div>
-              
+
               {/* Right side - Actions */}
               <div className="flex items-center space-x-2">
                 {/* View Toggle - Desktop only */}
                 <div className="hidden lg:flex bg-gray-100 rounded-lg p-0.5">
                   {[
-                    { key: 'overview', label: 'Overview', icon: EyeIcon },
-                    { key: 'charts', label: 'Charts', icon: ChartIcon },
-                    { key: 'tables', label: 'Tables', icon: UsersIcon }
+                    { key: "overview", label: "Overview", icon: EyeIcon },
+                    { key: "charts", label: "Charts", icon: ChartIcon },
+                    { key: "tables", label: "Tables", icon: UsersIcon },
                   ].map(({ key, label, icon: Icon }) => (
                     <button
                       key={key}
-                      onClick={() => setSelectedView(key as 'overview' | 'charts' | 'tables')}
+                      onClick={() =>
+                        setSelectedView(key as "overview" | "charts" | "tables")
+                      }
                       className={`px-2 lg:px-3 py-1.5 rounded-md flex items-center space-x-1.5 transition-all duration-200 text-xs font-medium ${
                         selectedView === key
-                          ? 'bg-white text-blue-600 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          ? "bg-white text-blue-600 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
                       }`}
                     >
                       <Icon />
@@ -599,7 +819,11 @@ const Dashboard: React.FC = () => {
                 <div className="lg:hidden">
                   <select
                     value={selectedView}
-                    onChange={(e) => setSelectedView(e.target.value as 'overview' | 'charts' | 'tables')}
+                    onChange={(e) =>
+                      setSelectedView(
+                        e.target.value as "overview" | "charts" | "tables",
+                      )
+                    }
                     className="px-2 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 touch-manipulation"
                   >
                     <option value="overview">Overview</option>
@@ -612,7 +836,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex items-center space-x-1.5">
                   {/* Refresh Button */}
                   <button
-                    onClick={() => loadDashboardData(true)}
+                    onClick={() => loadDashboardData()}
                     className="px-2 lg:px-3 py-1.5 lg:py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 flex items-center space-x-1 lg:space-x-1.5 shadow-md hover:shadow-lg text-xs lg:text-sm font-medium touch-manipulation"
                     title="Refresh data"
                   >
@@ -624,18 +848,41 @@ const Dashboard: React.FC = () => {
                   <div className="relative">
                     <button
                       onClick={() => {
-                        console.log('Dropdown button clicked, current state:', showLayoutDropdown);
+                        console.log(
+                          "Dropdown button clicked, current state:",
+                          showLayoutDropdown,
+                        );
                         setShowLayoutDropdown(!showLayoutDropdown);
                       }}
                       className="px-2 lg:px-3 py-1.5 lg:py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all duration-200 flex items-center space-x-1 lg:space-x-1.5 shadow-sm text-xs lg:text-sm font-medium touch-manipulation"
                       title="Layout options"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+                        />
                       </svg>
                       <span className="hidden md:inline">Layout</span>
-                      <svg className={`w-3 h-3 transition-transform duration-200 ${showLayoutDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      <svg
+                        className={`w-3 h-3 transition-transform duration-200 ${showLayoutDropdown ? "rotate-180" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -644,28 +891,26 @@ const Dashboard: React.FC = () => {
                   {showLayoutDropdown && (
                     <>
                       {/* Backdrop to close dropdown */}
-                      <div 
-                        className="fixed inset-0 z-[9998]" 
+                      <div
+                        className="fixed inset-0 z-[9998]"
                         onClick={() => {
-                          console.log('Backdrop clicked, closing dropdown');
+                          console.log("Backdrop clicked, closing dropdown");
                           setShowLayoutDropdown(false);
                         }}
                       ></div>
-                      
+
                       {/* Dropdown Content */}
-                      <div 
+                      <div
                         className="fixed w-48 lg:w-52 bg-white border border-gray-200 rounded-lg shadow-2xl z-[9999]"
                         style={{
-                          top: window.innerWidth < 768 ? '60px' : '70px', // Adjusted for mobile header
-                          right: window.innerWidth < 768 ? '8px' : '32px', // Closer to edge on mobile
+                          top: window.innerWidth < 768 ? "60px" : "70px", // Adjusted for mobile header
+                          right: window.innerWidth < 768 ? "8px" : "32px", // Closer to edge on mobile
                         }}
                       >
                         <div className="py-1">
-
-                          
                           <button
                             onClick={() => {
-                              console.log('Customize Widgets clicked');
+                              console.log("Customize Widgets clicked");
                               setShowKpiConfig(true);
                               setShowLayoutDropdown(false);
                             }}
@@ -687,53 +932,90 @@ const Dashboard: React.FC = () => {
         {/* Dashboard Content */}
         <main className="flex-1 p-4 lg:p-8 space-y-4 lg:space-y-8 overflow-x-hidden">
           {/* KPI Cards */}
-          {selectedView === 'overview' && Object.keys(widgetData).length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
-              {kpis
-                .filter((kpi) => kpiPrefs[kpi.id] ?? true)
-                .map((kpi, index) => (
-                  <KPICard
-                    key={index}
-                    title={kpi.title}
-                    value={kpi.value}
-                    change={kpi.change}
-                    icon={kpi.icon}
-                    color={kpi.color}
-                  />
-              ))}
-            </div>
-          )}
+          {selectedView === "overview" &&
+            Object.keys(widgetData).length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+                {kpis
+                  .filter((kpi) => kpiPrefs[kpi.id] ?? true)
+                  .map((kpi, index) => (
+                    <KPICard
+                      key={index}
+                      title={kpi.title}
+                      value={kpi.value}
+                      change={kpi.change}
+                      icon={kpi.icon}
+                      color={kpi.color}
+                    />
+                  ))}
+              </div>
+            )}
 
           {/* Widgets Grid */}
-          {widgets.length > 0 && (
+          {widgets.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {widgets
                 .filter((w) => widgetPrefs[w.id])
                 .filter((widget) => {
                   const data = widgetData[widget.id];
-                  if (selectedView === 'charts') {
-                    return data?.chart_type && data.data && 'labels' in data.data;
-                  } else if (selectedView === 'tables') {
-                    return data?.data && 'columns' in data.data;
+                  if (selectedView === "charts") {
+                    return (
+                      data?.chart_type && data.data && "labels" in data.data
+                    );
+                  } else if (selectedView === "tables") {
+                    return data?.data && "columns" in data.data;
                   }
                   return true;
                 })
                 .map((widget) => (
-                  <div key={widget.id}>
-                    {renderWidget(widget)}
-                  </div>
+                  <div key={widget.id}>{renderWidget(widget)}</div>
                 ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <svg
+                  className="w-12 h-12 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2-2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                No widgets in this dashboard
+              </h3>
+              <p className="text-gray-500 mb-4">
+                {menu
+                  ? "This custom dashboard doesn't have any widgets yet."
+                  : "No default widgets are configured."}
+              </p>
+              <p className="text-sm text-gray-400">
+                Visit the Admin Panel to create queries and add widgets to this
+                dashboard.
+              </p>
             </div>
           )}
 
           {/* Footer Info - Show real data metrics */}
           <div className="text-center py-4 lg:py-6 border-t border-gray-200">
             <p className="text-xs lg:text-sm text-gray-500 space-y-1">
-              <span className="block sm:inline">Last updated: {new Date().toLocaleString()}</span>
+              <span className="block sm:inline">
+                Last updated: {new Date().toLocaleString()}
+              </span>
               <span className="hidden sm:inline"> | </span>
-              <span className="block sm:inline">Total widgets: {widgets.length}</span>
+              <span className="block sm:inline">
+                Total widgets: {widgets.length}
+              </span>
               <span className="hidden sm:inline"> | </span>
-              <span className="block sm:inline">Active data sources: {Object.keys(widgetData).length}</span>
+              <span className="block sm:inline">
+                Active data sources: {Object.keys(widgetData).length}
+              </span>
             </p>
           </div>
           {/* Modal Render */}
@@ -744,4 +1026,4 @@ const Dashboard: React.FC = () => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

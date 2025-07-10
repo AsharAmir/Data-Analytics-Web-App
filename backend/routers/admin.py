@@ -137,6 +137,17 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
         VALUES (:1, :2, :3, :4, :5, :6, :7)
         """
         try:
+            # Handle menu_item_id conversion for database storage
+            if request.menu_item_id == -1:
+                # Default Dashboard assignment
+                db_menu_item_id = None
+            elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                # Explicitly no dashboard assignment - use special value -999
+                db_menu_item_id = -999
+            else:
+                # Specific menu item or has other assignments
+                db_menu_item_id = request.menu_item_id
+            
             db_manager.execute_non_query(
                 insert_sql,
                 (
@@ -145,13 +156,24 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                     request.sql_query,
                     request.chart_type,
                     json.dumps(request.chart_config or {}),
-                    request.menu_item_id,
+                    db_menu_item_id,
                     ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
                 ),
             )
         except Exception as exc:
             if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
                 db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                # Handle menu_item_id conversion for database storage
+                if request.menu_item_id == -1:
+                    # Default Dashboard assignment
+                    db_menu_item_id = None
+                elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                    # Explicitly no dashboard assignment - use special value -999
+                    db_menu_item_id = -999
+                else:
+                    # Specific menu item or has other assignments
+                    db_menu_item_id = request.menu_item_id
+                
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -160,19 +182,210 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                         request.sql_query,
                         request.chart_type,
                         json.dumps(request.chart_config or {}),
-                        request.menu_item_id,
+                        db_menu_item_id,
                         ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
                     ),
                 )
             else:
                 logger.error(f"Error creating query: {exc}")
                 raise HTTPException(status_code=500, detail="Failed to create query")
-        return APIResponse(success=True, message="Query created")
+        # Get the ID of the newly created query
+        get_id_query = "SELECT id FROM app_queries WHERE name = :1 ORDER BY created_at DESC"
+        id_result = db_manager.execute_query(get_id_query, (request.name,))
+        new_query_id = id_result[0]["ID"] if id_result else None
+        
+        # If menu_item_ids is provided, create the many-to-many relationships (filter out -1)
+        if request.menu_item_ids and new_query_id:
+            junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:1, :2)"
+            for menu_id in request.menu_item_ids:
+                # Skip -1 (Default Dashboard) as it's handled by the main menu_item_id field
+                if menu_id != -1:
+                    try:
+                        db_manager.execute_non_query(junction_sql, (new_query_id, menu_id))
+                    except Exception as exc:
+                        # If table doesn't exist, it will be created by the database init
+                        logger.warning(f"Could not create query-menu relationship: {exc}")
+        
+        return APIResponse(success=True, message="Query created", data={"id": new_query_id})
     except HTTPException:
         raise
     except Exception as exc:
         logger.error(f"Error creating query: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to create query: {exc}")
+
+
+@router.get("/query/{query_id}", response_model=APIResponse)
+async def get_query_admin(query_id: int, current_user: User = Depends(require_admin)):
+    """Get a single query by ID for editing"""
+    try:
+        query = """
+        SELECT id, name, description, sql_query, chart_type, chart_config, menu_item_id, role, created_at
+        FROM app_queries
+        WHERE id = :1 AND is_active = 1
+        """
+        result = db_manager.execute_query(query, (query_id,))
+        if not result:
+            raise HTTPException(status_code=404, detail="Query not found")
+        
+        row = result[0]
+        chart_config = {}
+        if row["CHART_CONFIG"]:
+            try:
+                chart_config = json.loads(row["CHART_CONFIG"])
+            except:
+                chart_config = {}
+        
+        # Get menu assignments from junction table
+        menu_ids = []
+        menu_names = []
+        try:
+            menu_query = """
+            SELECT m.id, m.name 
+            FROM app_query_menu_items qm
+            JOIN app_menu_items m ON qm.menu_item_id = m.id
+            WHERE qm.query_id = :1
+            """
+            menu_result = db_manager.execute_query(menu_query, (query_id,))
+            menu_ids = [r["ID"] for r in menu_result]
+            menu_names = [r["NAME"] for r in menu_result]
+        except Exception as exc:
+            logger.warning(f"Could not get menu assignments: {exc}")
+            # Fallback to legacy single menu_item_id
+            if row["MENU_ITEM_ID"]:
+                menu_ids = [row["MENU_ITEM_ID"]]
+        
+        # Handle menu_item_id conversion based on stored values
+        if row["MENU_ITEM_ID"] is None:
+            # Query has menu_item_id = NULL in database (Default Dashboard)
+            if not menu_ids:
+                frontend_menu_item_id = -1
+                menu_ids.append(-1)
+                menu_names.append("Default Dashboard")
+            else:
+                # Has explicit menu assignments but no default dashboard
+                frontend_menu_item_id = None
+        elif row["MENU_ITEM_ID"] == -999:
+            # Explicitly no dashboard assignment
+            frontend_menu_item_id = None
+        else:
+            # Query has a specific menu_item_id value
+            frontend_menu_item_id = row["MENU_ITEM_ID"]
+        
+        query_data = {
+            "id": row["ID"],
+            "name": row["NAME"],
+            "description": row["DESCRIPTION"],
+            "sql_query": row["SQL_QUERY"],
+            "chart_type": row["CHART_TYPE"],
+            "chart_config": chart_config,
+            "menu_item_id": frontend_menu_item_id,  # Convert NULL to -1 for Default Dashboard
+            "menu_item_ids": menu_ids,  # New multiple assignments
+            "menu_names": menu_names,   # Names for display
+            "role": row.get("ROLE", "user"),
+            "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+        }
+        return APIResponse(success=True, data=query_data)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error getting query: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to get query")
+
+
+@router.put("/query/{query_id}", response_model=APIResponse)
+async def update_query_admin(query_id: int, request: QueryCreate, current_user: User = Depends(require_admin)):
+    """Update an existing query"""
+    try:
+        # Check if query exists
+        exists = db_manager.execute_query("SELECT id FROM app_queries WHERE id = :1", (query_id,))
+        if not exists:
+            raise HTTPException(status_code=404, detail="Query not found")
+        
+        update_sql = """
+        UPDATE app_queries 
+        SET name=:1, description=:2, sql_query=:3, chart_type=:4, chart_config=:5, menu_item_id=:6, role=:7
+        WHERE id=:8
+        """
+        try:
+            # Handle menu_item_id conversion for database storage
+            if request.menu_item_id == -1:
+                # Default Dashboard assignment
+                db_menu_item_id = None
+            elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                # Explicitly no dashboard assignment - use special value -999
+                db_menu_item_id = -999
+            else:
+                # Specific menu item or has other assignments
+                db_menu_item_id = request.menu_item_id
+            
+            db_manager.execute_non_query(
+                update_sql,
+                (
+                    request.name,
+                    request.description,
+                    request.sql_query,
+                    request.chart_type,
+                    json.dumps(request.chart_config or {}),
+                    db_menu_item_id,
+                    ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                    query_id,
+                ),
+            )
+        except Exception as exc:
+            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                # Handle menu_item_id conversion for database storage
+                if request.menu_item_id == -1:
+                    # Default Dashboard assignment
+                    db_menu_item_id = None
+                elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                    # Explicitly no dashboard assignment - use special value -999
+                    db_menu_item_id = -999
+                else:
+                    # Specific menu item or has other assignments
+                    db_menu_item_id = request.menu_item_id
+                
+                db_manager.execute_non_query(
+                    update_sql,
+                    (
+                        request.name,
+                        request.description,
+                        request.sql_query,
+                        request.chart_type,
+                        json.dumps(request.chart_config or {}),
+                        db_menu_item_id,
+                        ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                        query_id,
+                    ),
+                )
+            else:
+                raise exc
+        
+        # Handle many-to-many menu relationships
+        if request.menu_item_ids is not None:
+            # Clear existing relationships
+            try:
+                db_manager.execute_non_query("DELETE FROM app_query_menu_items WHERE query_id = :1", (query_id,))
+            except Exception as exc:
+                logger.warning(f"Could not clear existing query-menu relationships: {exc}")
+            
+            # Add new relationships (filter out -1 which represents Default Dashboard)
+            if request.menu_item_ids:
+                junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:1, :2)"
+                for menu_id in request.menu_item_ids:
+                    # Skip -1 (Default Dashboard) as it's handled by the main menu_item_id field
+                    if menu_id != -1:
+                        try:
+                            db_manager.execute_non_query(junction_sql, (query_id, menu_id))
+                        except Exception as exc:
+                            logger.warning(f"Could not create query-menu relationship: {exc}")
+        
+        return APIResponse(success=True, message="Query updated successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error updating query: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to update query")
 
 
 @router.delete("/query/{query_id}", response_model=APIResponse)
@@ -182,6 +395,16 @@ async def delete_query_admin(query_id: int, current_user: User = Depends(require
         exists = db_manager.execute_query("SELECT id FROM app_queries WHERE id = :1", (query_id,))
         if not exists:
             raise HTTPException(status_code=404, detail="Query not found")
+
+        count_query = "SELECT COUNT(*) as cnt FROM app_dashboard_widgets WHERE query_id = :1"
+        result = db_manager.execute_query(count_query, (query_id,))
+        widget_count = result[0]["CNT"] if result else 0
+        if widget_count > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete query that is used in dashboard widgets. Remove the widgets first."
+            )
+
         db_manager.execute_non_query("DELETE FROM app_queries WHERE id = :1", (query_id,))
         return APIResponse(success=True, message="Query deleted successfully")
     except HTTPException:
@@ -196,23 +419,52 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
     """List all queries available for dashboard widgets"""
     try:
         query = """
-        SELECT q.id, q.name, q.description, q.chart_type, q.created_at, q.role,
-               m.name as menu_name
+        SELECT q.id, q.name, q.description, q.chart_type, q.created_at, q.role, q.menu_item_id
         FROM app_queries q
-        LEFT JOIN app_menu_items m ON q.menu_item_id = m.id
         WHERE q.is_active = 1
         ORDER BY q.created_at DESC
         """
         result = db_manager.execute_query(query)
         queries: List[dict] = []
         for row in result:
+            # Get all menu assignments for this query
+            menu_names = []
+            try:
+                menu_query = """
+                SELECT m.name 
+                FROM app_query_menu_items qm
+                JOIN app_menu_items m ON qm.menu_item_id = m.id
+                WHERE qm.query_id = :1
+                ORDER BY m.name
+                """
+                menu_result = db_manager.execute_query(menu_query, (row["ID"],))
+                menu_names = [r["NAME"] for r in menu_result]
+            except Exception as exc:
+                logger.warning(f"Could not get menu assignments for query {row['ID']}: {exc}")
+                # Fallback to legacy single menu_item_id
+                if row["MENU_ITEM_ID"]:
+                    legacy_menu_query = "SELECT name FROM app_menu_items WHERE id = :1"
+                    legacy_result = db_manager.execute_query(legacy_menu_query, (row["MENU_ITEM_ID"],))
+                    if legacy_result:
+                        menu_names = [legacy_result[0]["NAME"]]
+            
+            # Handle special cases for dashboard assignment display
+            if not menu_names:
+                if row["MENU_ITEM_ID"] is None:
+                    # NULL means Default Dashboard
+                    menu_names = ["Default Dashboard"]
+                elif row["MENU_ITEM_ID"] == -999:
+                    # -999 means explicitly no dashboard assignment
+                    menu_names = []  # Keep empty to show as no assignment
+            
             queries.append(
                 {
                     "id": row["ID"],
                     "name": row["NAME"],
                     "description": row["DESCRIPTION"],
                     "chart_type": row["CHART_TYPE"],
-                    "menu_name": row["MENU_NAME"],
+                    "menu_name": ", ".join(menu_names) if menu_names else None,  # Multiple menus comma-separated
+                    "menu_names": menu_names,  # Array for frontend
                     "role": row.get("ROLE", "user"),
                     "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
                 }
@@ -363,20 +615,51 @@ async def list_dashboard_widgets(current_user: User = Depends(get_current_user))
 async def create_menu_item(request: MenuItemCreate, current_user: User = Depends(require_admin)):
     """Admin endpoint to create a new menu item"""
     try:
+        if request.parent_id is not None:
+            parent_type_result = db_manager.execute_query(
+                "SELECT type FROM app_menu_items WHERE id = :1",
+                (request.parent_id,),
+            )
+
+            # If parent exists *and* its type is 'dashboard' we reject.
+            if parent_type_result and str(parent_type_result[0]["TYPE"]).lower() == "dashboard":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot create submenu for dashboard menu items.",
+                )
         sql = """
-        INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, is_active)
-        VALUES (:1, :2, :3, :4, :5, 1)
+        INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, role, is_active)
+        VALUES (:1, :2, :3, :4, :5, :6, 1)
         """
-        db_manager.execute_non_query(
-            sql,
-            (
-                request.name,
-                request.type,
-                request.icon,
-                request.parent_id,
-                request.sort_order,
-            ),
-        )
+        try:
+            db_manager.execute_non_query(
+                sql,
+                (
+                    request.name,
+                    request.type,
+                    request.icon,
+                    request.parent_id,
+                    request.sort_order,
+                    ",".join(request.role) if isinstance(request.role, list) else (request.role or None),
+                ),
+            )
+        except Exception as exc:
+            # If role column doesn't exist, add it and retry
+            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
+                db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
+                db_manager.execute_non_query(
+                    sql,
+                    (
+                        request.name,
+                        request.type,
+                        request.icon,
+                        request.parent_id,
+                        request.sort_order,
+                        ",".join(request.role) if isinstance(request.role, list) else (request.role or None),
+                    ),
+                )
+            else:
+                raise exc
         return APIResponse(success=True, message="Menu item created successfully")
     except Exception as exc:
         logger.error(f"Error creating menu item: {exc}")
@@ -390,20 +673,55 @@ async def update_menu_item(
     menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)
 ):
     try:
+        # -------------------------------------------------------------
+        # BUSINESS RULE: Dashboards cannot have children.  If the caller
+        # attempts to set a *dashboard* item as the new parent we reject.
+        # -------------------------------------------------------------
+        if request.parent_id is not None:
+            parent_type_result = db_manager.execute_query(
+                "SELECT type FROM app_menu_items WHERE id = :1",
+                (request.parent_id,),
+            )
+
+            if parent_type_result and str(parent_type_result[0]["TYPE"]).lower() == "dashboard":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot assign a dashboard menu as parent for another menu item.",
+                )
         update_sql = """
-        UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5 WHERE id=:6
+        UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5, role=:6 WHERE id=:7
         """
-        db_manager.execute_non_query(
-            update_sql,
-            (
-                request.name,
-                request.type,
-                request.icon,
-                request.parent_id,
-                request.sort_order,
-                menu_id,
-            ),
-        )
+        try:
+            db_manager.execute_non_query(
+                update_sql,
+                (
+                    request.name,
+                    request.type,
+                    request.icon,
+                    request.parent_id,
+                    request.sort_order,
+                    ",".join(request.role) if isinstance(request.role, list) else (request.role or None),
+                    menu_id,
+                ),
+            )
+        except Exception as exc:
+            # If role column doesn't exist, add it and retry
+            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
+                db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
+                db_manager.execute_non_query(
+                    update_sql,
+                    (
+                        request.name,
+                        request.type,
+                        request.icon,
+                        request.parent_id,
+                        request.sort_order,
+                        ",".join(request.role) if isinstance(request.role, list) else (request.role or None),
+                        menu_id,
+                    ),
+                )
+            else:
+                raise exc
         return APIResponse(success=True, message="Menu item updated")
     except Exception as exc:
         logger.error(f"Error updating menu item: {exc}")
@@ -468,4 +786,201 @@ async def delete_menu_item(menu_id: int, current_user: User = Depends(require_ad
         raise
     except Exception as exc:
         logger.error(f"Error deleting menu item {menu_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to delete menu item") 
+        raise HTTPException(status_code=500, detail="Failed to delete menu item")
+
+
+# ------------------ KPI Management ------------------
+
+@router.get("/kpis", response_model=APIResponse)
+async def list_kpis(current_user: User = Depends(get_current_user)):
+    """List all KPI queries"""
+    try:
+        query = """
+        SELECT q.id, q.name, q.description, q.sql_query, q.role, q.created_at,
+               m.name as menu_name
+        FROM app_queries q
+        LEFT JOIN app_menu_items m ON q.menu_item_id = m.id
+        WHERE q.is_active = 1 AND q.is_kpi = 1
+        ORDER BY q.created_at DESC
+        """
+        try:
+            result = db_manager.execute_query(query)
+        except Exception as exc:
+            # If is_kpi column doesn't exist, add it and retry
+            if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+                result = db_manager.execute_query(query)
+            else:
+                raise exc
+
+        kpis: List[dict] = []
+        for row in result:
+            # If menu_name is NULL, this means Default Dashboard
+            menu_name = row["MENU_NAME"] if row["MENU_NAME"] else "Default Dashboard"
+            
+            kpis.append(
+                {
+                    "id": row["ID"],
+                    "name": row["NAME"],
+                    "description": row["DESCRIPTION"],
+                    "sql_query": row["SQL_QUERY"],
+                    "menu_name": menu_name,
+                    "role": row.get("ROLE", "user"),
+                    "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+                }
+            )
+        return APIResponse(success=True, message=f"Found {len(kpis)} KPIs", data=kpis)
+    except Exception as exc:
+        logger.error(f"Error listing KPIs: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to list KPIs: {exc}")
+
+
+@router.post("/kpi", response_model=APIResponse)
+async def create_kpi(request: QueryCreate, current_user: User = Depends(require_admin)):
+    """Create a new KPI query"""
+    try:
+        insert_sql = """
+        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role, is_kpi)
+        VALUES (:1, :2, :3, :4, :5, :6, :7, 1)
+        """
+        try:
+            # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
+            db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
+            
+            db_manager.execute_non_query(
+                insert_sql,
+                (
+                    request.name,
+                    request.description,
+                    request.sql_query,
+                    "kpi",  # Set chart_type to "kpi" for KPIs
+                    json.dumps({}),  # Empty chart config for KPIs
+                    db_menu_item_id,
+                    ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                ),
+            )
+        except Exception as exc:
+            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_KPI" in str(exc).upper()):
+                # Add missing columns
+                if "ROLE" in str(exc).upper():
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                if "IS_KPI" in str(exc).upper():
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+                # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
+                db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
+                
+                db_manager.execute_non_query(
+                    insert_sql,
+                    (
+                        request.name,
+                        request.description,
+                        request.sql_query,
+                        "kpi",
+                        json.dumps({}),
+                        db_menu_item_id,
+                        ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                    ),
+                )
+            else:
+                logger.error(f"Error creating KPI: {exc}")
+                raise HTTPException(status_code=500, detail="Failed to create KPI")
+        
+        # Get the ID of the newly created KPI
+        get_id_query = "SELECT id FROM app_queries WHERE name = :1 AND is_kpi = 1 ORDER BY created_at DESC"
+        id_result = db_manager.execute_query(get_id_query, (request.name,))
+        new_kpi_id = id_result[0]["ID"] if id_result else None
+        
+        return APIResponse(success=True, message="KPI created", data={"id": new_kpi_id})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error creating KPI: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to create KPI: {exc}")
+
+
+@router.put("/kpi/{kpi_id}", response_model=APIResponse)
+async def update_kpi(kpi_id: int, request: QueryCreate, current_user: User = Depends(require_admin)):
+    """Update an existing KPI query"""
+    try:
+        # Check if KPI exists
+        exists = db_manager.execute_query("SELECT id FROM app_queries WHERE id = :1 AND is_kpi = 1", (kpi_id,))
+        if not exists:
+            raise HTTPException(status_code=404, detail="KPI not found")
+        
+        update_sql = """
+        UPDATE app_queries
+        SET name=:1, description=:2, sql_query=:3, menu_item_id=:4, role=:5
+        WHERE id=:6 AND is_kpi=1
+        """
+        # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
+        db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
+        
+        db_manager.execute_non_query(
+            update_sql,
+            (
+                request.name,
+                request.description,
+                request.sql_query,
+                db_menu_item_id,
+                ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                kpi_id,
+            ),
+        )
+        return APIResponse(success=True, message="KPI updated successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error updating KPI: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to update KPI")
+
+
+@router.delete("/kpi/{kpi_id}", response_model=APIResponse)
+async def delete_kpi(kpi_id: int, current_user: User = Depends(require_admin)):
+    """Delete a KPI by ID"""
+    try:
+        exists = db_manager.execute_query("SELECT id FROM app_queries WHERE id = :1 AND is_kpi = 1", (kpi_id,))
+        if not exists:
+            raise HTTPException(status_code=404, detail="KPI not found")
+
+        db_manager.execute_non_query("DELETE FROM app_queries WHERE id = :1 AND is_kpi = 1", (kpi_id,))
+        return APIResponse(success=True, message="KPI deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error deleting KPI: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to delete KPI")
+
+
+@router.get("/kpi/{kpi_id}", response_model=APIResponse)
+async def get_kpi_admin(kpi_id: int, current_user: User = Depends(require_admin)):
+    """Get a single KPI by ID for editing"""
+    try:
+        query = """
+        SELECT id, name, description, sql_query, menu_item_id, role, created_at
+        FROM app_queries
+        WHERE id = :1 AND is_active = 1 AND is_kpi = 1
+        """
+        result = db_manager.execute_query(query, (kpi_id,))
+        if not result:
+            raise HTTPException(status_code=404, detail="KPI not found")
+        
+        row = result[0]
+        # Convert NULL menu_item_id back to -1 for frontend (Default Dashboard)
+        # For KPIs, we always treat NULL as Default Dashboard since they don't have multiple assignments
+        frontend_menu_item_id = -1 if row["MENU_ITEM_ID"] is None else row["MENU_ITEM_ID"]
+        
+        kpi_data = {
+            "id": row["ID"],
+            "name": row["NAME"],
+            "description": row["DESCRIPTION"],
+            "sql_query": row["SQL_QUERY"],
+            "menu_item_id": frontend_menu_item_id,
+            "role": row.get("ROLE", "user"),
+            "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+        }
+        return APIResponse(success=True, data=kpi_data)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error getting KPI: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to get KPI")

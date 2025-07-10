@@ -44,9 +44,11 @@ const LoginPage: React.FC = () => {
       toast.success("Login successful!");
       router.push("/dashboard");
     } catch (error: unknown) {
-      const errMessage = error && typeof error === 'object' && 'response' in error
-        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : null;
+      const errMessage =
+        error && typeof error === "object" && "response" in error
+          ? (error as { response?: { data?: { detail?: string } } }).response
+              ?.data?.detail
+          : null;
       toast.error(errMessage || "Login failed", { duration: 5000 });
     } finally {
       setLoading(false);

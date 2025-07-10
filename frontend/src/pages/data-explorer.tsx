@@ -8,7 +8,7 @@ import { MenuItem, QueryResult, TableData, ChartData } from "../types";
 import ExportModal from "../components/DataExplorer/ExportModal";
 import CustomQueryModal from "../components/DataExplorer/CustomQueryModal";
 import CustomQueryCard from "../components/DataExplorer/CustomQueryCard";
-import { toast } from 'react-hot-toast';
+import { toast } from "react-hot-toast";
 
 // Export Options Modal Component
 // Components extracted to separate files
@@ -26,19 +26,24 @@ const DataExplorerPage: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sqlQuery, setSqlQuery] = useState(
-    "SELECT * FROM SAMPLE_BT WHERE ROWNUM <= 100"
+    "SELECT * FROM SAMPLE_BT WHERE ROWNUM <= 100",
   );
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [limit, setLimit] = useState(1000);
   const [offset, setOffset] = useState(0);
   const [viewMode, setViewMode] = useState<"table" | "chart">("table");
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
-  const [customQueries, setCustomQueries] =
-    useState<{ name: string; query: string }[]>([]);
-  
+  const [customQueries, setCustomQueries] = useState<
+    { name: string; query: string }[]
+  >([]);
+
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingQuery, setEditingQuery] = useState<{ name: string; query: string; index: number } | null>(null);
+  const [editingQuery, setEditingQuery] = useState<{
+    name: string;
+    query: string;
+    index: number;
+  } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<"excel" | "csv">("csv");
   const [exportLoading, setExportLoading] = useState(false);
@@ -94,7 +99,6 @@ const DataExplorerPage: React.FC = () => {
     }
   };
 
-
   const sampleQueries = [
     {
       name: "All Financial Data",
@@ -148,7 +152,10 @@ const DataExplorerPage: React.FC = () => {
     }
   };
 
-  const openEditModal = (query: { name: string; query: string }, index: number) => {
+  const openEditModal = (
+    query: { name: string; query: string },
+    index: number,
+  ) => {
     setEditingQuery({ ...query, index });
     setIsModalOpen(true);
   };
@@ -158,7 +165,11 @@ const DataExplorerPage: React.FC = () => {
    * Only CSV is fully supported client-side; Excel falls back to CSV with .xlsx extension for convenience.
    */
   const exportCurrentView = (format: "excel" | "csv") => {
-    if (!queryResult?.success || !queryResult.data || !("columns" in queryResult.data)) {
+    if (
+      !queryResult?.success ||
+      !queryResult.data ||
+      !("columns" in queryResult.data)
+    ) {
       console.error("No data available for current view export");
       return;
     }
@@ -167,15 +178,18 @@ const DataExplorerPage: React.FC = () => {
 
     // Build CSV content
     const rows: string[] = [];
-    rows.push(tableData.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(","));
+    rows.push(
+      tableData.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(","),
+    );
     tableData.data.forEach((row) => {
       rows.push(
         row
           .map((cell) => {
-            const value = cell === null || cell === undefined ? "" : cell.toString();
+            const value =
+              cell === null || cell === undefined ? "" : cell.toString();
             return `"${value.replace(/"/g, '""')}"`;
           })
-          .join(",")
+          .join(","),
       );
     });
 
@@ -201,22 +215,31 @@ const DataExplorerPage: React.FC = () => {
     setIsExportModalOpen(true);
   };
 
-  const handleExportChoice = (type: "complete" | "current", format: "excel" | "csv") => {
+  const handleExportChoice = (
+    type: "complete" | "current",
+    format: "excel" | "csv",
+  ) => {
     if (type === "complete") {
       // Export entire dataset via backend for optimal performance.
       setExportLoading(true);
-      
-      toast.loading('Preparing export... This may take several minutes for large datasets.', {
-        id: 'export-toast',
-        duration: Infinity
-      });
+
+      toast.loading(
+        "Preparing export... This may take several minutes for large datasets.",
+        {
+          id: "export-toast",
+          duration: Infinity,
+        },
+      );
 
       apiClient
-        .exportData({
-          sql_query: sqlQuery,
-          format,
-          filename: `data_export_${new Date().toISOString().split("T")[0]}`,
-        }, 0) // Unlimited timeout for exports
+        .exportData(
+          {
+            sql_query: sqlQuery,
+            format,
+            filename: `data_export_${new Date().toISOString().split("T")[0]}`,
+          },
+          0,
+        ) // Unlimited timeout for exports
         .then((blob) => {
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement("a");
@@ -226,15 +249,18 @@ const DataExplorerPage: React.FC = () => {
           }.${format === "excel" ? "xlsx" : "csv"}`;
           link.click();
           window.URL.revokeObjectURL(url);
-          
-          toast.success('Export completed successfully!', { id: 'export-toast' });
+
+          toast.success("Export completed successfully!", {
+            id: "export-toast",
+            duration: 5000,
+          });
         })
         .catch((err) => {
           console.error("Export failed:", err);
-          const errorMsg = err?.message?.includes('timeout') 
-            ? 'Export timed out. Try exporting a smaller dataset or adding filters.'
-            : 'Export failed. Please try again.';
-          toast.error(errorMsg, { id: 'export-toast' });
+          const errorMsg = err?.message?.includes("timeout")
+            ? "Export timed out. Try exporting a smaller dataset or adding filters."
+            : "Export failed. Please try again.";
+          toast.error(errorMsg, { id: "export-toast" });
         })
         .finally(() => {
           setExportLoading(false);
@@ -297,7 +323,7 @@ const DataExplorerPage: React.FC = () => {
         {/* Header */}
         <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden flex-shrink-0">
           <div className="absolute inset-0 bg-gradient-to-r from-green-50/30 via-transparent to-blue-50/30"></div>
-          
+
           <div className="relative px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -307,14 +333,38 @@ const DataExplorerPage: React.FC = () => {
                   className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
                   aria-label="Toggle menu"
                 >
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                  <svg
+                    className="w-6 h-6 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d={
+                        mobileMenuOpen
+                          ? "M6 18L18 6M6 6l12 12"
+                          : "M4 6h16M4 12h16M4 18h16"
+                      }
+                    />
                   </svg>
                 </button>
 
                 <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-blue-600 rounded-lg flex items-center justify-center shadow-md">
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  <svg
+                    className="w-4 h-4 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -325,13 +375,25 @@ const DataExplorerPage: React.FC = () => {
                     Interactive data analysis and exploration
                   </p>
                 </div>
-                
+
                 {/* Query status indicator */}
                 <div className="flex items-center space-x-1.5 text-xs text-gray-500 ml-6">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z" />
+                  <svg
+                    className="w-3 h-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z"
+                    />
                   </svg>
-                  <span>{queryResult ? 'Results loaded' : 'Ready to query'}</span>
+                  <span>
+                    {queryResult ? "Results loaded" : "Ready to query"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -362,8 +424,18 @@ const DataExplorerPage: React.FC = () => {
                 }}
                 className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors flex items-center gap-1"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 Add Custom Query
               </button>
@@ -372,7 +444,9 @@ const DataExplorerPage: React.FC = () => {
             {/* Custom Queries Section */}
             {customQueries.length > 0 && (
               <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Your Custom Queries</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  Your Custom Queries
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {customQueries.map((custom, idx) => (
                     <CustomQueryCard
@@ -415,14 +489,17 @@ const DataExplorerPage: React.FC = () => {
                       Prev {limit}
                     </button>
                   )}
-                  {queryResult?.success && queryResult.data && "data" in queryResult && ((queryResult.data as TableData).data.length === limit) && (
-                    <button
-                      onClick={() => executeQuery(offset + limit)}
-                      className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
-                    >
-                      Next {limit}
-                    </button>
-                  )}
+                  {queryResult?.success &&
+                    queryResult.data &&
+                    "data" in queryResult &&
+                    (queryResult.data as TableData).data.length === limit && (
+                      <button
+                        onClick={() => executeQuery(offset + limit)}
+                        className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
+                      >
+                        Next {limit}
+                      </button>
+                    )}
                   <button
                     onClick={() => executeQuery(0, undefined)}
                     className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
@@ -491,7 +568,7 @@ const DataExplorerPage: React.FC = () => {
                     "columns" in queryResult.data ? (
                     <ChartComponent
                       data={transformDataForChart(
-                        queryResult.data as TableData
+                        queryResult.data as TableData,
                       )}
                       type={chartType}
                       title="Query Results Visualization"
@@ -567,13 +644,13 @@ const DataExplorerPage: React.FC = () => {
       </div>
 
       {/* Export Modal */}
-                    <ExportModal
-                isOpen={isExportModalOpen}
-                onClose={() => setIsExportModalOpen(false)}
-                onExport={handleExportChoice}
-                format={exportFormat}
-                loading={exportLoading}
-              />
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleExportChoice}
+        format={exportFormat}
+        loading={exportLoading}
+      />
 
       {/* Custom Query Modal */}
       <CustomQueryModal

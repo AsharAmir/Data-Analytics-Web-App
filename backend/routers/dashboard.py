@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import json
 import logging
 
@@ -15,9 +15,9 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 
 
 @router.get("/dashboard", response_model=List[DashboardWidget])
-async def get_dashboard(current_user: User = Depends(get_current_user)):
-    """Return dashboard layout filtered by user role."""
-    widgets = DashboardService.get_dashboard_layout()
+async def get_dashboard(menu_id: int = None, current_user: User = Depends(get_current_user)):
+    """Return dashboard layout filtered by user role and optionally by menu item."""
+    widgets = DashboardService.get_dashboard_layout(menu_id)
     if current_user.role != UserRole.ADMIN:
         widgets = [
             w
@@ -58,6 +58,13 @@ async def get_widget_data(widget_id: int, timeout: int = 45, current_user: User 
 
 
 @router.get("/kpis", response_model=List[KPI])
-async def get_kpis(current_user: User = Depends(get_current_user)):
-    """Return list of KPI metrics available for the current user."""
-    return KPIService.get_kpis(current_user.role) 
+async def get_kpis(menu_id: Optional[int] = None, current_user: User = Depends(get_current_user)):
+    """Return list of KPI metrics available for the current user, optionally filtered by menu."""
+    try:
+        return KPIService.get_kpis(current_user.role, menu_id)
+    except Exception as e:
+        # Log the error but return an empty list instead of failing
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting KPIs: {e}")
+        return []  # Return empty list if there's an error

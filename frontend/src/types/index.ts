@@ -32,11 +32,12 @@ export interface AuthToken {
 export interface MenuItem {
   id: number;
   name: string;
-  type: 'dashboard' | 'report';
+  type: "dashboard" | "report";
   icon?: string;
   parent_id?: number;
   sort_order: number;
   is_active: boolean;
+  role?: UserRole | UserRole[];
   children: MenuItem[];
 }
 
@@ -48,7 +49,9 @@ export interface Query {
   sql_query: string;
   chart_type?: string;
   chart_config?: Record<string, unknown>;
-  menu_item_id?: number;
+  menu_item_id?: number; // Keep for backward compatibility
+  menu_item_ids?: number[]; // Multiple menu assignments
+  menu_names?: string[]; // Menu names for display
   is_active: boolean;
   created_at: string;
 }
@@ -78,7 +81,7 @@ export interface ChartDataset {
 export interface ChartConfig {
   responsive?: boolean;
   maintainAspectRatio?: boolean;
-  indexAxis?: 'x' | 'y';
+  indexAxis?: "x" | "y";
   scales?: Record<string, unknown>;
   plugins?: Record<string, unknown>;
 }
@@ -133,13 +136,13 @@ export interface DashboardLayout {
 // Filter Types
 export interface FilterCondition {
   column: string;
-  operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'like' | 'in';
+  operator: "eq" | "ne" | "gt" | "lt" | "gte" | "lte" | "like" | "in";
   value: string | number | string[] | number[];
 }
 
 export interface TableFilter {
   conditions: FilterCondition[];
-  logic: 'AND' | 'OR';
+  logic: "AND" | "OR";
 }
 
 export interface FilteredQueryRequest {
@@ -149,21 +152,29 @@ export interface FilteredQueryRequest {
   limit?: number;
   offset?: number;
   sort_column?: string;
-  sort_direction?: 'ASC' | 'DESC';
+  sort_direction?: "ASC" | "DESC";
 }
 
 // Export Types
 export interface ExportRequest {
   query_id?: number;
   sql_query?: string;
-  format: 'excel' | 'csv' | 'pdf';
+  format: "excel" | "csv" | "pdf";
   filename?: string;
 }
 
 // Component Props Types
 export interface ChartComponentProps {
   data: ChartData;
-  type: 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter' | 'bubble' | 'polarArea' | 'radar';
+  type:
+    | "bar"
+    | "line"
+    | "pie"
+    | "doughnut"
+    | "scatter"
+    | "bubble"
+    | "polarArea"
+    | "radar";
   config?: ChartConfig;
   height?: number;
   className?: string;
@@ -172,9 +183,9 @@ export interface ChartComponentProps {
 export interface TableComponentProps {
   data: TableData;
   loading?: boolean;
-  onSort?: (column: string, direction: 'ASC' | 'DESC') => void;
+  onSort?: (column: string, direction: "ASC" | "DESC") => void;
   onFilter?: (filters: TableFilter) => void;
-  onExport?: (format: 'excel' | 'csv') => void;
+  onExport?: (format: "excel" | "csv") => void;
   className?: string;
 }
 
@@ -198,7 +209,8 @@ export interface QueryFormData {
   sql_query: string;
   chart_type?: string;
   chart_config?: Record<string, unknown>;
-  menu_item_id?: number;
+  menu_item_id?: number; // Keep for backward compatibility
+  menu_item_ids?: number[]; // Multiple menu assignments
 }
 
 // Grid Layout Types (for dashboard)
@@ -273,10 +285,10 @@ export interface ReportSection {
 export interface WidgetConfig {
   id: string;
   title: string;
-  type: 'chart' | 'table' | 'metric' | 'text';
+  type: "chart" | "table" | "metric" | "text";
   query_id?: number;
   custom_query?: string;
   chart_type?: string;
   refresh_interval?: number; // in seconds
   config?: Record<string, unknown>;
-} 
+}

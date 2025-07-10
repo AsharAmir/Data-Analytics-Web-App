@@ -59,6 +59,7 @@ class MenuItem(BaseModel):
     parent_id: Optional[int] = None
     sort_order: int = 0
     is_active: bool = True
+    role: Optional[Union[UserRole, List[UserRole]]] = None
     children: Optional[List["MenuItem"]] = []
 
 
@@ -68,6 +69,7 @@ class MenuItemCreate(BaseModel):
     icon: Optional[str] = None
     parent_id: Optional[int] = None
     sort_order: int = 0
+    role: Optional[Union[UserRole, List[UserRole]]] = None
 
 
 # Query Models
@@ -77,7 +79,8 @@ class QueryCreate(BaseModel):
     sql_query: str
     chart_type: Optional[str] = None
     chart_config: Optional[Dict[str, Any]] = None
-    menu_item_id: Optional[int] = None
+    menu_item_id: Optional[int] = None  # Keep for backward compatibility
+    menu_item_ids: Optional[List[int]] = None  # New field for multiple assignments
     role: Optional[Union[UserRole, List[UserRole]]] = UserRole.USER
 
 
@@ -88,7 +91,9 @@ class Query(BaseModel):
     sql_query: str
     chart_type: Optional[str] = None
     chart_config: Optional[Dict[str, Any]] = None
-    menu_item_id: Optional[int] = None
+    menu_item_id: Optional[int] = None  # Keep for backward compatibility
+    menu_item_ids: Optional[List[int]] = None  # Multiple menu assignments
+    menu_names: Optional[List[str]] = None  # Menu names for display
     is_active: bool = True
     created_at: datetime
     role: Optional[UserRole] = UserRole.USER

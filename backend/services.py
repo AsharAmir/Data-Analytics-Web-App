@@ -233,8 +233,13 @@ class DataService:
             for i, col in enumerate(df.columns[1:]):
                 values = pd.to_numeric(df[col], errors="coerce").fillna(0).tolist()
 
+                # Use a sensible default when column name is missing – Chart.js will display
+                # "undefined" if the label is an empty string or undefined.  We therefore
+                # substitute "Series <n>" when the column (alias) is not present or blank.
+                safe_label = str(col).strip() or f"Series {i+1}"
+
                 dataset = {
-                    "label": col,
+                    "label": safe_label,
                     "data": values,
                     "borderColor": colors[i % len(colors)],
                     "backgroundColor": colors[i % len(colors)]
@@ -256,9 +261,14 @@ class DataService:
                 else []
             )
 
+            # Ensure a non-empty label so the legend doesn’t show "undefined".
+            default_label = (
+                str(df.columns[1]).strip() if len(df.columns) > 1 and str(df.columns[1]).strip() else "Value"
+            )
+
             datasets = [
                 {
-                    "label": df.columns[1] if len(df.columns) > 1 else "Value",
+                    "label": default_label,
                     "data": values,
                     "backgroundColor": DataService._generate_colors(1)[0],
                     "borderWidth": 1,
@@ -428,8 +438,15 @@ class ExportService:
             output = io.StringIO()
             
             # Export with optimized settings for large datasets
-            df.to_csv(output, index=False, encoding='utf-8', 
-                     line_terminator='\n', chunksize=10000)
+            # Use pandas' correct keyword ``lineterminator`` (without underscore).
+            # ``line_terminator`` triggers a TypeError: unexpected keyword argument.
+            df.to_csv(
+                output,
+                index=False,
+                encoding="utf-8",
+                lineterminator="\n",
+                chunksize=10000,
+            )
             
             result = output.getvalue()
             logger.info(f"CSV export completed, size: {len(result)} characters")
@@ -447,22 +464,38 @@ class MenuService:
     """Service for managing dynamic menu items"""
 
     @staticmethod
-    def get_menu_structure() -> List[MenuItem]:
-        """Get hierarchical menu structure"""
+    def get_menu_structure(user_role: str = None) -> List[MenuItem]:
+        """Get hierarchical menu structure, optionally filtered by user role"""
         try:
             # Get all menu items
             query = """
-            SELECT id, name, type, icon, parent_id, sort_order, is_active
+            SELECT id, name, type, icon, parent_id, sort_order, is_active, role
             FROM app_menu_items
             WHERE is_active = 1
             ORDER BY sort_order, name
             """
 
-            result = db_manager.execute_query(query)
+            try:
+                result = db_manager.execute_query(query)
+            except Exception as exc:
+                # If role column doesn't exist, add it and retry
+                if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
+                    db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
+                    result = db_manager.execute_query(query)
+                else:
+                    raise exc
 
             # Convert to MenuItem objects
             all_items = []
             for row in result:
+                menu_roles = row.get("ROLE")
+                if menu_roles:
+                    menu_roles = [r.strip() for r in menu_roles.split(",")]
+                
+                # Role filtering: skip if user doesn't have required role
+                if user_role and menu_roles and user_role not in menu_roles:
+                    continue
+                
                 item = MenuItem(
                     id=row["ID"],
                     name=row["NAME"],
@@ -471,6 +504,7 @@ class MenuService:
                     parent_id=row["PARENT_ID"],
                     sort_order=row["SORT_ORDER"],
                     is_active=bool(row["IS_ACTIVE"]),
+                    role=menu_roles,
                     children=[],
                 )
                 all_items.append(item)
@@ -587,20 +621,33 @@ class DashboardService:
     """Service for managing dashboard widgets"""
 
     @staticmethod
-    def get_dashboard_layout() -> List[DashboardWidget]:
-        """Get dashboard widget layout"""
+    def get_dashboard_layout(menu_id: int = None) -> List[DashboardWidget]:
+        """Get dashboard widget layout, optionally filtered by menu item"""
         try:
-            query = """
-            SELECT w.id, w.title, w.query_id, w.position_x, w.position_y, 
-                   w.width, w.height, w.is_active,
-                   q.name as query_name, q.sql_query, q.chart_type, q.chart_config
-            FROM app_dashboard_widgets w
-            JOIN app_queries q ON w.query_id = q.id
-            WHERE w.is_active = 1 AND q.is_active = 1
-            ORDER BY w.position_y, w.position_x
-            """
-
-            result = db_manager.execute_query(query)
+            if menu_id:
+                # Filter widgets by menu item - show widgets whose queries belong to this menu item
+                query = """
+                SELECT w.id, w.title, w.query_id, w.position_x, w.position_y, 
+                       w.width, w.height, w.is_active,
+                       q.name as query_name, q.sql_query, q.chart_type, q.chart_config, q.menu_item_id
+                FROM app_dashboard_widgets w
+                JOIN app_queries q ON w.query_id = q.id
+                WHERE w.is_active = 1 AND q.is_active = 1 AND q.menu_item_id = :1
+                ORDER BY w.position_y, w.position_x
+                """
+                result = db_manager.execute_query(query, (menu_id,))
+            else:
+                # Default dashboard - show only widgets that don't belong to any custom menu
+                query = """
+                SELECT w.id, w.title, w.query_id, w.position_x, w.position_y,
+                       w.width, w.height, w.is_active,
+                       q.name as query_name, q.sql_query, q.chart_type, q.chart_config, q.menu_item_id
+                FROM app_dashboard_widgets w
+                JOIN app_queries q ON w.query_id = q.id
+                WHERE w.is_active = 1 AND q.is_active = 1 AND q.menu_item_id IS NULL
+                ORDER BY w.position_y, w.position_x
+                """
+                result = db_manager.execute_query(query)
 
             widgets = []
             for row in result:
@@ -618,7 +665,7 @@ class DashboardService:
                     sql_query=row["SQL_QUERY"],
                     chart_type=row["CHART_TYPE"],
                     chart_config=chart_config,
-                    menu_item_id=None,
+                    menu_item_id=row.get("MENU_ITEM_ID"),
                     is_active=True,
                     created_at=datetime.now(),
                 )
@@ -647,23 +694,43 @@ class KPIService:
     """Service for retrieving KPI metrics defined as special queries (is_kpi = 1)."""
 
     @staticmethod
-    def get_kpis(user_role: "UserRole") -> List["KPI"]:
+    def get_kpis(user_role: "UserRole", menu_id: int = None) -> List["KPI"]:
         """Fetch KPI queries, execute them, and return their numeric value.
 
         A query is treated as a KPI when the table **app_queries** has the column
         `is_kpi = 1`. The first column of the first row of the query result is
         assumed to be the numeric KPI value.
+        
+        Args:
+            user_role: User's role for filtering
+            menu_id: Optional menu ID to filter KPIs by dashboard assignment
         """
         try:
             # Avoid circular import – placed here to prevent top-level cycles
             from models import KPI, UserRole  # local import for type hint only
 
-            # 1. Get all KPI queries
-            sql = (
-                "SELECT id, name, sql_query, role "
-                "FROM app_queries WHERE is_active = 1 AND is_kpi = 1"
-            )
-            rows = db_manager.execute_query(sql)
+            # 1. Get all KPI queries, optionally filtered by menu
+            try:
+                if menu_id:
+                    sql = (
+                        "SELECT id, name, sql_query, role "
+                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND menu_item_id = :1"
+                    )
+                    rows = db_manager.execute_query(sql, (menu_id,))
+                else:
+                    sql = (
+                        "SELECT id, name, sql_query, role "
+                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND menu_item_id IS NULL"
+                    )
+                    rows = db_manager.execute_query(sql)
+            except Exception as exc:
+                # If is_kpi column doesn't exist, add it and return empty list for now
+                if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
+                    logger.info("Adding is_kpi column to app_queries table")
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+                    return []  # Return empty list until KPIs are created
+                else:
+                    raise exc
 
             kpis: List[KPI] = []
             for row in rows:
@@ -677,7 +744,9 @@ class KPIService:
 
                 # 3. Execute KPI SQL – take the first value of the first row
                 try:
-                    value_rows = db_manager.execute_query(row["SQL_QUERY"])
+                    sanitized_sql = row["SQL_QUERY"].rstrip().rstrip(";")
+
+                    value_rows = db_manager.execute_query(sanitized_sql)
                     if value_rows:
                         first_val = next(iter(value_rows[0].values()))  # first column value
                         # Cast to float for consistency, fallback to 0 when not numeric

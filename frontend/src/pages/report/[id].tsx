@@ -4,7 +4,7 @@ import apiClient from "../../lib/api";
 import DataTable from "../../components/ui/DataTable";
 import ChartComponent from "../../components/Charts/ChartComponent";
 import { Query, QueryResult, TableData, ChartData } from "../../types";
-import { toast } from 'react-hot-toast';
+import { toast } from "react-hot-toast";
 
 const ReportDetailPage: React.FC = () => {
   const router = useRouter();
@@ -42,7 +42,10 @@ const ReportDetailPage: React.FC = () => {
       await Promise.all([loadChartData(reportId), loadTableData(reportId)]);
 
       // Set initial view mode based on report configuration
-      if (reportResponse.data.chart_type && reportResponse.data.chart_type !== 'table') {
+      if (
+        reportResponse.data.chart_type &&
+        reportResponse.data.chart_type !== "table"
+      ) {
         setViewMode("chart");
         setChartType(reportResponse.data.chart_type as "bar" | "line" | "pie");
       } else {
@@ -97,20 +100,26 @@ const ReportDetailPage: React.FC = () => {
   const handleExport = (format: "excel" | "csv") => {
     if (!report) return;
 
-    toast.loading('Preparing export... This may take several minutes for large datasets.', {
-      id: 'export-toast',
-      duration: Infinity
-    });
+    toast.loading(
+      "Preparing export... This may take several minutes for large datasets.",
+      {
+        id: "export-toast",
+        duration: Infinity,
+      },
+    );
 
     // Use the export API with unlimited timeout
     apiClient
-      .exportData({
-        query_id: report.id,
-        format,
-        filename: `${report.name.replace(/\s+/g, "_")}_${
-          new Date().toISOString().split("T")[0]
-        }`,
-      }, 0) // Unlimited timeout for exports
+      .exportData(
+        {
+          query_id: report.id,
+          format,
+          filename: `${report.name.replace(/\s+/g, "_")}_${
+            new Date().toISOString().split("T")[0]
+          }`,
+        },
+        0,
+      ) // Unlimited timeout for exports
       .then((blob) => {
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -119,15 +128,18 @@ const ReportDetailPage: React.FC = () => {
         link.download = `${report.name.replace(/\s+/g, "_")}.${extension}`;
         link.click();
         window.URL.revokeObjectURL(url);
-        
-        toast.success('Export completed successfully!', { id: 'export-toast' });
+
+        toast.success("Export completed successfully!", {
+          id: "export-toast",
+          duration: 5000,
+        });
       })
       .catch((err) => {
         console.error("Export failed:", err);
-        const errorMsg = err?.message?.includes('timeout') 
-          ? 'Export timed out. Try exporting a smaller dataset or adding filters.'
-          : 'Export failed. Please try again.';
-        toast.error(errorMsg, { id: 'export-toast' });
+        const errorMsg = err?.message?.includes("timeout")
+          ? "Export timed out. Try exporting a smaller dataset or adding filters."
+          : "Export failed. Please try again.";
+        toast.error(errorMsg, { id: "export-toast" });
       });
   };
 
@@ -153,7 +165,7 @@ const ReportDetailPage: React.FC = () => {
     }
 
     const labels = chartData.map(
-      (row) => row[labelColumnIndex]?.toString() || ""
+      (row) => row[labelColumnIndex]?.toString() || "",
     );
     const values = chartData.map((row) => {
       const val = row[valueColumnIndex];
@@ -173,12 +185,15 @@ const ReportDetailPage: React.FC = () => {
       "#84CC16",
     ];
 
+    const safeLabel =
+      columns[valueColumnIndex]?.toString().trim() || "Series 1";
+
     if (chartType === "pie") {
       return {
         labels,
         datasets: [
           {
-            label: columns[valueColumnIndex],
+            label: safeLabel,
             data: values,
             backgroundColor: colors.slice(0, values.length),
             borderWidth: 2,
@@ -191,7 +206,7 @@ const ReportDetailPage: React.FC = () => {
       labels,
       datasets: [
         {
-          label: columns[valueColumnIndex],
+          label: safeLabel,
           data: values,
           backgroundColor:
             chartType === "line"
@@ -315,7 +330,9 @@ const ReportDetailPage: React.FC = () => {
               {viewMode === "chart" && (
                 <select
                   value={chartType}
-                  onChange={(e) => setChartType(e.target.value as "bar" | "line" | "pie")}
+                  onChange={(e) =>
+                    setChartType(e.target.value as "bar" | "line" | "pie")
+                  }
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 >
                   <option value="bar">Bar Chart</option>

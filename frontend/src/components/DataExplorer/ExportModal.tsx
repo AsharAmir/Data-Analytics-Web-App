@@ -8,7 +8,13 @@ interface ExportModalProps {
   loading?: boolean;
 }
 
-const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, format, loading = false }) => {
+const ExportModal: React.FC<ExportModalProps> = ({
+  isOpen,
+  onClose,
+  onExport,
+  format,
+  loading = false,
+}) => {
   if (!isOpen) {
     return null;
   }
@@ -24,8 +30,18 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -34,7 +50,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
         {/* Body */}
         <div className="p-6 space-y-4">
           <p className="text-gray-600 mb-4">
-            Choose what data you&apos;d like to export as {format.toUpperCase()}:
+            Choose what data you&apos;d like to export as {format.toUpperCase()}
+            :
           </p>
 
           <div className="space-y-3">
@@ -49,14 +66,28 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
             >
               <div className="flex items-center space-x-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z" />
+                  <svg
+                    className="w-5 h-5 text-blue-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c0-2.21-1.79-4-4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z"
+                    />
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">Complete Dataset</h3>
+                  <h3 className="font-medium text-gray-900">
+                    Complete Dataset
+                  </h3>
                   <p className="text-sm text-gray-500">
-                    {loading ? 'Preparing export... Please wait.' : 'Export all data from your query (recommended for large datasets)'}
+                    {loading
+                      ? "Preparing export... Please wait."
+                      : "Export all data from your query (recommended for large datasets)"}
                   </p>
                 </div>
               </div>
@@ -72,13 +103,27 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
             >
               <div className="flex items-center space-x-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors">
-                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <svg
+                    className="w-5 h-5 text-purple-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">Current Table View</h3>
-                  <p className="text-sm text-gray-500">Export only the data visible in the table right now</p>
+                  <h3 className="font-medium text-gray-900">
+                    Current Table View
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Export only the data visible in the table right now
+                  </p>
                 </div>
               </div>
             </button>
@@ -99,4 +144,4 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
   );
 };
 
-export default ExportModal; 
+export default ExportModal;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { MenuItem, User as UserType } from "../../types";
@@ -258,7 +258,7 @@ const Sidebar: React.FC<SidebarProps> = ({
    */
   const defaultMenuClick = (item: MenuItem) => {
     if (item.type === "dashboard") {
-      router.push("/dashboard");
+      router.push(`/dashboard?menu=${item.id}`);
     } else if (item.type === "report") {
       router.push(`/reports?menu=${item.id}`);
     }
@@ -273,7 +273,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     const hasChildren = item.children && item.children.length > 0;
     const isActive =
       currentPath.includes(`menu=${item.id}`) ||
-      (currentPath === "/reports" && router.query.menu === item.id.toString());
+      (currentPath === "/reports" &&
+        router.query.menu === item.id.toString()) ||
+      (currentPath === "/dashboard" &&
+        router.query.menu === item.id.toString());
 
     const IconComponent = getMenuItemIcon(item);
 
@@ -336,163 +339,192 @@ const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
+  /**
+   * Recursively filter out menu items that are *not* active. This guarantees
+   * that a menu deleted (or de-activated) in the Admin panel no longer shows
+   * up in the sidebar even if the backend still sends it with `is_active=false`.
+   * Keeping the structure immutable ensures React state consistency.
+   */
+  const filterActiveMenuItems = useCallback((items: MenuItem[]): MenuItem[] =>
+    items
+      .filter((it) => it.is_active)
+      .map((it) => ({
+        ...it,
+        // Recursively filter children
+        children: it.children ? filterActiveMenuItems(it.children) : [],
+      })), []);
+
+  // Memoise the result so we only recompute when `menuItems` actually changes.
+  const activeMenuItems = useMemo(
+    () => filterActiveMenuItems(menuItems),
+    [menuItems, filterActiveMenuItems],
+  );
+
   return (
     <>
       {/* Mobile backdrop overlay */}
       {mobileOpen && (
-        <div 
+        <div
           className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300"
           onClick={onMobileToggle}
         />
       )}
-      
+
       {/* Sidebar */}
       <div
         className={`
-          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-x-hidden
+          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-x-hidden overflow-y-auto
           lg:relative lg:translate-x-0 lg:transition-all lg:duration-300
-          fixed top-0 left-0 h-screen z-50 transition-transform duration-300 ease-in-out
-          ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out
+          ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
       >
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700 overflow-hidden">
-        <div className="flex items-center justify-between">
-          {!collapsed && (
-            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Analytics Pro
-            </h2>
-          )}
-          <button
-            onClick={() => {
-              // On mobile, use mobile toggle, on desktop use collapse
-              if (window.innerWidth < 1024 && onMobileToggle) {
-                onMobileToggle();
-              } else if (onToggleCollapse) {
-                onToggleCollapse();
-              }
-            }}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors touch-manipulation"
-          >
-            <svg
-              className={`h-5 w-5 transition-transform duration-300 ${
-                collapsed ? "rotate-180" : ""
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-        {/* Fixed Navigation Items */}
-        {navigationItems.map((item) => {
-          const isActive = currentPath === item.path;
-          const IconComponent = item.icon;
-          return (
-            <Link key={item.path} href={item.path}>
-              <div
-                onClick={() => {
-                  // Close mobile menu after navigation
-                  if (onMobileToggle && mobileOpen) {
-                    onMobileToggle();
-                  }
-                }}
-                className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group touch-manipulation ${
-                  collapsed ? "justify-center px-3 py-3" : "space-x-3 px-3 py-3"
-                } ${
-                  isActive
-                    ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
-                    : "hover:bg-gray-700"
-                }`}
-                title={collapsed ? item.name : undefined}
-              >
-                <IconComponent />
-                {!collapsed && <span className="font-medium">{item.name}</span>}
-                
-                {/* Tooltip for collapsed state */}
-                {collapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
-                    {item.name}
-                    <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
-                  </div>
-                )}
-              </div>
-            </Link>
-          );
-        })}
-
-        {/* Reports Section */}
-        {menuItems.length > 0 && (
-          <>
+        {/* Header */}
+        <div className="p-4 border-b border-gray-700 overflow-hidden">
+          <div className="flex items-center justify-between">
             {!collapsed && (
-              <div className="pt-4 pb-2">
-                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-                  Custom
-                </h3>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                Analytics Pro
+              </h2>
+            )}
+            <button
+              onClick={() => {
+                // On mobile, use mobile toggle, on desktop use collapse
+                if (window.innerWidth < 1024 && onMobileToggle) {
+                  onMobileToggle();
+                } else if (onToggleCollapse) {
+                  onToggleCollapse();
+                }
+              }}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors touch-manipulation"
+            >
+              <svg
+                className={`h-5 w-5 transition-transform duration-300 ${
+                  collapsed ? "rotate-180" : ""
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+          {/* Fixed Navigation Items */}
+          {navigationItems.map((item) => {
+            // For dashboard, only highlight if we're on dashboard page with no menu parameter
+            const isActive =
+              item.path === "/dashboard"
+                ? currentPath === item.path && !router.query.menu
+                : currentPath === item.path;
+            const IconComponent = item.icon;
+            return (
+              <Link key={item.path} href={item.path}>
+                <div
+                  onClick={() => {
+                    // Close mobile menu after navigation
+                    if (onMobileToggle && mobileOpen) {
+                      onMobileToggle();
+                    }
+                  }}
+                  className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group touch-manipulation ${
+                    collapsed
+                      ? "justify-center px-3 py-3"
+                      : "space-x-3 px-3 py-3"
+                  } ${
+                    isActive
+                      ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
+                      : "hover:bg-gray-700"
+                  }`}
+                  title={collapsed ? item.name : undefined}
+                >
+                  <IconComponent />
+                  {!collapsed && (
+                    <span className="font-medium">{item.name}</span>
+                  )}
+
+                  {/* Tooltip for collapsed state */}
+                  {collapsed && (
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                      {item.name}
+                      <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+                    </div>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+
+          {/* Reports Section */}
+          {activeMenuItems.length > 0 && (
+            <>
+              {!collapsed && (
+                <div className="pt-4 pb-2">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+                    Custom
+                  </h3>
+                </div>
+              )}
+
+              {/* Dynamic Menu Items */}
+              {activeMenuItems.map((item) => renderMenuItem(item))}
+            </>
+          )}
+        </nav>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-gray-700">
+          {/* User info and logout */}
+          <div className="mb-4">
+            {!collapsed && currentUser && (
+              <div className="mb-3 p-2 bg-gray-800 rounded-lg">
+                <p className="text-sm font-medium text-white truncate">
+                  {currentUser.username}
+                </p>
+                <p className="text-xs text-gray-400 truncate">
+                  {currentUser.email}
+                </p>
               </div>
             )}
 
-            {/* Dynamic Menu Items */}
-            {menuItems.map((item) => renderMenuItem(item))}
-          </>
-        )}
-      </nav>
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 relative group ${
+                collapsed ? "justify-center" : "space-x-3"
+              }`}
+              title={collapsed ? "Logout" : undefined}
+            >
+              <LogoutIcon />
+              {!collapsed && <span>Logout</span>}
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-700">
-        {/* User info and logout */}
-        <div className="mb-4">
-          {!collapsed && currentUser && (
-            <div className="mb-3 p-2 bg-gray-800 rounded-lg">
-              <p className="text-sm font-medium text-white truncate">
-                {currentUser.username}
-              </p>
-              <p className="text-xs text-gray-400 truncate">
-                {currentUser.email}
-              </p>
+              {/* Tooltip for collapsed state */}
+              {collapsed && (
+                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                  Logout
+                  <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+                </div>
+              )}
+            </button>
+          </div>
+
+          {!collapsed && (
+            <div className="text-xs text-gray-400 text-center">
+              <p>Analytics Platform v2.0</p>
+              <p className="mt-1">© 2024 Financial Systems</p>
             </div>
           )}
-
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 relative group ${
-              collapsed ? "justify-center" : "space-x-3"
-            }`}
-            title={collapsed ? "Logout" : undefined}
-          >
-            <LogoutIcon />
-            {!collapsed && <span>Logout</span>}
-            
-            {/* Tooltip for collapsed state */}
-            {collapsed && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
-                Logout
-                <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
-              </div>
-            )}
-          </button>
         </div>
-
-        {!collapsed && (
-          <div className="text-xs text-gray-400 text-center">
-            <p>Analytics Platform v2.0</p>
-            <p className="mt-1">© 2024 Financial Systems</p>
-          </div>
-        )}
       </div>
-    </div>
     </>
   );
 };

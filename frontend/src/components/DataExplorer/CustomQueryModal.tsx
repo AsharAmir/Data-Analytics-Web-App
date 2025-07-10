@@ -7,7 +7,12 @@ interface CustomQueryModalProps {
   editQuery?: { name: string; query: string } | null;
 }
 
-const CustomQueryModal: React.FC<CustomQueryModalProps> = ({ isOpen, onClose, onSave, editQuery }) => {
+const CustomQueryModal: React.FC<CustomQueryModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  editQuery,
+}) => {
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
 
@@ -42,8 +47,18 @@ const CustomQueryModal: React.FC<CustomQueryModalProps> = ({ isOpen, onClose, on
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -77,9 +92,14 @@ const CustomQueryModal: React.FC<CustomQueryModalProps> = ({ isOpen, onClose, on
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">Query Tips:</h4>
+            <h4 className="text-sm font-medium text-blue-800 mb-2">
+              Query Tips:
+            </h4>
             <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
-              <li>Use uppercase for table names and columns (SAMPLE_BT, DAY_OF, CT_MAIN)</li>
+              <li>
+                Use uppercase for table names and columns (SAMPLE_BT, DAY_OF,
+                CT_MAIN)
+              </li>
               <li>Only SELECT statements are allowed for security</li>
               <li>Use ROWNUM to limit results for better performance</li>
               <li>GROUP BY clauses can help create meaningful aggregations</li>
@@ -107,4 +127,4 @@ const CustomQueryModal: React.FC<CustomQueryModalProps> = ({ isOpen, onClose, on
   );
 };
 
-export default CustomQueryModal; 
+export default CustomQueryModal;

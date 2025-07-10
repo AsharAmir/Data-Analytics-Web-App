@@ -1,6 +1,6 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
-import Cookies from 'js-cookie';
-import { toast } from 'react-hot-toast';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
+import Cookies from "js-cookie";
+import { toast } from "react-hot-toast";
 import {
   User,
   LoginRequest,
@@ -14,10 +14,10 @@ import {
   APIResponse,
   Query,
   QueryFormData,
-  KPI
-} from '../types';
+  KPI,
+} from "../types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
@@ -27,7 +27,7 @@ class ApiClient {
       baseURL: API_BASE_URL,
       timeout: 30000,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
@@ -42,73 +42,104 @@ class ApiClient {
       },
       (error) => {
         return Promise.reject(error);
-      }
+      },
     );
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
+        console.error("API Client interceptor - Full error:", error);
+        console.error(
+          "API Client interceptor - Response data:",
+          error.response?.data,
+        );
+        console.error(
+          "API Client interceptor - Status:",
+          error.response?.status,
+        );
+
         if (error.response?.status === 401) {
-          const originalUrl = error.config?.url || '';
+          const originalUrl = error.config?.url || "";
           // Skip global 401 handling for login attempts to avoid duplicate toasts
-          if (!originalUrl.includes('/auth/login')) {
+          if (!originalUrl.includes("/auth/login")) {
             // Token expired or invalid
             this.removeToken();
-            toast.error('Session expired. Please login again.', { duration: 5000 });
+            toast.error("Session expired. Please login again.", {
+              duration: 5000,
+            });
             // Redirect user to login page after token expiry
-            window.location.href = '/login';
+            window.location.href = "/login";
           }
         } else if (error.response?.status >= 500) {
-          toast.error('Server error. Please try again later.', { duration: 5000 });
+          toast.error("Server error. Please try again later.", {
+            duration: 5000,
+          });
+        } else if (
+          error.response?.status >= 400 &&
+          error.response?.status < 500
+        ) {
+          if (error.response?.data?.error && !error.response?.data?.detail) {
+            const errorMsg =
+              typeof error.response.data.error === "string"
+                ? error.response.data.error
+                : "An error occurred";
+            toast.error(errorMsg, { duration: 5000 });
+          }
+          // Else: silently pass it to caller
         } else if (error.response?.data?.error) {
-          toast.error(error.response.data.error, { duration: 5000 });
+          // Ensure we only pass strings to toast.error()
+          const errorMsg =
+            typeof error.response.data.error === "string"
+              ? error.response.data.error
+              : "An error occurred";
+          toast.error(errorMsg, { duration: 5000 });
         } else if (error.message) {
           toast.error(error.message, { duration: 5000 });
         }
         return Promise.reject(error);
-      }
+      },
     );
   }
 
   // Token management
   private getToken(): string | null {
-    if (typeof window === 'undefined') {
+    if (typeof window === "undefined") {
       return null; // SSR safeguard
     }
-    return Cookies.get('auth_token') || localStorage.getItem('auth_token');
+    return Cookies.get("auth_token") || localStorage.getItem("auth_token");
   }
 
   private setToken(token: string): void {
-    if (typeof window === 'undefined') return; // SSR safeguard
+    if (typeof window === "undefined") return; // SSR safeguard
     // Set cookie with proper settings for development/production
-    const isSecure = window.location.protocol === 'https:';
-    Cookies.set('auth_token', token, { 
-      expires: 7, 
-      secure: isSecure, 
-      sameSite: isSecure ? 'strict' : 'lax' 
+    const isSecure = window.location.protocol === "https:";
+    Cookies.set("auth_token", token, {
+      expires: 7,
+      secure: isSecure,
+      sameSite: isSecure ? "strict" : "lax",
     });
-    localStorage.setItem('auth_token', token);
+    localStorage.setItem("auth_token", token);
   }
 
   private removeToken(): void {
-    if (typeof window === 'undefined') return; // SSR safeguard
-    Cookies.remove('auth_token');
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user');
+    if (typeof window === "undefined") return; // SSR safeguard
+    Cookies.remove("auth_token");
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("user");
   }
 
   // User management
   private setUser(user: User): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('user', JSON.stringify(user));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(user));
     }
   }
 
   public getUser(): User | null {
-    if (typeof window === 'undefined') return null; // SSR safeguard
+    if (typeof window === "undefined") return null; // SSR safeguard
 
-    const userStr = localStorage.getItem('user');
+    const userStr = localStorage.getItem("user");
     if (userStr) {
       try {
         return JSON.parse(userStr);
@@ -122,19 +153,22 @@ class ApiClient {
   // Authentication methods
   async login(credentials: LoginRequest): Promise<AuthToken> {
     try {
-      const response: AxiosResponse<AuthToken> = await this.client.post('/auth/login', credentials);
+      const response: AxiosResponse<AuthToken> = await this.client.post(
+        "/auth/login",
+        credentials,
+      );
       const { access_token, user } = response.data;
-      
+
       this.setToken(access_token);
       this.setUser(user);
 
       // If user must change password, redirect immediately
       if (user.must_change_password) {
-        if (typeof window !== 'undefined') {
-          window.location.href = '/change-password';
+        if (typeof window !== "undefined") {
+          window.location.href = "/change-password";
         }
       }
-      
+
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -143,7 +177,7 @@ class ApiClient {
 
   async getCurrentUser(): Promise<User> {
     try {
-      const response: AxiosResponse<User> = await this.client.get('/auth/me');
+      const response: AxiosResponse<User> = await this.client.get("/auth/me");
       this.setUser(response.data);
       return response.data;
     } catch (error: unknown) {
@@ -153,22 +187,24 @@ class ApiClient {
 
   async getAuthMode(): Promise<string> {
     try {
-      const response: AxiosResponse<APIResponse<{ auth_mode: string }>> = await this.client.get('/auth/mode');
-      return response.data.data?.auth_mode || 'form';
+      const response: AxiosResponse<APIResponse<{ auth_mode: string }>> =
+        await this.client.get("/auth/mode");
+      return response.data.data?.auth_mode || "form";
     } catch {
-      return 'form';
+      return "form";
     }
   }
 
   logout(): void {
     this.removeToken();
-    window.location.href = '/login';
+    window.location.href = "/login";
   }
 
   // Health check
   async healthCheck(): Promise<APIResponse> {
     try {
-      const response: AxiosResponse<APIResponse> = await this.client.get('/health');
+      const response: AxiosResponse<APIResponse> =
+        await this.client.get("/health");
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -178,7 +214,8 @@ class ApiClient {
   // Menu methods
   async getMenuItems(): Promise<MenuItem[]> {
     try {
-      const response: AxiosResponse<MenuItem[]> = await this.client.get('/api/menu');
+      const response: AxiosResponse<MenuItem[]> =
+        await this.client.get("/api/menu");
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -186,9 +223,13 @@ class ApiClient {
   }
 
   // Dashboard methods
-  async getDashboardLayout(): Promise<DashboardWidget[]> {
+  async getDashboardLayout(menuId?: number): Promise<DashboardWidget[]> {
     try {
-      const response: AxiosResponse<DashboardWidget[]> = await this.client.get('/api/dashboard');
+      const params = menuId ? { menu_id: menuId } : {};
+      const response: AxiosResponse<DashboardWidget[]> = await this.client.get(
+        "/api/dashboard",
+        { params },
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -197,7 +238,9 @@ class ApiClient {
 
   async getWidgetData(widgetId: number): Promise<QueryResult> {
     try {
-      const response: AxiosResponse<QueryResult> = await this.client.post(`/api/dashboard/widget/${widgetId}/data`);
+      const response: AxiosResponse<QueryResult> = await this.client.post(
+        `/api/dashboard/widget/${widgetId}/data`,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -206,7 +249,7 @@ class ApiClient {
 
   async getKpis(): Promise<KPI[]> {
     try {
-      const response: AxiosResponse<KPI[]> = await this.client.get('/api/kpis');
+      const response: AxiosResponse<KPI[]> = await this.client.get("/api/kpis");
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -214,9 +257,21 @@ class ApiClient {
   }
 
   // Update widget layout (position/size)
-  async updateWidget(widgetId: number, data: Partial<{ position_x: number; position_y: number; width: number; height: number; title: string }>): Promise<APIResponse> {
+  async updateWidget(
+    widgetId: number,
+    data: Partial<{
+      position_x: number;
+      position_y: number;
+      width: number;
+      height: number;
+      title: string;
+    }>,
+  ): Promise<APIResponse> {
     try {
-      const response: AxiosResponse<APIResponse> = await this.client.put(`/api/admin/dashboard/widget/${widgetId}`, data);
+      const response: AxiosResponse<APIResponse> = await this.client.put(
+        `/api/admin/dashboard/widget/${widgetId}`,
+        data,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -226,16 +281,24 @@ class ApiClient {
   // Query methods
   async executeQuery(request: QueryExecuteRequest): Promise<QueryResult> {
     try {
-      const response: AxiosResponse<QueryResult> = await this.client.post('/api/query/execute', request);
+      const response: AxiosResponse<QueryResult> = await this.client.post(
+        "/api/query/execute",
+        request,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
     }
   }
 
-  async executeFilteredQuery(request: FilteredQueryRequest): Promise<QueryResult> {
+  async executeFilteredQuery(
+    request: FilteredQueryRequest,
+  ): Promise<QueryResult> {
     try {
-      const response: AxiosResponse<QueryResult> = await this.client.post('/api/query/filtered', request);
+      const response: AxiosResponse<QueryResult> = await this.client.post(
+        "/api/query/filtered",
+        request,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -245,10 +308,14 @@ class ApiClient {
   // Export methods
   async exportData(request: ExportRequest, timeout: number = 0): Promise<Blob> {
     try {
-      const response: AxiosResponse<Blob> = await this.client.post('/api/export', request, {
-        responseType: 'blob',
-        timeout: timeout, // 0 means unlimited timeout for exports
-      });
+      const response: AxiosResponse<Blob> = await this.client.post(
+        "/api/export",
+        request,
+        {
+          responseType: "blob",
+          timeout: timeout, // 0 means unlimited timeout for exports
+        },
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -258,7 +325,8 @@ class ApiClient {
   // Reports methods
   async getReportsByMenu(menuItemId: number): Promise<APIResponse<Query[]>> {
     try {
-      const response: AxiosResponse<APIResponse<Query[]>> = await this.client.get(`/api/reports/menu/${menuItemId}`);
+      const response: AxiosResponse<APIResponse<Query[]>> =
+        await this.client.get(`/api/reports/menu/${menuItemId}`);
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -268,7 +336,9 @@ class ApiClient {
   // Query detail
   async getQueryDetail(queryId: number): Promise<APIResponse<Query>> {
     try {
-      const response: AxiosResponse<APIResponse<Query>> = await this.client.get(`/api/query/${queryId}`);
+      const response: AxiosResponse<APIResponse<Query>> = await this.client.get(
+        `/api/query/${queryId}`,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
@@ -285,25 +355,44 @@ class ApiClient {
     }
   }
 
-  async post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  async post<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     try {
-      const response: AxiosResponse<T> = await this.client.post(url, data, config);
+      const response: AxiosResponse<T> = await this.client.post(
+        url,
+        data,
+        config,
+      );
       return response.data;
     } catch (error) {
       throw error;
     }
   }
 
-  async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  async put<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     try {
-      const response: AxiosResponse<T> = await this.client.put(url, data, config);
+      const response: AxiosResponse<T> = await this.client.put(
+        url,
+        data,
+        config,
+      );
       return response.data;
     } catch (error: unknown) {
       throw error;
     }
   }
 
-  async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  async delete<T = unknown>(
+    url: string,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
     try {
       const response: AxiosResponse<T> = await this.client.delete(url, config);
       return response.data;
@@ -320,14 +409,14 @@ class ApiClient {
   async downloadFile(url: string, filename: string): Promise<void> {
     try {
       const response = await this.client.get(url, {
-        responseType: 'blob',
+        responseType: "blob",
       });
 
       const blob = new Blob([response.data]);
       const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = downloadUrl;
-      link.setAttribute('download', filename);
+      link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -365,20 +454,29 @@ class ApiClient {
     }
   }
 
-  async changePassword(oldPassword: string, newPassword: string): Promise<APIResponse> {
+  async changePassword(
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<APIResponse> {
     const currentUser = this.getUser();
     if (!currentUser) {
-      throw new Error('Not authenticated');
+      throw new Error("Not authenticated");
     }
     const payload = {
       username: currentUser.username,
       password: oldPassword,
       new_password: newPassword,
     };
-    const response: AxiosResponse<APIResponse> = await this.client.post('/auth/change-password', payload);
+    const response: AxiosResponse<APIResponse> = await this.client.post(
+      "/auth/change-password",
+      payload,
+    );
     // After successful change clear must_change_password flag locally
     if (response.data.success) {
-      const updatedUser = { ...currentUser, must_change_password: false } as User;
+      const updatedUser = {
+        ...currentUser,
+        must_change_password: false,
+      } as User;
       this.setUser(updatedUser);
     }
     return response.data;
@@ -410,13 +508,16 @@ export const {
   updateUser,
   deleteUser,
   deleteQuery,
-  changePassword
+  changePassword,
 } = apiClient;
 
 export async function createQuery(data: QueryFormData & { role?: string[] }) {
-  const response = await apiClient.post<APIResponse<Query>>("/api/admin/query", { ...data, role: data.role || ["user"] });
+  const response = await apiClient.post<APIResponse<Query>>(
+    "/api/admin/query",
+    { ...data, role: data.role || ["user"] },
+  );
   if (response.success && response.data) {
     return response.data;
   }
-  throw new Error(response.message || 'Failed to create query');
+  throw new Error(response.message || "Failed to create query");
 }

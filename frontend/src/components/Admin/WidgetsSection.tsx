@@ -1,9 +1,7 @@
 import React from "react";
-import {
-  PlusIcon,
-  TrashIcon,
-} from "@heroicons/react/24/outline";
+import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import WidgetFormModal from "./WidgetFormModal";
+import { MenuItem } from "../../types";
 
 // Types replicated from admin page for local use
 interface Widget {
@@ -22,6 +20,7 @@ interface QueryOption {
   id: number;
   name: string;
   chart_type: string;
+  menu_name?: string;
 }
 
 interface WidgetForm {
@@ -33,17 +32,18 @@ interface WidgetForm {
   height: number;
 }
 
+
+
 interface WidgetsSectionProps {
   widgets: Widget[];
   queries: QueryOption[];
+  menuItems: MenuItem[];
 
   // Modal + form state
   showWidgetForm: boolean;
   setShowWidgetForm: (val: boolean) => void;
   widgetForm: WidgetForm;
   setWidgetForm: React.Dispatch<React.SetStateAction<WidgetForm>>;
-  showAdvanced: boolean;
-  setShowAdvanced: React.Dispatch<React.SetStateAction<boolean>>;
 
   // CRUD handlers
   createWidget: () => void;
@@ -53,12 +53,11 @@ interface WidgetsSectionProps {
 const WidgetsSection: React.FC<WidgetsSectionProps> = ({
   widgets,
   queries,
+  menuItems,
   showWidgetForm,
   setShowWidgetForm,
   widgetForm,
   setWidgetForm,
-  showAdvanced,
-  setShowAdvanced,
   createWidget,
   deleteWidget,
 }) => {
@@ -66,7 +65,9 @@ const WidgetsSection: React.FC<WidgetsSectionProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold text-gray-900">Dashboard Widgets</h2>
+        <h2 className="text-lg font-semibold text-gray-900">
+          Dashboard Widgets
+        </h2>
         <button
           onClick={() => setShowWidgetForm(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center"
@@ -81,7 +82,9 @@ const WidgetsSection: React.FC<WidgetsSectionProps> = ({
         {widgets.map((widget) => (
           <div key={widget.id} className="bg-white rounded-lg shadow p-6">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-medium text-gray-900">{widget.title}</h3>
+              <h3 className="text-lg font-medium text-gray-900">
+                {widget.title}
+              </h3>
               <button
                 onClick={() => deleteWidget(widget.id)}
                 className="text-red-500 hover:text-red-700"
@@ -97,13 +100,15 @@ const WidgetsSection: React.FC<WidgetsSectionProps> = ({
                 <strong>Chart Type:</strong> {widget.chart_type}
               </p>
               <p>
-                <strong>Position:</strong> ({widget.position_x}, {widget.position_y})
+                <strong>Position:</strong> ({widget.position_x},{" "}
+                {widget.position_y})
               </p>
               <p>
                 <strong>Size:</strong> {widget.width} × {widget.height}
               </p>
               <p>
-                <strong>Created:</strong> {new Date(widget.created_at).toLocaleDateString()}
+                <strong>Created:</strong>{" "}
+                {new Date(widget.created_at).toLocaleDateString()}
               </p>
             </div>
           </div>
@@ -119,12 +124,11 @@ const WidgetsSection: React.FC<WidgetsSectionProps> = ({
           widgetForm={widgetForm}
           setWidgetForm={setWidgetForm}
           queries={queries}
-          showAdvanced={showAdvanced}
-          setShowAdvanced={setShowAdvanced}
+          menuItems={menuItems}
         />
       )}
     </div>
   );
 };
 
-export default WidgetsSection; 
+export default WidgetsSection;

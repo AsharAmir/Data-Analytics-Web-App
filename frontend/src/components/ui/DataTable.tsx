@@ -45,7 +45,7 @@ const DataTable: React.FC<DataTableProps> = ({
         .filter(([, v]) => v !== "")
         .map(([idx, value]) => ({
           column: data.columns[parseInt(idx, 10)],
-          operator: 'like',
+          operator: "like",
           value,
         }));
       onFilter(filterConditions);
@@ -61,7 +61,7 @@ const DataTable: React.FC<DataTableProps> = ({
       const searchMatch =
         !searchTerm ||
         row.some((cell) =>
-          cell?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+          cell?.toString().toLowerCase().includes(searchTerm.toLowerCase()),
         );
 
       // Column filters
@@ -71,7 +71,7 @@ const DataTable: React.FC<DataTableProps> = ({
           const cellValue =
             row[parseInt(columnIndex)]?.toString().toLowerCase() || "";
           return cellValue.includes(filterValue.toLowerCase());
-        }
+        },
       );
 
       return searchMatch && filterMatch;
@@ -129,9 +129,7 @@ const DataTable: React.FC<DataTableProps> = ({
         <div className="flex flex-col space-y-4">
           {/* Title and Stats Row */}
           <div className="flex items-center flex-wrap gap-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Data Table
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900">Data Table</h3>
             <span className="text-sm text-gray-500">
               {filteredData.length} of {data.total_count} records
             </span>

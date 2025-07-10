@@ -2,13 +2,14 @@
 const nextConfig = {
   reactStrictMode: true,
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_API_URL:
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
   },
   async redirects() {
     return [
       {
-        source: '/',
-        destination: '/dashboard',
+        source: "/",
+        destination: "/dashboard",
         permanent: false,
       },
     ];
@@ -22,4 +23,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig; 
+module.exports = nextConfig;
