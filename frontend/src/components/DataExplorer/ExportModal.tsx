@@ -5,9 +5,10 @@ interface ExportModalProps {
   onClose: () => void;
   onExport: (type: "complete" | "current", format: "excel" | "csv") => void;
   format: "excel" | "csv";
+  loading?: boolean;
 }
 
-const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, format }) => {
+const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, format, loading = false }) => {
   if (!isOpen) {
     return null;
   }
@@ -43,7 +44,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
                 onExport("complete", format);
                 onClose();
               }}
-              className="w-full p-4 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-left group"
+              disabled={loading}
+              className="w-full p-4 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="flex items-center space-x-3">
                 <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
@@ -53,7 +55,9 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport, fo
                 </div>
                 <div>
                   <h3 className="font-medium text-gray-900">Complete Dataset</h3>
-                  <p className="text-sm text-gray-500">Export all data from your query (recommended for large datasets)</p>
+                  <p className="text-sm text-gray-500">
+                    {loading ? 'Preparing export... Please wait.' : 'Export all data from your query (recommended for large datasets)'}
+                  </p>
                 </div>
               </div>
             </button>

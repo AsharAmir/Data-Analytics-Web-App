@@ -12,6 +12,8 @@ from auth import (
 )
 from config import settings
 from models import APIResponse, Token, User, UserLogin
+from auth import verify_password, get_password_hash
+from database import db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,38 @@ async def login(user_login: UserLogin):
     )
 
     return Token(access_token=access_token, token_type="bearer", user=user)
+
+
+# ---------------- Password Change ----------------
+
+
+class PasswordChangeRequest(UserLogin):
+    new_password: str
+
+
+@router.post("/change-password", response_model=APIResponse)
+async def change_password(request_data: PasswordChangeRequest, current_user: User = Depends(get_current_user)):
+    """Allow a user to change their password. Requires old password verification."""
+
+    # Verify old password
+    if current_user.username != request_data.username:
+        raise HTTPException(status_code=403, detail="Cannot change another user's password")
+
+    # Re-fetch hashed password for verification
+    result = db_manager.execute_query(
+        "SELECT password_hash FROM app_users WHERE id = :1", (current_user.id,)
+    )
+    if not result or not verify_password(request_data.password, result[0]["PASSWORD_HASH"]):
+        raise HTTPException(status_code=401, detail="Incorrect current password")
+
+    # Update hash & clear must_change_password
+    new_hash = get_password_hash(request_data.new_password)
+    db_manager.execute_non_query(
+        "UPDATE app_users SET password_hash=:1, must_change_password=0 WHERE id=:2",
+        (new_hash, current_user.id),
+    )
+
+    return APIResponse(success=True, message="Password changed successfully")
 
 
 @router.get("/me", response_model=User)

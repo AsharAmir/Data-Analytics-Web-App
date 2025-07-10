@@ -3,6 +3,8 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 from config import settings
 import logging
+import time
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -15,21 +17,58 @@ class DatabaseManager:
         )
         self.username = settings.DB_USERNAME
         self.password = settings.DB_PASSWORD
-
-    def get_connection(self):
-        """Get database connection"""
+        
+        # Connection pool for better performance
         try:
-            return oracledb.connect(
-                user=self.username, password=self.password, dsn=self.dsn
+            self.pool = oracledb.create_pool(
+                user=self.username,
+                password=self.password,
+                dsn=self.dsn,
+                min=2,  # Minimum connections
+                max=10,  # Maximum connections  
+                increment=1,  # Connection increment
+                connectiontype=oracledb.Connection,
+                getmode=oracledb.POOL_GETMODE_WAIT,
+                timeout=30,  # Pool timeout
+                wait_timeout=5000  # Wait timeout in milliseconds
             )
+            logger.info("Database connection pool created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create connection pool: {e}")
+            self.pool = None
+
+    @contextmanager
+    def get_connection(self):
+        """Get database connection from pool with proper cleanup"""
+        conn = None
+        try:
+            if self.pool:
+                conn = self.pool.acquire()
+            else:
+                # Fallback to direct connection
+                conn = oracledb.connect(
+                    user=self.username, password=self.password, dsn=self.dsn
+                )
+            yield conn
         except Exception as e:
             logger.error(f"Database connection error: {e}")
             raise
+        finally:
+            if conn:
+                try:
+                    if self.pool:
+                        self.pool.release(conn)
+                    else:
+                        conn.close()
+                except Exception as e:
+                    logger.error(f"Error closing connection: {e}")
 
     def execute_query(
-        self, query: str, params: tuple = None, fetch_size: int = 10000
+        self, query: str, params: tuple = None, fetch_size: int = 10000, timeout: int = 45
     ) -> List[Dict[str, Any]]:
-        """Execute query and return results as list of dictionaries"""
+        """Execute query and return results as list of dictionaries with timeout"""
+        start_time = time.time()
+        
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -37,6 +76,7 @@ class DatabaseManager:
                 # Set fetch size for large datasets
                 cursor.arraysize = fetch_size
 
+                # Execute with timeout monitoring
                 if params:
                     cursor.execute(query, params)
                 else:
@@ -45,46 +85,61 @@ class DatabaseManager:
                 # Get column names
                 columns = [column[0] for column in cursor.description]
 
-                # Fetch results in chunks for memory efficiency
+                # Fetch results in chunks for memory efficiency with optional timeout check
                 results = []
                 while True:
+                    # Check for timeout only if timeout > 0 (0 means unlimited)
+                    if timeout > 0 and time.time() - start_time > timeout:
+                        logger.warning(f"Query execution timeout after {timeout}s")
+                        cursor.close()
+                        raise TimeoutError(f"Query execution exceeded {timeout} seconds")
+                    
                     rows = cursor.fetchmany(fetch_size)
                     if not rows:
                         break
 
                     for row in rows:
-                        # Convert Oracle LOB objects to plain strings so that downstream
-                        # Pydantic models receive normal ``str`` instances instead of
-                        # ``oracledb.LOB`` which causes validation errors.
+                        # Convert Oracle LOB objects to plain strings
                         converted: Dict[str, Any] = {}
                         for col, val in zip(columns, row):
                             if isinstance(val, oracledb.LOB):
-                                # ``read()`` will load the complete CLOB/BLOB content.
-                                # For text CLOBs this is fine because these are typically
-                                # small application-level strings (SQL text, JSON config, …).
                                 try:
                                     converted[col] = val.read()
                                 except Exception:
-                                    # Fallback – if reading fails keep the original value so
-                                    # that at least the query doesn't crash.
                                     converted[col] = str(val)
                             else:
                                 converted[col] = val
                         results.append(converted)
 
+                execution_time = time.time() - start_time
+                if timeout == 0:
+                    logger.info(f"Query executed successfully in {execution_time:.2f}s, returned {len(results)} rows (unlimited timeout)")
+                else:
+                    logger.info(f"Query executed successfully in {execution_time:.2f}s, returned {len(results)} rows")
                 return results
 
+        except TimeoutError:
+            raise
         except Exception as e:
-            logger.error(f"Query execution error: {e}")
+            execution_time = time.time() - start_time
+            logger.error(f"Query execution error after {execution_time:.2f}s: {e}")
             raise
 
-    def execute_query_pandas(self, query: str, params: tuple = None) -> pd.DataFrame:
-        """Execute query and return pandas DataFrame for large datasets"""
+    def execute_query_pandas(self, query: str, params: tuple = None, timeout: int = 45) -> pd.DataFrame:
+        """Execute query and return pandas DataFrame for large datasets with timeout"""
         try:
-            # Use direct connection instead of SQLAlchemy to avoid compatibility issues
-            results = self.execute_query(query, params)
+            # Use the timeout-enabled execute_query method
+            results = self.execute_query(query, params, timeout=timeout)
             df = pd.DataFrame(results)
+            if timeout == 0:
+                logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns (unlimited timeout)")
+            else:
+                logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns")
             return df
+        except TimeoutError:
+            if timeout > 0:
+                logger.error(f"Pandas query execution timeout after {timeout}s")
+            raise
         except Exception as e:
             logger.error(f"Pandas query execution error: {e}")
             raise
@@ -125,6 +180,7 @@ def init_database():
         password_hash VARCHAR2(255) NOT NULL,
         role VARCHAR2(20) DEFAULT 'user' NOT NULL,
         is_active NUMBER(1) DEFAULT 1,
+        must_change_password NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -202,7 +258,7 @@ def init_database():
             except Exception as e:
                 logger.warning(f"Table creation warning for {table_name}: {e}")
 
-        # Check and add role column to existing app_users table if missing
+        # Check and add role & must_change_password columns to existing app_users table if missing
         try:
             check_column_query = """
                 SELECT COUNT(*) FROM user_tab_columns 
@@ -226,6 +282,21 @@ def init_database():
                 logger.info("Updated admin user with admin role")
             else:
                 logger.info("Role column already exists in app_users table")
+
+            # Ensure must_change_password column exists
+            check_mcp_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_USERS' AND column_name = 'MUST_CHANGE_PASSWORD'
+            """
+            mcp_result = db_manager.execute_query(check_mcp_query)
+
+            if mcp_result[0]["COUNT(*)"] == 0:
+                db_manager.execute_non_query(
+                    "ALTER TABLE app_users ADD (must_change_password NUMBER(1) DEFAULT 1)"
+                )
+                logger.info("Added must_change_password column to app_users table")
+            else:
+                logger.info("must_change_password column already exists in app_users table")
 
         except Exception as e:
             logger.warning(f"Error updating app_users table schema: {e}")

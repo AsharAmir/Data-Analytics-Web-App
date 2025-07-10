@@ -28,6 +28,14 @@ interface SidebarProps {
    * Whether the sidebar is currently collapsed (small width).
    */
   collapsed?: boolean;
+  /**
+   * Whether the mobile overlay is open.
+   */
+  mobileOpen?: boolean;
+  /**
+   * Callback to set mobile overlay state.
+   */
+  onMobileToggle?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -36,6 +44,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   collapsed = false,
   onToggleCollapse,
   onMenuClick,
+  mobileOpen = false,
+  onMobileToggle,
 }) => {
   const router = useRouter();
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
@@ -252,6 +262,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     } else if (item.type === "report") {
       router.push(`/reports?menu=${item.id}`);
     }
+    // Close mobile menu after navigation
+    if (onMobileToggle && mobileOpen) {
+      onMobileToggle();
+    }
   };
 
   const renderMenuItem = (item: MenuItem, level: number = 0) => {
@@ -323,9 +337,24 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <div
-      className={`${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col transition-all duration-300 shadow-xl overflow-x-hidden`}
-    >
+    <>
+      {/* Mobile backdrop overlay */}
+      {mobileOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300"
+          onClick={onMobileToggle}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div
+        className={`
+          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-x-hidden
+          lg:relative lg:translate-x-0 lg:transition-all lg:duration-300
+          fixed top-0 left-0 h-screen z-50 transition-transform duration-300 ease-in-out
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
       {/* Header */}
       <div className="p-4 border-b border-gray-700 overflow-hidden">
         <div className="flex items-center justify-between">
@@ -335,8 +364,15 @@ const Sidebar: React.FC<SidebarProps> = ({
             </h2>
           )}
           <button
-            onClick={onToggleCollapse}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+            onClick={() => {
+              // On mobile, use mobile toggle, on desktop use collapse
+              if (window.innerWidth < 1024 && onMobileToggle) {
+                onMobileToggle();
+              } else if (onToggleCollapse) {
+                onToggleCollapse();
+              }
+            }}
+            className="p-2 hover:bg-gray-700 rounded-lg transition-colors touch-manipulation"
           >
             <svg
               className={`h-5 w-5 transition-transform duration-300 ${
@@ -366,7 +402,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           return (
             <Link key={item.path} href={item.path}>
               <div
-                className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group ${
+                onClick={() => {
+                  // Close mobile menu after navigation
+                  if (onMobileToggle && mobileOpen) {
+                    onMobileToggle();
+                  }
+                }}
+                className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group touch-manipulation ${
                   collapsed ? "justify-center px-3 py-3" : "space-x-3 px-3 py-3"
                 } ${
                   isActive
@@ -396,15 +438,13 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && (
               <div className="pt-4 pb-2">
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-                  Reports
+                  Custom
                 </h3>
               </div>
             )}
 
             {/* Dynamic Menu Items */}
-            {menuItems
-              .filter((item) => item.type !== "dashboard")
-              .map((item) => renderMenuItem(item))}
+            {menuItems.map((item) => renderMenuItem(item))}
           </>
         )}
       </nav>
@@ -453,6 +493,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };
 

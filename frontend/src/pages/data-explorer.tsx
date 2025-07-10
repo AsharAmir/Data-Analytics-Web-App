@@ -8,6 +8,7 @@ import { MenuItem, QueryResult, TableData, ChartData } from "../types";
 import ExportModal from "../components/DataExplorer/ExportModal";
 import CustomQueryModal from "../components/DataExplorer/CustomQueryModal";
 import CustomQueryCard from "../components/DataExplorer/CustomQueryCard";
+import { toast } from 'react-hot-toast';
 
 // Export Options Modal Component
 // Components extracted to separate files
@@ -23,6 +24,7 @@ const DataExplorerPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sqlQuery, setSqlQuery] = useState(
     "SELECT * FROM SAMPLE_BT WHERE ROWNUM <= 100"
   );
@@ -39,6 +41,7 @@ const DataExplorerPage: React.FC = () => {
   const [editingQuery, setEditingQuery] = useState<{ name: string; query: string; index: number } | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<"excel" | "csv">("csv");
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Load custom queries from localStorage on mount
   useEffect(() => {
@@ -201,12 +204,19 @@ const DataExplorerPage: React.FC = () => {
   const handleExportChoice = (type: "complete" | "current", format: "excel" | "csv") => {
     if (type === "complete") {
       // Export entire dataset via backend for optimal performance.
+      setExportLoading(true);
+      
+      toast.loading('Preparing export... This may take several minutes for large datasets.', {
+        id: 'export-toast',
+        duration: Infinity
+      });
+
       apiClient
         .exportData({
           sql_query: sqlQuery,
           format,
           filename: `data_export_${new Date().toISOString().split("T")[0]}`,
-        })
+        }, 0) // Unlimited timeout for exports
         .then((blob) => {
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement("a");
@@ -216,9 +226,18 @@ const DataExplorerPage: React.FC = () => {
           }.${format === "excel" ? "xlsx" : "csv"}`;
           link.click();
           window.URL.revokeObjectURL(url);
+          
+          toast.success('Export completed successfully!', { id: 'export-toast' });
         })
         .catch((err) => {
           console.error("Export failed:", err);
+          const errorMsg = err?.message?.includes('timeout') 
+            ? 'Export timed out. Try exporting a smaller dataset or adding filters.'
+            : 'Export failed. Please try again.';
+          toast.error(errorMsg, { id: 'export-toast' });
+        })
+        .finally(() => {
+          setExportLoading(false);
         });
     } else {
       // Export only the current table view (client-side).
@@ -236,7 +255,7 @@ const DataExplorerPage: React.FC = () => {
     const labels = chartData.map((row, index) => `Row ${index + 1}`);
 
     // Use first numeric column for values
-    const numericColumnIndex = tableData.data[0].findIndex((cell, index) => {
+    const numericColumnIndex = tableData.data[0].findIndex((cell) => {
       return typeof cell === "number" || !isNaN(Number(cell));
     });
 
@@ -270,6 +289,8 @@ const DataExplorerPage: React.FC = () => {
         currentPath="/data-explorer"
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileOpen={mobileMenuOpen}
+        onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -280,6 +301,17 @@ const DataExplorerPage: React.FC = () => {
           <div className="relative px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
+                {/* Mobile hamburger menu */}
+                <button
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
+                  aria-label="Toggle menu"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                  </svg>
+                </button>
+
                 <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-blue-600 rounded-lg flex items-center justify-center shadow-md">
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -383,7 +415,7 @@ const DataExplorerPage: React.FC = () => {
                       Prev {limit}
                     </button>
                   )}
-                  {queryResult?.success && queryResult.data && "data" in queryResult && (queryResult.data as any).length === limit && (
+                  {queryResult?.success && queryResult.data && "data" in queryResult && ((queryResult.data as TableData).data.length === limit) && (
                     <button
                       onClick={() => executeQuery(offset + limit)}
                       className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
@@ -392,7 +424,7 @@ const DataExplorerPage: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => executeQuery(0, undefined as any)}
+                    onClick={() => executeQuery(0, undefined)}
                     className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
                   >
                     Show All
@@ -535,12 +567,13 @@ const DataExplorerPage: React.FC = () => {
       </div>
 
       {/* Export Modal */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        onExport={handleExportChoice}
-        format={exportFormat}
-      />
+                    <ExportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                onExport={handleExportChoice}
+                format={exportFormat}
+                loading={exportLoading}
+              />
 
       {/* Custom Query Modal */}
       <CustomQueryModal

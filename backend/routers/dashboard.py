@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
 from database import db_manager
-from models import DashboardWidget, QueryResult, User, UserRole
-from services import DashboardService, DataService
+from models import DashboardWidget, QueryResult, User, UserRole, KPI
+from services import DashboardService, DataService, KPIService
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ async def get_dashboard(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/dashboard/widget/{widget_id}/data", response_model=QueryResult)
-async def get_widget_data(widget_id: int, current_user: User = Depends(get_current_user)):
-    """Fetch and execute underlying SQL for a dashboard widget, returning chart-ready data."""
+async def get_widget_data(widget_id: int, timeout: int = 45, current_user: User = Depends(get_current_user)):
+    """Fetch and execute underlying SQL for a dashboard widget, returning chart-ready data with timeout."""
     try:
         query = """
         SELECT q.sql_query, q.chart_type, q.chart_config
@@ -50,8 +50,14 @@ async def get_widget_data(widget_id: int, current_user: User = Depends(get_curre
                 chart_config = {}
 
         return DataService.execute_query_for_chart(
-            widget_data["SQL_QUERY"], widget_data["CHART_TYPE"], chart_config
+            widget_data["SQL_QUERY"], widget_data["CHART_TYPE"], chart_config, timeout=timeout
         )
     except Exception as exc:
         logger.error(f"Error getting widget data: {exc}")
-        return QueryResult(success=False, error=str(exc)) 
+        return QueryResult(success=False, error=str(exc))
+
+
+@router.get("/kpis", response_model=List[KPI])
+async def get_kpis(current_user: User = Depends(get_current_user)):
+    """Return list of KPI metrics available for the current user."""
+    return KPIService.get_kpis(current_user.role) 

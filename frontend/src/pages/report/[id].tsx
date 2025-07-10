@@ -4,6 +4,7 @@ import apiClient from "../../lib/api";
 import DataTable from "../../components/ui/DataTable";
 import ChartComponent from "../../components/Charts/ChartComponent";
 import { Query, QueryResult, TableData, ChartData } from "../../types";
+import { toast } from 'react-hot-toast';
 
 const ReportDetailPage: React.FC = () => {
   const router = useRouter();
@@ -43,7 +44,7 @@ const ReportDetailPage: React.FC = () => {
       // Set initial view mode based on report configuration
       if (reportResponse.data.chart_type && reportResponse.data.chart_type !== 'table') {
         setViewMode("chart");
-        setChartType(reportResponse.data.chart_type as any);
+        setChartType(reportResponse.data.chart_type as "bar" | "line" | "pie");
       } else {
         setViewMode("table");
       }
@@ -96,7 +97,12 @@ const ReportDetailPage: React.FC = () => {
   const handleExport = (format: "excel" | "csv") => {
     if (!report) return;
 
-    // Use the export API
+    toast.loading('Preparing export... This may take several minutes for large datasets.', {
+      id: 'export-toast',
+      duration: Infinity
+    });
+
+    // Use the export API with unlimited timeout
     apiClient
       .exportData({
         query_id: report.id,
@@ -104,7 +110,7 @@ const ReportDetailPage: React.FC = () => {
         filename: `${report.name.replace(/\s+/g, "_")}_${
           new Date().toISOString().split("T")[0]
         }`,
-      })
+      }, 0) // Unlimited timeout for exports
       .then((blob) => {
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -113,9 +119,15 @@ const ReportDetailPage: React.FC = () => {
         link.download = `${report.name.replace(/\s+/g, "_")}.${extension}`;
         link.click();
         window.URL.revokeObjectURL(url);
+        
+        toast.success('Export completed successfully!', { id: 'export-toast' });
       })
       .catch((err) => {
         console.error("Export failed:", err);
+        const errorMsg = err?.message?.includes('timeout') 
+          ? 'Export timed out. Try exporting a smaller dataset or adding filters.'
+          : 'Export failed. Please try again.';
+        toast.error(errorMsg, { id: 'export-toast' });
       });
   };
 
@@ -287,7 +299,7 @@ const ReportDetailPage: React.FC = () => {
                 ].map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => setViewMode(key as any)}
+                    onClick={() => setViewMode(key as "table" | "chart")}
                     className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                       viewMode === key
                         ? "bg-white text-blue-600 shadow-sm"
@@ -303,7 +315,7 @@ const ReportDetailPage: React.FC = () => {
               {viewMode === "chart" && (
                 <select
                   value={chartType}
-                  onChange={(e) => setChartType(e.target.value as any)}
+                  onChange={(e) => setChartType(e.target.value as "bar" | "line" | "pie")}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 >
                   <option value="bar">Bar Chart</option>

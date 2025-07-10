@@ -13,6 +13,7 @@ export interface User {
   email: string;
   role?: UserRole;
   is_active: boolean;
+  must_change_password?: boolean;
   created_at: string;
 }
 
@@ -104,6 +105,12 @@ export interface APIResponse<T = unknown> {
   message?: string;
   data?: T;
   error?: string;
+}
+
+export interface KPI {
+  id: number;
+  label: string;
+  value: number;
 }
 
 // Dashboard Types

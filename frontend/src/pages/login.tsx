@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import apiClient from "../lib/api";
-import axios from "axios";
 import { LoginFormData } from "../types";
 
 const LoginPage: React.FC = () => {
@@ -44,10 +43,11 @@ const LoginPage: React.FC = () => {
       await apiClient.login(data);
       toast.success("Login successful!");
       router.push("/dashboard");
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Login failed", {
-        duration: 5000,
-      });
+    } catch (error: unknown) {
+      const errMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+        : null;
+      toast.error(errMessage || "Login failed", { duration: 5000 });
     } finally {
       setLoading(false);
     }

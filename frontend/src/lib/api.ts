@@ -13,7 +13,8 @@ import {
   ExportRequest,
   APIResponse,
   Query,
-  QueryFormData
+  QueryFormData,
+  KPI
 } from '../types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -126,6 +127,13 @@ class ApiClient {
       
       this.setToken(access_token);
       this.setUser(user);
+
+      // If user must change password, redirect immediately
+      if (user.must_change_password) {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/change-password';
+        }
+      }
       
       return response.data;
     } catch (error: unknown) {
@@ -147,7 +155,7 @@ class ApiClient {
     try {
       const response: AxiosResponse<APIResponse<{ auth_mode: string }>> = await this.client.get('/auth/mode');
       return response.data.data?.auth_mode || 'form';
-    } catch (error: unknown) {
+    } catch {
       return 'form';
     }
   }
@@ -196,6 +204,25 @@ class ApiClient {
     }
   }
 
+  async getKpis(): Promise<KPI[]> {
+    try {
+      const response: AxiosResponse<KPI[]> = await this.client.get('/api/kpis');
+      return response.data;
+    } catch (error: unknown) {
+      throw error;
+    }
+  }
+
+  // Update widget layout (position/size)
+  async updateWidget(widgetId: number, data: Partial<{ position_x: number; position_y: number; width: number; height: number; title: string }>): Promise<APIResponse> {
+    try {
+      const response: AxiosResponse<APIResponse> = await this.client.put(`/api/admin/dashboard/widget/${widgetId}`, data);
+      return response.data;
+    } catch (error: unknown) {
+      throw error;
+    }
+  }
+
   // Query methods
   async executeQuery(request: QueryExecuteRequest): Promise<QueryResult> {
     try {
@@ -216,10 +243,11 @@ class ApiClient {
   }
 
   // Export methods
-  async exportData(request: ExportRequest): Promise<Blob> {
+  async exportData(request: ExportRequest, timeout: number = 0): Promise<Blob> {
     try {
       const response: AxiosResponse<Blob> = await this.client.post('/api/export', request, {
         responseType: 'blob',
+        timeout: timeout, // 0 means unlimited timeout for exports
       });
       return response.data;
     } catch (error: unknown) {
@@ -336,6 +364,25 @@ class ApiClient {
       throw error;
     }
   }
+
+  async changePassword(oldPassword: string, newPassword: string): Promise<APIResponse> {
+    const currentUser = this.getUser();
+    if (!currentUser) {
+      throw new Error('Not authenticated');
+    }
+    const payload = {
+      username: currentUser.username,
+      password: oldPassword,
+      new_password: newPassword,
+    };
+    const response: AxiosResponse<APIResponse> = await this.client.post('/auth/change-password', payload);
+    // After successful change clear must_change_password flag locally
+    if (response.data.success) {
+      const updatedUser = { ...currentUser, must_change_password: false } as User;
+      this.setUser(updatedUser);
+    }
+    return response.data;
+  }
 }
 
 // Create and export a singleton instance
@@ -362,7 +409,8 @@ export const {
   getQueryDetail,
   updateUser,
   deleteUser,
-  deleteQuery
+  deleteQuery,
+  changePassword
 } = apiClient;
 
 export async function createQuery(data: QueryFormData & { role?: string[] }) {

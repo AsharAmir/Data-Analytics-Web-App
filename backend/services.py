@@ -30,14 +30,14 @@ class DataService:
 
     @staticmethod
     def execute_query_for_chart(
-        query: str, chart_type: str = None, chart_config: Dict = None
+        query: str, chart_type: str = None, chart_config: Dict = None, timeout: int = 45
     ) -> QueryResult:
-        """Execute query and format data for charts"""
+        """Execute query and format data for charts with timeout handling"""
         start_time = time.time()
 
         try:
-            # Execute query
-            df = db_manager.execute_query_pandas(query)
+            # Execute query with timeout
+            df = db_manager.execute_query_pandas(query, timeout=timeout)
 
             if df.empty:
                 return QueryResult(
@@ -57,6 +57,13 @@ class DataService:
                 execution_time=time.time() - start_time,
             )
 
+        except TimeoutError as e:
+            logger.error(f"Chart query timeout: {e}")
+            return QueryResult(
+                success=False, 
+                error=f"Query timed out after {timeout} seconds. Try reducing data range or complexity.",
+                execution_time=time.time() - start_time
+            )
         except Exception as e:
             logger.error(f"Query execution error: {e}")
             return QueryResult(
@@ -65,9 +72,9 @@ class DataService:
 
     @staticmethod
     def execute_query_for_table(
-        query: str, limit: int = 1000, offset: int = 0
+        query: str, limit: int = 1000, offset: int = 0, timeout: int = 45
     ) -> QueryResult:
-        """Execute query and format data for tables"""
+        """Execute query and format data for tables with timeout handling"""
         start_time = time.time()
 
         try:
@@ -82,13 +89,17 @@ class DataService:
             WHERE rn > {offset}
             """
 
-            # Execute query
-            df = db_manager.execute_query_pandas(paginated_query)
+            # Execute query with timeout
+            df = db_manager.execute_query_pandas(paginated_query, timeout=timeout)
 
-            # Get total count (without pagination)
+            # Get total count (without pagination) - with a shorter timeout for count queries
             count_query = f"SELECT COUNT(*) as total_count FROM ({query})"
-            count_result = db_manager.execute_query(count_query)
-            total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
+            try:
+                count_result = db_manager.execute_query(count_query, timeout=min(timeout, 30))
+                total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
+            except TimeoutError:
+                logger.warning("Count query timed out, using current page size as estimate")
+                total_count = len(df) + offset  # Estimate based on current page
 
             # Format data for table
             table_data = TableData(
@@ -101,6 +112,13 @@ class DataService:
                 success=True, data=table_data, execution_time=time.time() - start_time
             )
 
+        except TimeoutError as e:
+            logger.error(f"Table query timeout: {e}")
+            return QueryResult(
+                success=False, 
+                error=f"Query timed out after {timeout} seconds. Try reducing data range or adding more specific filters.",
+                execution_time=time.time() - start_time
+            )
         except Exception as e:
             logger.error(f"Table query execution error: {e}")
             return QueryResult(
@@ -326,50 +344,103 @@ class DataService:
 
 
 class ExportService:
-    """Service for exporting data to various formats"""
+    """Service for exporting data to various formats with optimizations for large datasets"""
 
     @staticmethod
     def export_to_excel(df: pd.DataFrame, filename: str = None) -> bytes:
-        """Export DataFrame to Excel bytes"""
+        """Export DataFrame to Excel bytes with memory optimization for large datasets"""
         if filename is None:
             filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
+        logger.info(f"Starting Excel export for {len(df)} rows, {len(df.columns)} columns")
         output = io.BytesIO()
 
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            df.to_excel(writer, sheet_name="Data", index=False)
+        try:
+            with pd.ExcelWriter(
+                output,
+                engine="xlsxwriter",
+                engine_kwargs={"options": {"remove_timezone": True}},
+            ) as writer:
+                # Write in chunks for large datasets
+                chunk_size = 50000  # Process 50k rows at a time
+                if len(df) > chunk_size:
+                    logger.info(f"Large dataset detected, processing in chunks of {chunk_size}")
+                    for i in range(0, len(df), chunk_size):
+                        chunk = df.iloc[i:i+chunk_size]
+                        if i == 0:
+                            # First chunk includes headers
+                            chunk.to_excel(writer, sheet_name="Data", index=False, startrow=0)
+                        else:
+                            # Subsequent chunks without headers
+                            chunk.to_excel(writer, sheet_name="Data", index=False, startrow=i, header=False)
+                        logger.info(f"Processed chunk {i//chunk_size + 1}/{(len(df)//chunk_size) + 1}")
+                else:
+                    df.to_excel(writer, sheet_name="Data", index=False)
 
-            # Get workbook and worksheet objects
-            workbook = writer.book
-            worksheet = writer.sheets["Data"]
+                # Get workbook and worksheet objects for formatting
+                workbook = writer.book
+                worksheet = writer.sheets["Data"]
 
-            # Add formatting
-            header_format = workbook.add_format(
-                {
+                # Add basic formatting for better readability
+                header_format = workbook.add_format({
                     "bold": True,
                     "text_wrap": True,
                     "valign": "top",
                     "fg_color": "#D7E4BC",
                     "border": 1,
-                }
-            )
+                })
 
-            # Write headers with formatting
-            for col_num, value in enumerate(df.columns.values):
-                worksheet.write(0, col_num, value, header_format)
+                # Apply header formatting
+                for col_num, value in enumerate(df.columns.values):
+                    worksheet.write(0, col_num, value, header_format)
 
-            # Auto-adjust column width
-            for i, col in enumerate(df.columns):
-                max_length = max(df[col].astype(str).map(len).max(), len(str(col))) + 2
-                worksheet.set_column(i, i, min(max_length, 50))
+                # Auto-adjust column widths (limited to reasonable sizes)
+                for i, col in enumerate(df.columns):
+                    max_length = max(
+                        df[col].astype(str).map(len).max() if not df[col].empty else 0,
+                        len(str(col))
+                    )
+                    # Cap column width to reasonable size
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.set_column(i, i, adjusted_width)
 
-        output.seek(0)
-        return output.read()
+            output.seek(0)
+            result = output.read()
+            logger.info(f"Excel export completed, file size: {len(result)} bytes")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error during Excel export: {e}")
+            raise
+        finally:
+            output.close()
 
     @staticmethod
     def export_to_csv(df: pd.DataFrame, filename: str = None) -> str:
-        """Export DataFrame to CSV string"""
-        return df.to_csv(index=False)
+        """Export DataFrame to CSV string with memory optimization for large datasets"""
+        if filename is None:
+            filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        logger.info(f"Starting CSV export for {len(df)} rows, {len(df.columns)} columns")
+        
+        try:
+            # Use string buffer for better memory management
+            output = io.StringIO()
+            
+            # Export with optimized settings for large datasets
+            df.to_csv(output, index=False, encoding='utf-8', 
+                     line_terminator='\n', chunksize=10000)
+            
+            result = output.getvalue()
+            logger.info(f"CSV export completed, size: {len(result)} characters")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error during CSV export: {e}")
+            raise
+        finally:
+            if 'output' in locals():
+                output.close()
 
 
 class MenuService:
@@ -569,4 +640,66 @@ class DashboardService:
 
         except Exception as e:
             logger.error(f"Error getting dashboard layout: {e}")
+            return []
+
+
+class KPIService:
+    """Service for retrieving KPI metrics defined as special queries (is_kpi = 1)."""
+
+    @staticmethod
+    def get_kpis(user_role: "UserRole") -> List["KPI"]:
+        """Fetch KPI queries, execute them, and return their numeric value.
+
+        A query is treated as a KPI when the table **app_queries** has the column
+        `is_kpi = 1`. The first column of the first row of the query result is
+        assumed to be the numeric KPI value.
+        """
+        try:
+            # Avoid circular import – placed here to prevent top-level cycles
+            from models import KPI, UserRole  # local import for type hint only
+
+            # 1. Get all KPI queries
+            sql = (
+                "SELECT id, name, sql_query, role "
+                "FROM app_queries WHERE is_active = 1 AND is_kpi = 1"
+            )
+            rows = db_manager.execute_query(sql)
+
+            kpis: List[KPI] = []
+            for row in rows:
+                # 2. Role-based filter – allow when no role specified or matches user role
+                allowed_roles: list[str] = []
+                if row.get("ROLE"):
+                    # DB column could be a comma-separated list like "admin,CEO"
+                    allowed_roles = [r.strip() for r in str(row["ROLE"]).split(",") if r.strip()]
+                if allowed_roles and (user_role not in allowed_roles):
+                    continue
+
+                # 3. Execute KPI SQL – take the first value of the first row
+                try:
+                    value_rows = db_manager.execute_query(row["SQL_QUERY"])
+                    if value_rows:
+                        first_val = next(iter(value_rows[0].values()))  # first column value
+                        # Cast to float for consistency, fallback to 0 when not numeric
+                        try:
+                            numeric_val: float | int = float(first_val)
+                        except (TypeError, ValueError):
+                            numeric_val = 0
+                    else:
+                        numeric_val = 0
+                except Exception as exc:
+                    logger.error(f"KPI query (id={row['ID']}) execution error: {exc}")
+                    numeric_val = 0
+
+                kpis.append(
+                    KPI(
+                        id=row["ID"],
+                        label=row["NAME"],
+                        value=numeric_val,
+                    )
+                )
+
+            return kpis
+        except Exception as exc:
+            logger.error(f"Error getting KPIs: {exc}")
             return []

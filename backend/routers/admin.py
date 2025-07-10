@@ -276,6 +276,53 @@ async def delete_dashboard_widget(widget_id: int, current_user: User = Depends(g
         raise HTTPException(status_code=500, detail=f"Failed to delete widget: {exc}")
 
 
+# ------------------ Update widget layout/attrs ------------------
+
+
+from models import DashboardWidgetUpdate  # placed after imports earlier but for patch
+
+
+@router.put("/dashboard/widget/{widget_id}", response_model=APIResponse)
+async def update_dashboard_widget(widget_id: int, request: DashboardWidgetUpdate, current_user: User = Depends(get_current_user)):
+    """Update a dashboard widget's layout or attributes"""
+    try:
+        # Ensure widget exists
+        check = db_manager.execute_query("SELECT id FROM app_dashboard_widgets WHERE id = :1", (widget_id,))
+        if not check:
+            raise HTTPException(status_code=404, detail="Widget not found")
+
+        # Build dynamic update query
+        fields = []
+        params = []
+        mapping = {
+            "title": request.title,
+            "query_id": request.query_id,
+            "position_x": request.position_x,
+            "position_y": request.position_y,
+            "width": request.width,
+            "height": request.height,
+            "is_active": request.is_active,
+        }
+        for col, val in mapping.items():
+            if val is not None:
+                fields.append(f"{col} = :{len(params)+1}")
+                params.append(val)
+
+        if not fields:
+            return APIResponse(success=True, message="No changes submitted")
+
+        update_sql = f"UPDATE app_dashboard_widgets SET {', '.join(fields)} WHERE id = :{len(params)+1}"
+        params.append(widget_id)
+        db_manager.execute_non_query(update_sql, tuple(params))
+
+        return APIResponse(success=True, message="Widget updated")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error updating widget: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to update widget: {exc}")
+
+
 @router.get("/dashboard/widgets", response_model=APIResponse)
 async def list_dashboard_widgets(current_user: User = Depends(get_current_user)):
     """List all dashboard widgets with their query information"""
@@ -314,10 +361,14 @@ async def list_dashboard_widgets(current_user: User = Depends(get_current_user))
 
 @router.post("/menu", response_model=APIResponse)
 async def create_menu_item(request: MenuItemCreate, current_user: User = Depends(require_admin)):
+    """Admin endpoint to create a new menu item"""
     try:
-        insert_sql = "INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, is_active) VALUES (:1, :2, :3, :4, :5, 1)"
+        sql = """
+        INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, is_active)
+        VALUES (:1, :2, :3, :4, :5, 1)
+        """
         db_manager.execute_non_query(
-            insert_sql,
+            sql,
             (
                 request.name,
                 request.type,
@@ -326,14 +377,18 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
                 request.sort_order,
             ),
         )
-        return APIResponse(success=True, message="Menu item created")
+        return APIResponse(success=True, message="Menu item created successfully")
     except Exception as exc:
         logger.error(f"Error creating menu item: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to create menu item")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create menu item: {exc}"
+        )
 
 
 @router.put("/menu/{menu_id}", response_model=APIResponse)
-async def update_menu_item(menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)):
+async def update_menu_item(
+    menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)
+):
     try:
         update_sql = """
         UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5 WHERE id=:6
@@ -378,13 +433,29 @@ async def delete_menu_item(menu_id: int, current_user: User = Depends(require_ad
             "SELECT id FROM app_menu_items WHERE parent_id = :1", (menu_id,)
         )
 
+        # ------------------------------------------------------------------
+        # STEP 0:  Detach **queries** that reference this menu item so we don’t
+        #          violate the FK_QUERY_MENU foreign-key constraint (ORA-02292)
+        #          when the menu row is deleted. We *do not* delete the
+        #          queries themselves – that would orphan lots of historical
+        #          data. Instead we simply set their `menu_item_id` to NULL.
+        #          This keeps the queries available in the system while
+        #          allowing the menu item to be removed safely.
+        # ------------------------------------------------------------------
+
+        db_manager.execute_non_query(
+            "UPDATE app_queries SET menu_item_id = NULL WHERE menu_item_id = :1",
+            (menu_id,),
+        )
+
         # Recursively delete child items first (depth-first order) so that when
-        # we finally delete the parent no FK constraint is violated.
+        # we finally delete the parent no FK constraint is violated by the
+        # self-referencing relationship in `app_menu_items`.
         for child in children:
             child_id = child["ID"]
-            # Recurse by calling this endpoint's core logic directly.
-            # We *don’t* need to propagate the current_user again because we are
-            # executing within the same request context.
+            # Recurse by calling this endpoint’s core logic directly.  We *don’t*
+            # need to propagate `current_user` again because we are executing
+            # within the same request context.
             await delete_menu_item(child_id, current_user)  # type: ignore[arg-type]
 
         # Now that all descendants are gone, delete the parent item itself.

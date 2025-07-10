@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/router";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
-import { MenuItem, Query, APIResponse } from "../types";
+import { MenuItem, Query } from "../types";
 
 const ReportsPage: React.FC = () => {
   const router = useRouter();
@@ -12,6 +12,7 @@ const ReportsPage: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [reports, setReports] = useState<Query[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedSection, setSelectedSection] = useState<string>("");
 
   const loadData = useCallback(async () => {
@@ -55,6 +56,10 @@ const ReportsPage: React.FC = () => {
       router.push("/dashboard");
     } else if (item.type === "report") {
       router.push(`/reports?menu=${item.id}`);
+    }
+    // Close mobile menu after navigation
+    if (mobileMenuOpen) {
+      setMobileMenuOpen(false);
     }
   };
 
@@ -156,6 +161,8 @@ const ReportsPage: React.FC = () => {
         onMenuClick={handleMenuClick}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileOpen={mobileMenuOpen}
+        onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
       
       <div className="flex-1 flex flex-col">
@@ -166,6 +173,17 @@ const ReportsPage: React.FC = () => {
           <div className="relative px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
+                {/* Mobile hamburger menu */}
+                <button
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
+                  aria-label="Toggle menu"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                  </svg>
+                </button>
+
                 <div className="w-8 h-8 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-md">
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

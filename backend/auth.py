@@ -84,7 +84,7 @@ def get_user_by_username(username: str) -> Optional[User]:
     """Get user by username from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, role, is_active, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, role, is_active, must_change_password, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if result:
@@ -95,6 +95,7 @@ def get_user_by_username(username: str) -> Optional[User]:
                 email=user_data["EMAIL"],
                 role=user_data.get("ROLE", "user"),
                 is_active=bool(user_data["IS_ACTIVE"]),
+                must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
                 created_at=user_data["CREATED_AT"],
             )
         return None
@@ -107,7 +108,7 @@ def get_user_by_email(email: str) -> Optional[User]:
     """Get user by email from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, role, is_active, created_at FROM app_users WHERE email = :1",
+            "SELECT id, username, email, role, is_active, must_change_password, created_at FROM app_users WHERE email = :1",
             (email,),
         )
         if result:
@@ -118,6 +119,7 @@ def get_user_by_email(email: str) -> Optional[User]:
                 email=user_data["EMAIL"],
                 role=user_data.get("ROLE", "user"),
                 is_active=bool(user_data["IS_ACTIVE"]),
+                must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
                 created_at=user_data["CREATED_AT"],
             )
         return None
@@ -130,7 +132,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
     """Authenticate user with username and password"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, password_hash, role, is_active, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, password_hash, role, is_active, must_change_password, created_at FROM app_users WHERE username = :1",
             (username,),
         )
         if not result:
@@ -149,6 +151,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
             email=user_data["EMAIL"],
             role=user_data.get("ROLE", "user"),
             is_active=bool(user_data["IS_ACTIVE"]),
+            must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
             created_at=user_data["CREATED_AT"],
         )
     except Exception as e:
@@ -181,7 +184,7 @@ def create_user(user_create: UserCreate, role: Any = "user") -> Optional[User]:
 
         # Insert user with role, auto-creating column if necessary
         insert_sql = (
-            "INSERT INTO app_users (username, email, password_hash, role) VALUES (:1, :2, :3, :4)"
+            "INSERT INTO app_users (username, email, password_hash, role, must_change_password) VALUES (:1, :2, :3, :4, 1)"
         )
 
         try:

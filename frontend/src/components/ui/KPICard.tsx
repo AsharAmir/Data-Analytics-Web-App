@@ -110,7 +110,7 @@ const KPICard: React.FC<KPICardProps> = ({
         </div>
       </div>
 
-      {change && (
+      {change && !(change.type === 'neutral' && change.value === 0) && (
         <div className="flex items-center">
           <div className={`flex items-center ${
             change.type === 'increase' 

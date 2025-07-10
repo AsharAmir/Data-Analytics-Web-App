@@ -24,7 +24,7 @@ import {
   PolarArea,
   Radar,
 } from 'react-chartjs-2';
-import type { ChartEvent, ActiveElement, TooltipItem } from 'chart.js';
+import type { ChartEvent, ActiveElement, TooltipItem, ChartType } from 'chart.js';
 import { ChartData, ChartConfig } from '../../types';
 import {
   ArrowsPointingOutIcon,
@@ -74,8 +74,8 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   onDataPointClick,
   onExport,
 }) => {
-  const chartRef = useRef<any>(null);
-  const overlayChartRef = useRef<any>(null);
+  const chartRef = useRef<ChartJS | null>(null);
+  const overlayChartRef = useRef<ChartJS | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
 
@@ -118,10 +118,10 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
         cornerRadius: 8,
         displayColors: true,
         callbacks: {
-          title: function(context: TooltipItem<any>[]) {
+          title: function(context: TooltipItem<ChartType>[]) {
             return context[0]?.label || '';
           },
-          label: function(context: TooltipItem<any>) {
+          label: function(context: TooltipItem<ChartType>) {
             const label = context.dataset.label || '';
             const value = typeof context.parsed.y !== 'undefined' ? context.parsed.y : context.parsed;
             if (typeof value === 'number') {
@@ -219,8 +219,9 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
   }, [type, data]);
 
   const exportChart = (format: 'png' | 'pdf') => {
-    if (chartRef.current) {
-      const canvas = chartRef.current.canvas;
+    const chart = isFullscreen ? overlayChartRef.current : chartRef.current;
+    if (chart) {
+      const canvas = chart.canvas;
       const url = canvas.toDataURL('image/png', 1.0);
       
       if (format === 'png') {
@@ -296,34 +297,28 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     setIsFullscreen(!isFullscreen);
   };
 
-  const renderChart = (ref: any, targetHeight: number) => {
-    const chartProps = {
-      ref,
-      data: processedData,
-      options,
-      height: targetHeight,
-    } as any;
+  const renderChart = (ref: React.RefObject<ChartJS | null>, targetHeight: number) => {
+    const chartType = type === 'area' ? 'line' : type;
 
-    switch (type) {
+    switch (chartType) {
       case 'bar':
-        return <Bar {...chartProps} />;
+        return <Bar ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'line':
-      case 'area':
-        return <Line {...chartProps} />;
+        return <Line ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'pie':
-        return <Pie {...chartProps} />;
+        return <Pie ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'doughnut':
-        return <Doughnut {...chartProps} />;
+        return <Doughnut ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'scatter':
-        return <Scatter {...chartProps} />;
+        return <Scatter ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'bubble':
-        return <Bubble {...chartProps} />;
+        return <Bubble ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'polarArea':
-        return <PolarArea {...chartProps} />;
+        return <PolarArea ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       case 'radar':
-        return <Radar {...chartProps} />;
+        return <Radar ref={ref as any} data={processedData as any} options={options} height={targetHeight} />;
       default:
-        return <Bar {...chartProps} />;
+        return <p>Unsupported chart type: {type}</p>;
     }
   };
 

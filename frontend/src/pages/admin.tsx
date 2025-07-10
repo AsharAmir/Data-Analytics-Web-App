@@ -66,6 +66,7 @@ const AdminPage: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Form states
   const [showQueryForm, setShowQueryForm] = useState(false);
@@ -249,6 +250,8 @@ const AdminPage: React.FC = () => {
         currentPath="/admin"
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileOpen={mobileMenuOpen}
+        onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
 
       <div className="flex-1 flex flex-col relative">
@@ -261,14 +264,27 @@ const AdminPage: React.FC = () => {
         <header className="bg-white shadow-sm border-b border-gray-200">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-                  <Cog6ToothIcon className="h-7 w-7 mr-2 text-blue-600" />
-                  Admin Dashboard
-                </h1>
-                <p className="text-gray-600">
-                  Manage dashboard widgets and queries
-                </p>
+              <div className="flex items-center space-x-3">
+                {/* Mobile hamburger menu */}
+                <button
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
+                  aria-label="Toggle menu"
+                >
+                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                  </svg>
+                </button>
+
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+                    <Cog6ToothIcon className="h-7 w-7 mr-2 text-blue-600" />
+                    Admin Dashboard
+                  </h1>
+                  <p className="text-gray-600">
+                    Manage dashboard widgets and queries
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -658,7 +674,7 @@ const AdminPage: React.FC = () => {
                               setEditingMenuId(menu.id);
                               setMenuForm({
                                 name: menu.name,
-                                type: menu.type as any,
+                                type: menu.type as "dashboard" | "report",
                                 icon: menu.icon || "",
                                 parent_id: menu.parent_id,
                                 sort_order: menu.sort_order,

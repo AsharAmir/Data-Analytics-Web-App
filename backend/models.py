@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     role: UserRole = UserRole.USER
+    must_change_password: bool = True  # always true on creation
 
 # Payload for partial user updates
 class UserUpdate(BaseModel):
@@ -40,6 +41,7 @@ class User(BaseModel):
     role: UserRole = UserRole.USER
     is_active: bool
     created_at: datetime
+    must_change_password: bool = True
 
 
 class Token(BaseModel):
@@ -121,6 +123,17 @@ class DashboardWidgetCreate(BaseModel):
     height: int = 4
 
 
+# Model for updating widget layout/attributes
+class DashboardWidgetUpdate(BaseModel):
+    title: Optional[str] = None
+    query_id: Optional[int] = None
+    position_x: Optional[int] = None
+    position_y: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 class DashboardLayout(BaseModel):
     widgets: List[DashboardWidget]
 
@@ -144,6 +157,14 @@ class QueryResult(BaseModel):
     chart_config: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     execution_time: Optional[float] = None
+
+
+class KPI(BaseModel):
+    """Simple model representing a single numeric KPI metric that will be displayed on the dashboard."""
+
+    id: int  # Unique query identifier acting as KPI id
+    label: str  # Human-friendly name shown to the user e.g. "Total Assets"
+    value: float | int  # Numeric result of KPI query – coerced to float if needed
 
 
 # Export Models

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ChevronUpIcon,
   ChevronDownIcon,
@@ -37,6 +37,20 @@ const DataTable: React.FC<DataTableProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
+
+  // Notify parent component when filters change
+  useEffect(() => {
+    if (onFilter) {
+      const filterConditions: FilterCondition[] = Object.entries(filters)
+        .filter(([, v]) => v !== "")
+        .map(([idx, value]) => ({
+          column: data.columns[parseInt(idx, 10)],
+          operator: 'like',
+          value,
+        }));
+      onFilter(filterConditions);
+    }
+  }, [filters, onFilter, data.columns]);
 
   // Filter and search data
   const filteredData = useMemo(() => {
