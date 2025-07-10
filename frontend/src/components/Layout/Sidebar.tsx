@@ -1,8 +1,18 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { MenuItem, User as UserType } from "../../types";
 import apiClient from "../../lib/api";
+
+// Helper function to filter active menu items recursively
+const filterActiveMenuItems = (items: MenuItem[]): MenuItem[] =>
+  items
+    .filter((it) => it.is_active)
+    .map((it) => ({
+      ...it,
+      // Recursively filter children
+      children: it.children ? filterActiveMenuItems(it.children) : [],
+    }));
 
 interface SidebarProps {
   /**
@@ -339,25 +349,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
-  /**
-   * Recursively filter out menu items that are *not* active. This guarantees
-   * that a menu deleted (or de-activated) in the Admin panel no longer shows
-   * up in the sidebar even if the backend still sends it with `is_active=false`.
-   * Keeping the structure immutable ensures React state consistency.
-   */
-  const filterActiveMenuItems = useCallback((items: MenuItem[]): MenuItem[] =>
-    items
-      .filter((it) => it.is_active)
-      .map((it) => ({
-        ...it,
-        // Recursively filter children
-        children: it.children ? filterActiveMenuItems(it.children) : [],
-      })), []);
-
   // Memoise the result so we only recompute when `menuItems` actually changes.
   const activeMenuItems = useMemo(
     () => filterActiveMenuItems(menuItems),
-    [menuItems, filterActiveMenuItems],
+    [menuItems],
   );
 
   return (
