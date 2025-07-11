@@ -137,9 +137,14 @@ class DataService:
                 query_obj = QueryService.get_query_by_id(request.query_id)
                 if not query_obj:
                     raise ValueError("Query not found")
-                base_query = query_obj.sql_query
+                # Strip trailing semicolons and validate – keeps pagination sub-queries happy
+                base_query = query_obj.sql_query.strip().rstrip(";")
+                from sql_utils import validate_sql  # local import to avoid circular dependency
+                validate_sql(base_query)
             elif request.sql_query:
-                base_query = request.sql_query
+                base_query = request.sql_query.strip().rstrip(";")
+                from sql_utils import validate_sql  # local import to avoid circular dependency
+                validate_sql(base_query)
             else:
                 raise ValueError("Either query_id or sql_query must be provided")
 
@@ -531,17 +536,29 @@ class QueryService:
 
     @staticmethod
     def get_queries_by_menu_item(menu_item_id: int) -> List[Query]:
-        """Get all queries for a menu item"""
+        """Get all queries for a menu item (direct assignment or via junction table)"""
         try:
-            query = """
-            SELECT id, name, description, sql_query, chart_type, chart_config, 
+            # 1. Attempt to fetch queries directly assigned via menu_item_id column
+            base_sql = """
+            SELECT id, name, description, sql_query, chart_type, chart_config,
                    menu_item_id, is_active, created_at
             FROM app_queries
-            WHERE menu_item_id = :1 AND is_active = 1
-            ORDER BY name
+            WHERE is_active = 1 AND (menu_item_id = :menu_id)
             """
 
-            result = db_manager.execute_query(query, (menu_item_id,))
+            # 2. Also include queries linked through the many-to-many junction table
+            #    app_query_menu_items (query_id, menu_item_id)
+            junction_sql = """
+            SELECT q.id, q.name, q.description, q.sql_query, q.chart_type,
+                   q.chart_config, q.menu_item_id, q.is_active, q.created_at
+            FROM app_queries q
+            JOIN app_query_menu_items j ON j.query_id = q.id
+            WHERE q.is_active = 1 AND j.menu_item_id = :menu_id
+            """
+
+            combined_sql = f"{base_sql}\nUNION ALL\n{junction_sql}\nORDER BY name"
+
+            result = db_manager.execute_query(combined_sql, {"menu_id": menu_item_id})
 
             queries = []
             for row in result:

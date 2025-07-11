@@ -42,13 +42,20 @@ async def execute_query(request: QueryExecute, current_user: User = Depends(get_
                 if not assigned_roles or current_user.role not in assigned_roles:
                     raise HTTPException(status_code=403, detail="Not authorized for this query")
 
+            # ------------------------------------------------------------------
+            # Sanitize and validate SQL – ensure it's a read-only SELECT and
+            # strip trailing semicolons that break sub-queries or pagination.
+            # ------------------------------------------------------------------
+            sanitized_sql = query_obj.sql_query.strip().rstrip(";")
+            validate_sql(sanitized_sql)
+
             if query_obj.chart_type and query_obj.chart_type != "table":
                 return DataService.execute_query_for_chart(
-                    query_obj.sql_query, query_obj.chart_type, query_obj.chart_config
+                    sanitized_sql, query_obj.chart_type, query_obj.chart_config
                 )
             else:
                 return DataService.execute_query_for_table(
-                    query_obj.sql_query, request.limit, request.offset
+                    sanitized_sql, request.limit, request.offset
                 )
         elif request.sql_query:
             validate_sql(request.sql_query)
