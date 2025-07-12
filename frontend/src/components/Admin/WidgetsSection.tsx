@@ -32,8 +32,6 @@ interface WidgetForm {
   height: number;
 }
 
-
-
 interface WidgetsSectionProps {
   widgets: Widget[];
   queries: QueryOption[];

@@ -17,7 +17,7 @@ const ChangePasswordPage: React.FC = () => {
     setIsClient(true);
     const user = apiClient.getUser();
     setCurrentUser(user);
-    
+
     if (!user) {
       router.push("/login");
     } else if (!user.must_change_password) {
@@ -60,7 +60,10 @@ const ChangePasswordPage: React.FC = () => {
           )}
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <div>
-            <label htmlFor="current-password" className="block text-sm font-medium mb-1">
+            <label
+              htmlFor="current-password"
+              className="block text-sm font-medium mb-1"
+            >
               Current Password
             </label>
             <input
@@ -75,7 +78,10 @@ const ChangePasswordPage: React.FC = () => {
             />
           </div>
           <div>
-            <label htmlFor="new-password" className="block text-sm font-medium mb-1">
+            <label
+              htmlFor="new-password"
+              className="block text-sm font-medium mb-1"
+            >
               New Password
             </label>
             <input
@@ -90,7 +96,10 @@ const ChangePasswordPage: React.FC = () => {
             />
           </div>
           <div>
-            <label htmlFor="confirm-password" className="block text-sm font-medium mb-1">
+            <label
+              htmlFor="confirm-password"
+              className="block text-sm font-medium mb-1"
+            >
               Confirm New Password
             </label>
             <input
