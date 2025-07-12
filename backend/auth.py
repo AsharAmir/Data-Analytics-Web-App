@@ -4,7 +4,7 @@ from jose import JWTError, jwt
 import bcrypt
 from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from models import User, UserCreate, UserLogin
+from models import User, UserCreate
 from database import db_manager
 from config import settings
 import logging

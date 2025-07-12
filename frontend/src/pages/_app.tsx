@@ -20,20 +20,35 @@ export default function App({ Component, pageProps }: AppProps) {
     }
   }, [router]);
   useEffect(() => {
-    const handler = (event: PromiseRejectionEvent) => {
+    const rejectionHandler = (event: PromiseRejectionEvent) => {
       const reason: any = event.reason;
       if (
         reason?.isAxiosError &&
         reason?.response?.status >= 400 &&
         reason?.response?.status < 500
       ) {
-        event.preventDefault(); // Suppress Next.js overlay
-        // Already logged in interceptor; nothing else to do.
+        event.preventDefault(); // Suppress Next.js overlay for handled Axios errors
       }
     };
 
-    window.addEventListener("unhandledrejection", handler);
-    return () => window.removeEventListener("unhandledrejection", handler);
+    const errorHandler = (event: ErrorEvent) => {
+      // Some browsers may surface Axios errors via the generic `error` event instead
+      const err: any = event.error;
+      if (
+        err?.isAxiosError &&
+        err?.response?.status >= 400 &&
+        err?.response?.status < 500
+      ) {
+        event.preventDefault(); // Suppress Next.js overlay for handled Axios errors
+      }
+    };
+
+    window.addEventListener("unhandledrejection", rejectionHandler);
+    window.addEventListener("error", errorHandler);
+    return () => {
+      window.removeEventListener("unhandledrejection", rejectionHandler);
+      window.removeEventListener("error", errorHandler);
+    };
   }, []);
 
   return (

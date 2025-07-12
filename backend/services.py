@@ -2,22 +2,20 @@ import pandas as pd
 import json
 import io
 import time
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Optional
 from datetime import datetime
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.utils.dataframe import dataframe_to_rows
-import xlsxwriter
 from database import db_manager
 from models import (
     QueryResult,
     ChartData,
     TableData,
-    FilterCondition,
     TableFilter,
     Query,
     MenuItem,
     DashboardWidget,
+    FilteredQueryRequest,
+    UserRole,
+    KPI,
 )
 import logging
 from sql_utils import escape_literal
@@ -126,7 +124,7 @@ class DataService:
             )
 
     @staticmethod
-    def execute_filtered_query(request: "FilteredQueryRequest") -> QueryResult:
+    def execute_filtered_query(request: FilteredQueryRequest) -> QueryResult:
         """Execute a filtered, sorted, and paginated query"""
         start_time = time.time()
 
@@ -711,7 +709,7 @@ class KPIService:
     """Service for retrieving KPI metrics defined as special queries (is_kpi = 1)."""
 
     @staticmethod
-    def get_kpis(user_role: "UserRole", menu_id: int = None) -> List["KPI"]:
+    def get_kpis(user_role: UserRole, menu_id: int = None) -> List[KPI]:
         """Fetch KPI queries, execute them, and return their numeric value.
 
         A query is treated as a KPI when the table **app_queries** has the column
@@ -723,9 +721,6 @@ class KPIService:
             menu_id: Optional menu ID to filter KPIs by dashboard assignment
         """
         try:
-            # Avoid circular import – placed here to prevent top-level cycles
-            from models import KPI, UserRole  # local import for type hint only
-
             # 1. Get all KPI queries, optionally filtered by menu
             try:
                 if menu_id:

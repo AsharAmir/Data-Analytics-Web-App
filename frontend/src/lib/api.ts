@@ -49,15 +49,17 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error) => {
-        console.error("API Client interceptor - Full error:", error);
-        console.error(
-          "API Client interceptor - Response data:",
-          error.response?.data,
-        );
-        console.error(
-          "API Client interceptor - Status:",
-          error.response?.status,
-        );
+        if (process.env.NODE_ENV === "development") {
+          console.debug("API Client interceptor - Full error:", error);
+          console.debug(
+            "API Client interceptor - Response data:",
+            error.response?.data,
+          );
+          console.debug(
+            "API Client interceptor - Status:",
+            error.response?.status,
+          );
+        }
 
         if (error.response?.status === 401) {
           const originalUrl = error.config?.url || "";

@@ -1,25 +1,16 @@
 from contextlib import asynccontextmanager
 import logging
-
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Import settings and init_database from internal modules
 from config import settings
 from database import init_database
-
-# --- Domain services are still re-exported here for convenience ---
-from services import MenuService, QueryService, DashboardService  # noqa: F401
-
-# --- Feature routers ---
 from routers.auth import router as auth_router
 from routers.dashboard import router as dashboard_router
 from routers.query import router as query_router
 from routers.admin import router as admin_router
 from routers.menu import router as menu_router
 from routers.health import router as health_router
-
 logger = logging.getLogger(__name__)
 
 

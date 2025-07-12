@@ -2,7 +2,6 @@ import logging
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-
 from auth import (
     authenticate_user,
     create_access_token,

@@ -1,4 +1,3 @@
-from typing import List
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +6,6 @@ from auth import get_current_user
 from models import (
     APIResponse,
     FilteredQueryRequest,
-    Query,
     QueryExecute,
     QueryResult,
     User,

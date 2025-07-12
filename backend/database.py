@@ -1,6 +1,6 @@
 import oracledb
 import pandas as pd
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from config import settings
 import logging
 import time
