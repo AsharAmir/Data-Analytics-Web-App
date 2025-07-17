@@ -162,7 +162,7 @@ const DataExplorerPage: React.FC = () => {
 
   /**
    * Helper to export the data currently visible in the table (after local search / filter / pagination).
-   * Only CSV is fully supported client-side; Excel falls back to CSV with .xlsx extension for convenience.
+   * Supports both CSV and Excel formats properly.
    */
   const exportCurrentView = (format: "excel" | "csv") => {
     if (
@@ -175,33 +175,72 @@ const DataExplorerPage: React.FC = () => {
     }
 
     const tableData = queryResult.data as TableData;
-
-    // Build CSV content
-    const rows: string[] = [];
-    rows.push(
-      tableData.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(","),
-    );
-    tableData.data.forEach((row) => {
-      rows.push(
-        row
-          .map((cell) => {
-            const value =
-              cell === null || cell === undefined ? "" : cell.toString();
-            return `"${value.replace(/"/g, '""')}"`;
-          })
-          .join(","),
-      );
-    });
-
-    const csvContent = rows.join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
     const dateStr = new Date().toISOString().split("T")[0];
-    link.download = `data_export_${dateStr}.${format === "excel" ? "xlsx" : "csv"}`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+
+    if (format === "csv") {
+      // Build CSV content
+      const rows: string[] = [];
+      rows.push(
+        tableData.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(","),
+      );
+      tableData.data.forEach((row) => {
+        rows.push(
+          row
+            .map((cell) => {
+              const value =
+                cell === null || cell === undefined ? "" : cell.toString();
+              return `"${value.replace(/"/g, '""')}"`;
+            })
+            .join(","),
+        );
+      });
+
+      const csvContent = rows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `data_export_${dateStr}.csv`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } else if (format === "excel") {
+      const exportRequest = {
+        sql_query: sqlQuery,
+        format: "excel" as const,
+        filename: `current_view_export_${dateStr}`,
+      };
+
+      setExportLoading(true);
+      toast.loading("Generating Excel file...", {
+        id: "current-export-toast",
+        duration: Infinity,
+      });
+
+      apiClient
+        .exportData(exportRequest, 30000) // 30 second timeout for current view
+        .then((blob) => {
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `current_view_export_${dateStr}.xlsx`;
+          link.click();
+          window.URL.revokeObjectURL(url);
+
+          toast.success("Excel export completed!", {
+            id: "current-export-toast",
+            duration: 3000,
+          });
+        })
+        .catch((err) => {
+          console.error("Excel export failed:", err);
+          toast.error("Excel export failed. Please try again.", {
+            id: "current-export-toast",
+          });
+        })
+        .finally(() => {
+          setExportLoading(false);
+        });
+    }
   };
 
   const handleExport = (format: "excel" | "csv") => {
