@@ -211,6 +211,7 @@ def init_database():
         chart_type VARCHAR2(50),
         chart_config CLOB,
         menu_item_id NUMBER,
+        role VARCHAR2(20) DEFAULT 'user',
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -314,6 +315,21 @@ def init_database():
 
         except Exception as e:
             logger.warning(f"Error updating app_users table schema: {e}")
+
+        # Ensure ROLE column exists in APP_QUERIES
+        try:
+            check_role_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_QUERIES' AND column_name = 'ROLE'
+            """
+            role_result = db_manager.execute_query(check_role_query)
+            if role_result[0]["COUNT(*)"] == 0:
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(20) DEFAULT 'user')")
+                logger.info("Added role column to app_queries table")
+            else:
+                logger.info("Role column already exists in app_queries table")
+        except Exception as e:
+            logger.warning(f"Error updating app_queries table schema: {e}")
 
         # Insert default data
         insert_default_data()
