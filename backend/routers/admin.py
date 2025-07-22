@@ -424,7 +424,15 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
         WHERE q.is_active = 1
         ORDER BY q.created_at DESC
         """
-        result = db_manager.execute_query(query)
+        try:
+            result = db_manager.execute_query(query)
+        except Exception as exc:
+            # If ROLE column doesn't exist, add it and retry
+            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                result = db_manager.execute_query(query)
+            else:
+                raise exc
         queries: List[dict] = []
         for row in result:
             # Get all menu assignments for this query
@@ -806,9 +814,12 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
         try:
             result = db_manager.execute_query(query)
         except Exception as exc:
-            # If is_kpi column doesn't exist, add it and retry
-            if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+            # If columns don't exist, add them and retry
+            if "ORA-00904" in str(exc).upper():
+                if "IS_KPI" in str(exc).upper():
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+                if "ROLE" in str(exc).upper():
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
                 result = db_manager.execute_query(query)
             else:
                 raise exc
