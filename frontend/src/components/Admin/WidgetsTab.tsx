@@ -1,6 +1,6 @@
 import React from "react";
 import WidgetsSection from "./WidgetsSection";
-import { MenuItem, UserRole } from "../../types";
+import { MenuItem } from "../../types";
 
 interface Widget {
   id: number;

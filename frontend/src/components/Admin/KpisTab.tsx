@@ -52,7 +52,6 @@ const KpisTab: React.FC<KpisTabProps> = ({
   roleDisplayNames,
   createOrUpdateKpi,
   deleteKpi,
-  loadData,
 }) => {
   return (
     <div className="space-y-6">
