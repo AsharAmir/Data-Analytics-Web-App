@@ -1,5 +1,4 @@
 import React, { useMemo, useCallback, useState } from "react";
-import { UserRole } from "../../types";
 
 interface MenuForm {
   name: string;
@@ -7,7 +6,7 @@ interface MenuForm {
   icon: string;
   parent_id: number | null;
   sort_order: number;
-  role: UserRole[];
+  role: string[];
 }
 
 interface MenuFormModalProps {
@@ -17,6 +16,7 @@ interface MenuFormModalProps {
   setMenuForm: React.Dispatch<React.SetStateAction<MenuForm>>;
   onSubmit: () => void;
   onClose: () => void;
+  availableRoles: string[];
 }
 
 interface FormErrors {
@@ -31,6 +31,7 @@ const MenuFormModal: React.FC<MenuFormModalProps> = ({
   setMenuForm,
   onSubmit,
   onClose,
+  availableRoles,
 }) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -38,14 +39,14 @@ const MenuFormModal: React.FC<MenuFormModalProps> = ({
   // Memoize role options to avoid recreating on every render
   const roleOptions = useMemo(
     () =>
-      Object.values(UserRole).map((role) => ({
+      availableRoles.map((role) => ({
         value: role,
         label: role
-          .replace("_", " ")
+          .replace(/_/g, " ")
           .toLowerCase()
           .replace(/\b\w/g, (l) => l.toUpperCase()),
       })),
-    [],
+    [availableRoles],
   );
 
   // Validate form
@@ -82,7 +83,7 @@ const MenuFormModal: React.FC<MenuFormModalProps> = ({
 
   // Handle role toggle
   const handleRoleToggle = useCallback(
-    (role: UserRole, checked: boolean) => {
+    (role: string, checked: boolean) => {
       setMenuForm((prev) => ({
         ...prev,
         role: checked

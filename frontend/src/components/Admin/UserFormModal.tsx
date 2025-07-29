@@ -16,7 +16,7 @@ interface UserForm {
   username: string;
   email: string;
   password: string;
-  role: UserRole;
+  role: string; // allow dynamic roles
 }
 
 interface ValidationErrors {
@@ -25,7 +25,7 @@ interface ValidationErrors {
   password?: string;
 }
 
-const roleDisplayNames: Record<UserRole, string> = {
+const roleDisplayNames: Record<string, string> = {
   [UserRole.ADMIN]: "Admin",
   [UserRole.CEO]: "CEO",
   [UserRole.FINANCE_USER]: "Finance",
@@ -33,7 +33,7 @@ const roleDisplayNames: Record<UserRole, string> = {
   [UserRole.USER]: "User",
 };
 
-const roleDescriptions: Record<UserRole, string> = {
+const roleDescriptions: Record<string, string> = {
   [UserRole.ADMIN]: "Full system access and user management",
   [UserRole.CEO]: "Executive dashboards and reports",
   [UserRole.FINANCE_USER]: "Financial data and analytics",
@@ -48,6 +48,7 @@ interface UserFormModalProps {
   setUserForm: React.Dispatch<React.SetStateAction<UserForm>>;
   onSubmit: () => void;
   onClose: () => void;
+  availableRoles: string[]; // list of all role names
 }
 
 const UserFormModal: React.FC<UserFormModalProps> = ({
@@ -57,6 +58,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
   setUserForm,
   onSubmit,
   onClose,
+  availableRoles,
 }) => {
   const [currentTab, setCurrentTab] = useState<
     "basic" | "security" | "permissions"
@@ -372,44 +374,19 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
           {currentTab === "permissions" && (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-4 flex items-center">
-                  <ShieldCheckIcon className="h-5 w-5 mr-2" />
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                  <ShieldCheckIcon className="h-4 w-4 mr-2" />
                   User Role
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {Object.values(UserRole).map((role) => (
-                    <label
-                      key={role}
-                      className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                        userForm.role === role
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        value={role}
-                        checked={userForm.role === role}
-                        onChange={(e) =>
-                          setUserForm((prev) => ({
-                            ...prev,
-                            role: e.target.value as UserRole,
-                          }))
-                        }
-                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 mt-0.5 mr-3"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {roleDisplayNames[role]}
-                        </div>
-                        <div className="text-sm text-gray-500 mt-1">
-                          {roleDescriptions[role]}
-                        </div>
-                      </div>
-                    </label>
+                <select
+                  value={userForm.role}
+                  onChange={(e)=>setUserForm({...userForm, role:e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {availableRoles.map(r=> (
+                    <option key={r} value={r}>{roleDisplayNames[r]||r}</option>
                   ))}
-                </div>
+                </select>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

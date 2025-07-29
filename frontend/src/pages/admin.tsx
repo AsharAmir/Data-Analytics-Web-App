@@ -11,12 +11,14 @@ import {
 } from "@heroicons/react/24/outline";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
-import { MenuItem, UserRole } from "../types";
+import { MenuItem, UserRole, Role } from "../types";
 import QueryFormModal from "../components/Admin/QueryFormModal";
 import UserFormModal from "../components/Admin/UserFormModal";
 import MenuFormModal from "../components/Admin/MenuFormModal";
 import WidgetsSection from "../components/Admin/WidgetsSection";
 import KPIFormModal from "../components/Admin/KPIFormModal";
+import RoleFormModal from "../components/Admin/RoleFormModal";
+import ReassignRoleModal from "../components/Admin/ReassignRoleModal";
 
 interface Query {
   id: number;
@@ -69,13 +71,14 @@ const roleDisplayNames: Record<UserRole, string> = {
 
 const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    "widgets" | "queries" | "users" | "menus" | "kpis"
+    "widgets" | "queries" | "users" | "menus" | "kpis" | "roles"
   >("widgets");
   const [queries, setQueries] = useState<Query[]>([]);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [kpis, setKpis] = useState<KPI[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -112,11 +115,11 @@ const AdminPage: React.FC = () => {
     menu_item_id: null as number | null,
   });
 
-  const [userForm, setUserForm] = useState({
+  const [userForm, setUserForm] = useState<{username:string;email:string;password:string;role:string}>({
     username: "",
     email: "",
     password: "",
-    role: UserRole.USER,
+    role: "user",
   });
   const [kpiForm, setKpiForm] = useState({
     name: "",
@@ -135,6 +138,25 @@ const AdminPage: React.FC = () => {
     sort_order: 0,
     role: [] as UserRole[],
   });
+
+  // Roles modal & reassignment states
+  const [showRoleForm, setShowRoleForm] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [roleToDelete, setRoleToDelete] = useState<string>("");
+  const [usersToReassign, setUsersToReassign] = useState<{ id: number; username: string }[]>([]);
+
+  // Helper lists for role dropdowns
+  // Merge backend role names with fixed enum roles, case-insensitive de-dupe preferring backend
+  const backendRoleNames = roles.map((r) => r.name);
+  const enumRoleNames = Object.values(UserRole).filter(
+    (er) => !backendRoleNames.some((br) => br.toLowerCase() === er.toLowerCase()),
+  );
+  const allRolesList = [...backendRoleNames, ...enumRoleNames];
+
+  // For reassignment modal exclude current deleting / system
+  const otherRoleNames = roles
+    .filter((r) => !r.is_system && r.name !== roleToDelete)
+    .map((r) => r.name);
 
   const flattenMenuItems = (items: MenuItem[]): MenuItem[] => {
     const flat: MenuItem[] = [];
@@ -183,7 +205,7 @@ const AdminPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [queriesRes, widgetsRes, menuRes, usersRes, kpisRes] =
+      const [queriesRes, widgetsRes, menuRes, usersRes, kpisRes, rolesRes] =
         await Promise.all([
           apiClient.get<{ data?: Query[] } | Query[]>("/api/admin/queries"),
           apiClient.get<{ data?: Widget[] } | Widget[]>(
@@ -194,6 +216,7 @@ const AdminPage: React.FC = () => {
             "/api/admin/users",
           ),
           apiClient.get<{ data?: KPI[] } | KPI[]>("/api/admin/kpis"),
+          apiClient.listRoles(),
         ]);
 
       // Endpoints return different shapes; normalize here
@@ -218,6 +241,7 @@ const AdminPage: React.FC = () => {
           [],
       );
       setKpis((kpisRes as { data?: KPI[] }).data ?? (kpisRes as KPI[]) ?? []);
+      setRoles((rolesRes as any)?.data ?? rolesRes ?? []);
     } catch (error) {
       toast.error("Failed to load admin data");
       console.error(error);
@@ -739,6 +763,7 @@ const AdminPage: React.FC = () => {
                   <Cog6ToothIcon className="h-5 w-5 inline mr-2" />
                   Menus ({allMenuItems.length})
                 </button>
+                <button onClick={()=>setActiveTab("roles")} className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "roles"?"border-blue-500 text-blue-600":"border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>Roles ({roles.length})</button>
               </nav>
             </div>
           </div>
@@ -953,6 +978,7 @@ const AdminPage: React.FC = () => {
                       id: item.id,
                       name: `${item.name} (${item.type})`,
                     }))}
+                  availableRoles={allRolesList}
                 />
               )}
             </div>
@@ -1127,6 +1153,7 @@ const AdminPage: React.FC = () => {
                       id: item.id,
                       name: `${item.name} (${item.type})`,
                     }))}
+                  availableRoles={allRolesList}
                 />
               )}
             </div>
@@ -1270,7 +1297,7 @@ const AdminPage: React.FC = () => {
                     try {
                       setLoading(true);
                       if (editingUserId) {
-                        await apiClient.updateUser(editingUserId, userForm);
+                        await apiClient.updateUser(editingUserId, userForm as any);
                         toast.success("User updated successfully");
                       } else {
                         await apiClient.post("/api/admin/user", userForm);
@@ -1282,7 +1309,7 @@ const AdminPage: React.FC = () => {
                         username: "",
                         email: "",
                         password: "",
-                        role: UserRole.USER,
+                        role: "user",
                       });
                       loadData();
                     } catch (error: unknown) {
@@ -1306,9 +1333,10 @@ const AdminPage: React.FC = () => {
                       username: "",
                       email: "",
                       password: "",
-                      role: UserRole.USER,
+                      role: "user",
                     });
                   }}
+                  availableRoles={allRolesList}
                 />
               )}
             </div>
@@ -1525,8 +1553,51 @@ const AdminPage: React.FC = () => {
                       role: [],
                     });
                   }}
+                  availableRoles={allRolesList}
                 />
               )}
+            </div>
+          )}
+
+          {/* Roles Tab */}
+          {activeTab === "roles" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">Roles</h2>
+                <button onClick={()=>setShowRoleForm(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"><PlusIcon className="h-5 w-5 mr-2"/>Add Role</button>
+              </div>
+              <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">System</th><th className="px-6 py-3"></th></tr></thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {roles.map(r=> (
+                      <tr key={r.name}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">{r.is_system?"Yes":"No"}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                          {!r.is_system && (
+                            <button onClick={async ()=>{
+                              try {
+                                const resp:any = await apiClient.deleteRole(r.name);
+                                if(resp.success===false && resp.error==="ROLE_IN_USE"){
+                                  setRoleToDelete(r.name);
+                                  setUsersToReassign(resp.data||[]);
+                                  setShowReassignModal(true);
+                                } else {
+                                  toast.success(`Role ${r.name} deleted`);
+                                  loadData();
+                                }
+                              } catch(e:any){ toast.error(e?.response?.data?.detail||"Failed"); }
+                            }} className="text-red-600 hover:text-red-800" title="Delete"><TrashIcon className="h-5 w-5"/></button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {showRoleForm && <RoleFormModal visible={showRoleForm} onClose={()=>setShowRoleForm(false)} onCreate={async (roleName)=>{ await apiClient.createRole(roleName); toast.success("Role created"); setShowRoleForm(false); loadData(); }}/>} 
+              {showReassignModal && <ReassignRoleModal visible={showReassignModal} roleName={roleToDelete} users={usersToReassign} existingRoles={otherRoleNames} onConfirm={async(newRole)=>{await apiClient.deleteRole(roleToDelete,newRole); toast.success("Role deleted"); setShowReassignModal(false); loadData();}} onCancel={()=>setShowReassignModal(false)} />}
             </div>
           )}
         </main>

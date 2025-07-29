@@ -7,17 +7,20 @@ from enum import Enum
 # Authentication Models
 class UserRole(str, Enum):
     ADMIN = "admin"
+    IT_USER = "IT_USER"  # Fixed built-in role requested by scenario
     CEO = "CEO"
     FINANCE_USER = "FINANCE_USER"
     TECH_USER = "TECH_USER"
     USER = "user"
+
+RoleType = Union[str, "UserRole"]
 
 
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
-    role: UserRole = UserRole.USER
+    role: RoleType = UserRole.USER
     must_change_password: bool = True  # always true on creation
 
 # Payload for partial user updates
@@ -25,7 +28,7 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
-    role: Optional[UserRole] = None  # New roles supported
+    role: Optional[RoleType] = None  # Now supports dynamic roles as well
     is_active: Optional[bool] = None
 
 
@@ -38,7 +41,7 @@ class User(BaseModel):
     id: int
     username: str
     email: str
-    role: UserRole = UserRole.USER
+    role: RoleType = UserRole.USER
     is_active: bool
     created_at: datetime
     must_change_password: bool = True
@@ -59,7 +62,7 @@ class MenuItem(BaseModel):
     parent_id: Optional[int] = None
     sort_order: int = 0
     is_active: bool = True
-    role: Optional[Union[UserRole, List[UserRole]]] = None
+    role: Optional[Union[RoleType, List[RoleType]]] = None
     children: Optional[List["MenuItem"]] = []
 
 
@@ -69,7 +72,7 @@ class MenuItemCreate(BaseModel):
     icon: Optional[str] = None
     parent_id: Optional[int] = None
     sort_order: int = 0
-    role: Optional[Union[UserRole, List[UserRole]]] = None
+    role: Optional[Union[RoleType, List[RoleType]]] = None
 
 
 # Query Models
@@ -81,7 +84,7 @@ class QueryCreate(BaseModel):
     chart_config: Optional[Dict[str, Any]] = None
     menu_item_id: Optional[int] = None  # Keep for backward compatibility
     menu_item_ids: Optional[List[int]] = None  # New field for multiple assignments
-    role: Optional[Union[UserRole, List[UserRole]]] = UserRole.USER
+    role: Optional[Union[RoleType, List[RoleType]]] = UserRole.USER
 
 
 class Query(BaseModel):
@@ -96,7 +99,7 @@ class Query(BaseModel):
     menu_names: Optional[List[str]] = None  # Menu names for display
     is_active: bool = True
     created_at: datetime
-    role: Optional[UserRole] = UserRole.USER
+    role: Optional[RoleType] = UserRole.USER
 
 
 class QueryExecute(BaseModel):

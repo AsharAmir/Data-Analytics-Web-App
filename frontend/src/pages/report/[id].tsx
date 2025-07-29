@@ -68,7 +68,7 @@ const ReportDetailPage: React.FC = () => {
     if (id) {
       loadReportData();
     }
-  }, [id, loadReportData]);
+  }, [id, loadReportData, router]);
 
   const loadChartData = async (reportId: number) => {
     try {

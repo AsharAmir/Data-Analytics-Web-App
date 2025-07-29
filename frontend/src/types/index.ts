@@ -41,6 +41,15 @@ export interface MenuItem {
   children: MenuItem[];
 }
 
+// ---------------------------------------------
+// Dynamic Role Types (Backend /api/roles)
+// ---------------------------------------------
+
+export interface Role {
+  name: string;
+  is_system: boolean;
+}
+
 // Query Types
 export interface Query {
   id: number;

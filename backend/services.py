@@ -6,16 +6,17 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from database import db_manager
 from models import (
-    QueryResult,
+    APIResponse,
     ChartData,
-    TableData,
-    TableFilter,
-    Query,
-    MenuItem,
     DashboardWidget,
     FilteredQueryRequest,
-    UserRole,
     KPI,
+    MenuItem,
+    Query,
+    QueryResult,
+    TableData,
+    RoleType,
+    TableFilter,
 )
 import logging
 from sql_utils import escape_literal
@@ -709,7 +710,7 @@ class KPIService:
     """Service for retrieving KPI metrics defined as special queries (is_kpi = 1)."""
 
     @staticmethod
-    def get_kpis(user_role: UserRole, menu_id: int = None) -> List[KPI]:
+    def get_kpis(user_role: RoleType, menu_id: int = None) -> List[KPI]:
         """Fetch KPI queries, execute them, and return their numeric value.
 
         A query is treated as a KPI when the table **app_queries** has the column

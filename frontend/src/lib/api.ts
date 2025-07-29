@@ -17,6 +17,7 @@ import {
   QueryFormData,
   KPI,
 } from "../types";
+import { Role } from "../types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -494,6 +495,36 @@ class ApiClient {
     }
     return response.data;
   }
+
+  // -----------------------------
+  // Roles (dynamic)
+  // -----------------------------
+
+  async listRoles(): Promise<Role[]> {
+    const response = await this.client.get<Role[]>("/api/roles");
+    return (response as any).data ?? response;
+  }
+
+  async createRole(roleName: string): Promise<Role> {
+    const response = await this.client.post<Role>("/api/roles", {
+      role_name: roleName,
+    });
+    return (response as any).data ?? response;
+  }
+
+  /**
+   * Delete a role. If `newRole` is provided users are reassigned automatically.
+   * Returns the full backend response so the caller can check success / ROLE_IN_USE
+   */
+  async deleteRole(roleName: string, newRole?: string) {
+    const config: any = {};
+    if (newRole) {
+      config.data = { new_role: newRole };
+      // axios delete with body needs `data` prop
+    }
+    const response = await this.client.delete(`/api/roles/${roleName}`, config);
+    return response.data;
+  }
 }
 
 // Create and export a singleton instance
@@ -522,6 +553,10 @@ export const {
   deleteUser,
   deleteQuery,
   changePassword,
+  // Role endpoints
+  listRoles,
+  createRole,
+  deleteRole,
 } = apiClient;
 
 export async function createQuery(data: QueryFormData & { role?: string[] }) {

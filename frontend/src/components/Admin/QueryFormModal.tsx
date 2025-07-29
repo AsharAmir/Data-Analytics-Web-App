@@ -55,6 +55,7 @@ interface QueryFormModalProps {
   menuItems: MenuItemOption[];
   onCreate: () => void;
   onClose: () => void;
+  availableRoles: string[];
 }
 
 const QueryFormModal: React.FC<QueryFormModalProps> = ({
@@ -65,6 +66,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
   menuItems,
   onCreate,
   onClose,
+  availableRoles,
 }) => {
   const [currentTab, setCurrentTab] = useState<
     "basic" | "sql" | "visualization" | "permissions"
@@ -560,11 +562,11 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                   User Roles with Access *
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {Object.values(UserRole).map((role) => (
+                  {availableRoles.map((role) => (
                     <label
                       key={role}
                       className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                        queryForm.role.includes(role)
+                        queryForm.role.includes(role as UserRole)
                           ? "border-blue-500 bg-blue-50"
                           : "border-gray-200 hover:border-gray-300"
                       }`}
@@ -572,18 +574,18 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                       <input
                         type="checkbox"
                         className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        checked={queryForm.role.includes(role)}
+                        checked={queryForm.role.includes(role as UserRole)}
                         onChange={() => {
                           setQueryForm((prev) => {
-                            const newRoles = prev.role.includes(role)
-                              ? prev.role.filter((r) => r !== role)
-                              : [...prev.role, role];
+                            const newRoles = prev.role.includes(role as UserRole)
+                              ? prev.role.filter((r) => r !== role as UserRole)
+                              : [...prev.role, role as UserRole];
                             return { ...prev, role: newRoles };
                           });
                         }}
                       />
                       <span className="text-gray-800 font-medium">
-                        {roleDisplayNames[role]}
+                        {roleDisplayNames[role as UserRole] || role}
                       </span>
                     </label>
                   ))}

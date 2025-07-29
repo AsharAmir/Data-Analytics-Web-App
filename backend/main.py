@@ -15,6 +15,7 @@ from routers.dashboard import router as dashboard_router
 from routers.query import router as query_router
 from routers.admin import router as admin_router
 from routers.menu import router as menu_router
+from routers.roles import router as roles_router
 from routers.health import router as health_router
 
 # Initialise structured logging *before* anything else so all modules inherit
@@ -79,6 +80,7 @@ for r in (
     query_router,
     admin_router,
     menu_router,
+    roles_router,
     health_router,
 ):
     app.include_router(r)
