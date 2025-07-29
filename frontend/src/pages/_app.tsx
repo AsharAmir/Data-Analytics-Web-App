@@ -19,6 +19,20 @@ export default function App({ Component, pageProps }: AppProps) {
       router.push("/change-password");
     }
   }, [router]);
+  // Global auth guard – if no token, redirect to login before any data fetches
+  useEffect(() => {
+    const guard = () => {
+      if (!apiClient.isAuthenticated() && router.pathname !== "/login" && router.pathname !== "/change-password") {
+        router.replace("/login");
+      }
+    };
+
+    guard(); // Run on mount
+    router.events.on("routeChangeStart", guard);
+    return () => {
+      router.events.off("routeChangeStart", guard);
+    };
+  }, [router]);
   useEffect(() => {
     const rejectionHandler = (event: PromiseRejectionEvent) => {
       const reason: any = event.reason;

@@ -63,16 +63,15 @@ class ApiClient {
 
         if (error.response?.status === 401) {
           const originalUrl = error.config?.url || "";
-          // Skip global 401 handling for login attempts to avoid duplicate toasts
+          // Skip handling for the login endpoint itself to avoid loops
           if (!originalUrl.includes("/auth/login")) {
-            // Token expired or invalid
             this.removeToken();
-            toast.error("Session expired. Please login again.", {
-              duration: 5000,
-            });
-            // Redirect user to login page after token expiry
-            window.location.href = "/login";
+            if (typeof window !== "undefined") {
+              window.location.href = "/login";
+            }
           }
+          // Return a non-resolving promise to halt further error propagation
+          return new Promise(() => {});
         } else if (error.response?.status >= 500) {
           toast.error("Server error. Please try again later.", {
             duration: 5000,

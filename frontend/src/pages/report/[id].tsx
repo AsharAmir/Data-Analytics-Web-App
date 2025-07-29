@@ -61,7 +61,7 @@ const ReportDetailPage: React.FC = () => {
 
   useEffect(() => {
     if (!apiClient.isAuthenticated()) {
-      window.close(); // Close the tab if not authenticated
+      router.replace("/login");
       return;
     }
 

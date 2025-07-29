@@ -1,4 +1,7 @@
 import logging
+import asyncio
+
+from functools import partial
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -71,11 +74,28 @@ async def execute_query(request: QueryExecute, current_user: User = Depends(get_
 
 @router.get("/query/{query_id}", response_model=APIResponse)
 async def get_query_detail(query_id: int, current_user: User = Depends(get_current_user)):
+    """Return metadata about a saved query.
+
+    Non-admin users are only allowed to access queries that are either **not**
+    restricted (``role`` column empty) *or* that explicitly list the user’s
+    role.  Otherwise we raise *403 Not authorised* so the frontend can display
+    an appropriate message.
+    """
+
     try:
         query_obj = QueryService.get_query_by_id(query_id)
         if not query_obj:
             return APIResponse(success=False, error="Query not found")
+
+        # Authorisation check – admin can view everything; other roles must match
+        if current_user.role != UserRole.ADMIN:
+            assigned_roles = {r.strip() for r in (query_obj.role or "").split(',') if r.strip()}
+            if assigned_roles and current_user.role not in assigned_roles:
+                raise HTTPException(status_code=403, detail="Not authorised for this query")
+
         return APIResponse(success=True, data=query_obj)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Error getting query detail {query_id}: {exc}")
         return APIResponse(success=False, error=str(exc))
@@ -83,8 +103,28 @@ async def get_query_detail(query_id: int, current_user: User = Depends(get_curre
 
 @router.post("/query/filtered", response_model=QueryResult)
 async def execute_filtered_query(request: FilteredQueryRequest, current_user: User = Depends(get_current_user)):
+    """Execute a saved query (``query_id``) or raw SQL with filtering/pagination.
+
+    The same role-based access rules as ``/query/execute`` apply: admins can run
+    everything; other users may only run queries that either have no role
+    restrictions or explicitly include their role.
+    """
+
     try:
+        # Perform the same role check as /query/execute when a query_id is supplied
+        if request.query_id:
+            query_obj = QueryService.get_query_by_id(request.query_id)
+            if not query_obj:
+                raise HTTPException(status_code=404, detail="Query not found")
+
+            if current_user.role != UserRole.ADMIN:
+                assigned_roles = {r.strip() for r in (query_obj.role or "").split(',') if r.strip()}
+                if assigned_roles and current_user.role not in assigned_roles:
+                    raise HTTPException(status_code=403, detail="Not authorised for this query")
+
         return DataService.execute_filtered_query(request)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Error executing filtered query: {exc}")
         raise HTTPException(status_code=500, detail=f"Query execution failed: {exc}")
@@ -139,9 +179,18 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         else:
             raise HTTPException(status_code=400, detail="query_id or sql_query required")
 
-        # 2. Execute and get DataFrame with unlimited timeout for exports
-        logger.info(f"Starting export for user {current_user.username}, estimated data size: large")
-        df = db_manager.execute_query_pandas(sql, timeout=0)  # 0 = unlimited timeout
+        # 2. Execute and get DataFrame – move the potentially long-running
+        # blocking DB call into a thread so this coroutine yields control.
+
+        logger.info(
+            f"Starting export for user {current_user.username}, estimated data size: large"
+        )
+
+        loop = asyncio.get_running_loop()
+        df = await loop.run_in_executor(
+            None,  # default thread-pool executor
+            partial(db_manager.execute_query_pandas, sql, timeout=0),
+        )
 
         if df.empty:
             raise HTTPException(status_code=404, detail="Query returned no data")
@@ -154,7 +203,11 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         if fmt == "excel":
             if not filename.lower().endswith(".xlsx"):
                 filename += ".xlsx"
-            file_bytes = ExportService.export_to_excel(df, filename)
+
+            # Pandas writing to Excel is CPU-bound; offload to the same thread pool.
+            file_bytes: bytes = await loop.run_in_executor(
+                None, partial(ExportService.export_to_excel, df, filename)
+            )
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             logger.info(f"Excel export completed for {filename}, size: {len(file_bytes)} bytes")
             return Response(content=file_bytes, media_type=media_type, headers={
@@ -164,7 +217,10 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         elif fmt == "csv":
             if not filename.lower().endswith(".csv"):
                 filename += ".csv"
-            csv_str = ExportService.export_to_csv(df, filename)
+
+            csv_str: str = await loop.run_in_executor(
+                None, partial(ExportService.export_to_csv, df, filename)
+            )
             logger.info(f"CSV export completed for {filename}, size: {len(csv_str)} characters")
             return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={
                 "Content-Disposition": f"attachment; filename={filename}",
