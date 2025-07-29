@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
+import { logger } from "./logger";
 import Cookies from "js-cookie";
 import { toast } from "react-hot-toast";
 import {
@@ -35,6 +36,7 @@ class ApiClient {
     this.client.interceptors.request.use(
       (config) => {
         const token = this.getToken();
+        logger.debug("API →", config.method?.toUpperCase(), config.url);
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -47,9 +49,17 @@ class ApiClient {
 
     // Response interceptor for error handling
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        logger.debug(
+          "API ←",
+          response.config.method?.toUpperCase(),
+          response.config.url,
+          response.status,
+        );
+        return response;
+      },
       (error) => {
-        if (process.env.NODE_ENV === "development") {
+        if (process.env.NODE_ENV !== "production") {
           console.debug("API Client interceptor - Full error:", error);
           console.debug(
             "API Client interceptor - Response data:",
@@ -62,6 +72,7 @@ class ApiClient {
         }
 
         if (error.response?.status === 401) {
+          logger.warn("401 unauthorised – redirecting to login");
           const originalUrl = error.config?.url || "";
           // Skip handling for the login endpoint itself to avoid loops
           if (!originalUrl.includes("/auth/login")) {
@@ -73,6 +84,7 @@ class ApiClient {
           // Return a non-resolving promise to halt further error propagation
           return new Promise(() => {});
         } else if (error.response?.status >= 500) {
+          logger.error("Server error", error.response?.status);
           toast.error("Server error. Please try again later.", {
             duration: 5000,
           });

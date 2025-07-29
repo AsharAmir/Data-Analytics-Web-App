@@ -1,5 +1,10 @@
 from contextlib import asynccontextmanager
 import logging
+import time
+
+from logging_config import setup_logging
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +16,28 @@ from routers.query import router as query_router
 from routers.admin import router as admin_router
 from routers.menu import router as menu_router
 from routers.health import router as health_router
+
+# Initialise structured logging *before* anything else so all modules inherit
+setup_logging()
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Simple request/response logging middleware – records method, path, status
+# code and latency for every request.
+# ---------------------------------------------------------------------------
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
+        start = time.time()
+        response = await call_next(request)
+        duration = (time.time() - start) * 1000
+        logger.info(
+            "%s %s -> %s %.2fms", request.method, request.url.path, response.status_code, duration
+        )
+        return response
 
 
 @asynccontextmanager
@@ -41,6 +67,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register request logging middleware (after CORS so it times downstream
+# processing only).
+app.add_middleware(RequestLoggingMiddleware)
 
 # --- Register routers ---
 for r in (
