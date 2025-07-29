@@ -5,6 +5,7 @@ import DataTable from "../../components/ui/DataTable";
 import ChartComponent from "../../components/Charts/ChartComponent";
 import { Query, QueryResult, TableData, ChartData } from "../../types";
 import { toast } from "react-hot-toast";
+import FileImportModal from "../../components/Reports/FileImportModal";
 
 const ReportDetailPage: React.FC = () => {
   const router = useRouter();
@@ -17,6 +18,7 @@ const ReportDetailPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<"table" | "chart">("table");
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
   const [error, setError] = useState<string>("");
+  const [showImport, setShowImport] = useState(false);
 
   const loadReportData = useCallback(async () => {
     setLoading(true);
@@ -69,6 +71,12 @@ const ReportDetailPage: React.FC = () => {
       loadReportData();
     }
   }, [id, loadReportData, router]);
+
+  // Helper: determine if current user can import (admin for now)
+  const canImport = (() => {
+    const user = apiClient.getUser();
+    return user?.role?.toString().toLowerCase() === "admin";
+  })();
 
   const loadChartData = async (reportId: number) => {
     try {
@@ -302,6 +310,17 @@ const ReportDetailPage: React.FC = () => {
                     </span>
                   </>
                 )}
+                {canImport && (
+                  <>
+                    <span>•</span>
+                    <button
+                      onClick={() => setShowImport(true)}
+                      className="px-3 py-1 rounded-md text-xs bg-green-600 text-white hover:bg-green-700"
+                    >
+                      Import Data
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -443,6 +462,15 @@ const ReportDetailPage: React.FC = () => {
           )}
         </div>
       </main>
+
+      {showImport && (
+        <FileImportModal
+          visible={showImport}
+          onClose={() => setShowImport(false)}
+          tableName={report?.name || ""}
+          onImported={() => loadReportData()}
+        />
+      )}
     </div>
   );
 };

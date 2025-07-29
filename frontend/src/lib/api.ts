@@ -440,6 +440,39 @@ class ApiClient {
     }
   }
 
+  // --------------------------------------------
+  // Bulk import API (Scenario-2)
+  // --------------------------------------------
+
+  /**
+   * Upload a CSV/TXT or single-sheet Excel file to import data into a table.
+   * @param tableName Target table name in the database
+   * @param file      File object (csv, txt, xlsx, xls)
+   * @param mode      Behaviour on validation error: 'skip_failed' | 'abort_on_error'
+   */
+  async importTableData(
+    tableName: string,
+    file: File,
+    mode: "skip_failed" | "abort_on_error" = "abort_on_error",
+  ) {
+    const form = new FormData();
+    form.append("mode", mode);
+    form.append("file", file);
+
+    try {
+      const response = await this.client.post(
+        `/api/report/${tableName}/import`,
+        form,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
+      return response as any; // Caller handles structure
+    } catch (error) {
+      throw error;
+    }
+  }
+
   // User admin methods
   async updateUser(userId: number, data: Partial<User>): Promise<APIResponse> {
     try {

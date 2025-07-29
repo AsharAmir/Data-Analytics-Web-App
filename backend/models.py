@@ -221,6 +221,33 @@ class PaginatedResponse(BaseModel):
     page_size: int
     total_pages: int
 
+# ---------------------------
+# Data-import models (Scenario 2)
+# ---------------------------
+
+
+class ImportMode(str, Enum):
+    """Behaviour when validation errors are encountered during import."""
+
+    SKIP_FAILED = "skip_failed"  # Insert valid rows, skip erroneous rows
+    ABORT_ON_ERROR = "abort_on_error"  # Abort entire operation if any row fails
+
+
+class ReportImportOptions(BaseModel):
+    """Options supplied by the frontend for a bulk data import request."""
+
+    mode: ImportMode = ImportMode.ABORT_ON_ERROR
+
+
+class ReportImportResult(BaseModel):
+    """Return object for import endpoint detailing successes & failures."""
+
+    success: bool
+    total_records: int
+    inserted_records: int
+    failed_records: int
+    errors: List[str] = []
+
 
 # Update forward references
 MenuItem.model_rebuild()
