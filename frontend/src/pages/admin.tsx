@@ -12,13 +12,12 @@ import {
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
 import { MenuItem, UserRole, Role } from "../types";
-import QueryFormModal from "../components/Admin/QueryFormModal";
-import UserFormModal from "../components/Admin/UserFormModal";
 import MenuFormModal from "../components/Admin/MenuFormModal";
-import WidgetsSection from "../components/Admin/WidgetsSection";
-import KPIFormModal from "../components/Admin/KPIFormModal";
-import RoleFormModal from "../components/Admin/RoleFormModal";
-import ReassignRoleModal from "../components/Admin/ReassignRoleModal";
+import WidgetsTab from "../components/Admin/WidgetsTab";
+import QueriesTab from "../components/Admin/QueriesTab";
+import KpisTab from "../components/Admin/KpisTab";
+import UsersTab from "../components/Admin/UsersTab";
+import RolesTab from "../components/Admin/RolesTab";
 
 interface Query {
   id: number;
@@ -770,7 +769,7 @@ const AdminPage: React.FC = () => {
 
           {/* Widgets Tab */}
           {activeTab === "widgets" && (
-            <WidgetsSection
+            <WidgetsTab
               widgets={widgets}
               queries={queries.map((q) => ({
                 id: q.id,
@@ -790,556 +789,56 @@ const AdminPage: React.FC = () => {
 
           {/* Queries Tab */}
           {activeTab === "queries" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Available Queries
-                </h2>
-                <button
-                  onClick={() => setShowQueryForm(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Create Query
-                </button>
-              </div>
-
-              {/* Queries List */}
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Chart Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Menu
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {queries.map((query) => (
-                      <tr key={query.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {query.name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {query.description}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                            {query.chart_type}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {query.menu_name || "Default Dashboard"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {query.role && typeof query.role === "string"
-                              ? query.role
-                                  .split(",")
-                                  .map(
-                                    (r) =>
-                                      roleDisplayNames[r.trim() as UserRole] ||
-                                      r.trim(),
-                                  )
-                                  .join(", ")
-                              : "user"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(query.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex space-x-3">
-                          <button
-                            onClick={async () => {
-                              // First get the full query details
-                              try {
-                                const queryDetails = (await apiClient.get(
-                                  `/api/admin/query/${query.id}`,
-                                )) as any;
-                                const queryData =
-                                  queryDetails.data || queryDetails;
-
-                                setEditingQueryId(query.id);
-                                setQueryForm({
-                                  name: queryData.name,
-                                  description: queryData.description || "",
-                                  sql_query: queryData.sql_query || "",
-                                  chart_type: queryData.chart_type || "bar",
-                                  chart_config: queryData.chart_config || {},
-                                  menu_item_id: queryData.menu_item_id || null,
-                                  menu_item_ids: queryData.menu_item_ids || [],
-                                  role: queryData.role
-                                    ? typeof queryData.role === "string"
-                                      ? queryData.role
-                                          .split(",")
-                                          .map(
-                                            (r: string) => r.trim() as UserRole,
-                                          )
-                                      : queryData.role
-                                    : [],
-                                });
-                                setShowQueryForm(true);
-                              } catch (error) {
-                                toast.error("Failed to load query details");
-                                console.error(error);
-                              }
-                            }}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Delete this query?")) return;
-                              try {
-                                await apiClient.deleteQuery(query.id);
-                                toast.success("Query deleted");
-                                loadData();
-                              } catch (error: any) {
-                                console.error("Delete query error:", error);
-                                let errorMessage = "Failed to delete query";
-
-                                if (error?.response?.data?.detail) {
-                                  errorMessage = error.response.data.detail;
-                                } else if (error?.response?.data?.message) {
-                                  errorMessage = error.response.data.message;
-                                } else if (error?.response?.data?.error) {
-                                  errorMessage = error.response.data.error;
-                                } else if (error?.message) {
-                                  errorMessage = error.message;
-                                }
-
-                                toast.error(errorMessage);
-                                console.error(
-                                  "Query delete failed:",
-                                  errorMessage,
-                                );
-                              }
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                            title="Delete"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Query Form Modal */}
-              {showQueryForm && (
-                <QueryFormModal
-                  visible={showQueryForm}
-                  editing={editingQueryId !== null}
-                  onClose={() => {
-                    setShowQueryForm(false);
-                    setEditingQueryId(null);
-                    setQueryForm({
-                      name: "",
-                      description: "",
-                      sql_query: "",
-                      chart_type: "bar",
-                      chart_config: {},
-                      menu_item_id: null,
-                      menu_item_ids: [],
-                      role: [],
-                    });
-                  }}
-                  onCreate={createOrUpdateQuery}
-                  queryForm={queryForm}
-                  setQueryForm={setQueryForm}
-                  menuItems={allMenuItems
-                    .filter(
-                      (item) => !item.children || item.children.length === 0,
-                    ) // Only leaf nodes (submenus/endpoints)
-                    .map((item) => ({
-                      id: item.id,
-                      name: `${item.name} (${item.type})`,
-                    }))}
-                  availableRoles={allRolesList}
-                />
-              )}
-            </div>
+            <QueriesTab
+              queries={queries}
+              queryForm={queryForm}
+              setQueryForm={setQueryForm}
+              showQueryForm={showQueryForm}
+              setShowQueryForm={setShowQueryForm}
+              editingQueryId={editingQueryId}
+              setEditingQueryId={setEditingQueryId}
+              allMenuItems={allMenuItems}
+              allRolesList={allRolesList}
+              roleDisplayNames={roleDisplayNames}
+              createOrUpdateQuery={createOrUpdateQuery}
+              loadData={loadData}
+            />
           )}
 
           {/* KPIs Tab */}
           {activeTab === "kpis" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <span className="text-2xl mr-2">📊</span>
-                  Dashboard Stats/KPIs
-                </h2>
-                <button
-                  onClick={() => setShowKpiForm(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Create KPI
-                </button>
-              </div>
-
-              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  <strong>About KPIs:</strong> Key Performance Indicators are
-                  single numeric values displayed as statistics on your
-                  dashboards. Create SQL queries that return one number (like
-                  COUNT, SUM, AVG) and assign them to specific dashboards.
-                </p>
-              </div>
-
-              {/* KPIs List */}
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        SQL Query
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Dashboard
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {kpis.map((kpi) => (
-                      <tr key={kpi.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {kpi.name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {kpi.description}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900 font-mono bg-gray-50 p-2 rounded max-w-xs overflow-hidden">
-                            {kpi.sql_query.length > 50
-                              ? `${kpi.sql_query.substring(0, 50)}...`
-                              : kpi.sql_query}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {kpi.menu_name || "Default Dashboard"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {kpi.role && typeof kpi.role === "string"
-                              ? kpi.role
-                                  .split(",")
-                                  .map(
-                                    (r) =>
-                                      roleDisplayNames[r.trim() as UserRole] ||
-                                      r.trim(),
-                                  )
-                                  .join(", ")
-                              : "user"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(kpi.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex space-x-3">
-                          <button
-                            onClick={async () => {
-                              // First get the full KPI details
-                              try {
-                                const kpiDetails = (await apiClient.get(
-                                  `/api/admin/kpi/${kpi.id}`,
-                                )) as any;
-                                const kpiData = kpiDetails.data || kpiDetails;
-
-                                setEditingKpiId(kpi.id);
-                                setKpiForm({
-                                  name: kpiData.name,
-                                  description: kpiData.description || "",
-                                  sql_query: kpiData.sql_query || "",
-                                  menu_item_id: kpiData.menu_item_id || null,
-                                  role: kpiData.role
-                                    ? typeof kpiData.role === "string"
-                                      ? kpiData.role
-                                          .split(",")
-                                          .map(
-                                            (r: string) => r.trim() as UserRole,
-                                          )
-                                      : kpiData.role
-                                    : [],
-                                });
-                                setShowKpiForm(true);
-                              } catch (error) {
-                                toast.error("Failed to load KPI details");
-                                console.error(error);
-                              }
-                            }}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => deleteKpi(kpi.id)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Delete"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* KPI Form Modal */}
-              {showKpiForm && (
-                <KPIFormModal
-                  visible={showKpiForm}
-                  editing={editingKpiId !== null}
-                  onClose={() => {
-                    setShowKpiForm(false);
-                    setEditingKpiId(null);
-                    setKpiForm({
-                      name: "",
-                      description: "",
-                      sql_query: "",
-                      menu_item_id: null,
-                      role: [],
-                    });
-                  }}
-                  onCreate={createOrUpdateKpi}
-                  kpiForm={kpiForm}
-                  setKpiForm={setKpiForm}
-                  menuItems={allMenuItems
-                    .filter(
-                      (item) => !item.children || item.children.length === 0,
-                    ) // Only leaf nodes (submenus/endpoints)
-                    .map((item) => ({
-                      id: item.id,
-                      name: `${item.name} (${item.type})`,
-                    }))}
-                  availableRoles={allRolesList}
-                />
-              )}
-            </div>
+            <KpisTab
+              kpis={kpis}
+              kpiForm={kpiForm}
+              setKpiForm={setKpiForm}
+              showKpiForm={showKpiForm}
+              setShowKpiForm={setShowKpiForm}
+              editingKpiId={editingKpiId}
+              setEditingKpiId={setEditingKpiId}
+              allMenuItems={allMenuItems}
+              allRolesList={allRolesList}
+              roleDisplayNames={roleDisplayNames}
+              createOrUpdateKpi={createOrUpdateKpi}
+              deleteKpi={deleteKpi}
+              loadData={loadData}
+            />
           )}
 
           {/* Users Tab */}
           {activeTab === "users" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Available Users
-                </h2>
-                <button
-                  onClick={() => setShowUserForm(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" />
-                  Create User
-                </button>
-              </div>
-
-              {/* Users List */}
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Username
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Active
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Role
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Created
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {users.map((user) => (
-                      <tr key={user.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.username}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm text-gray-900">
-                              {user.email}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm text-gray-900">
-                              {user.is_active ? "Yes" : "No"}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm text-gray-900">
-                              {roleDisplayNames[user.role]}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(user.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex space-x-3">
-                          <button
-                            onClick={() => {
-                              setEditingUserId(user.id);
-                              setUserForm({
-                                username: user.username,
-                                email: user.email,
-                                password: "",
-                                role: user.role,
-                              });
-                              setShowUserForm(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Edit"
-                          >
-                            <PencilSquareIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Delete this user?")) return;
-                              try {
-                                await apiClient.deleteUser(user.id);
-                                toast.success("User deleted");
-                                loadData();
-                              } catch (error: unknown) {
-                                const errorMessage =
-                                  error instanceof Error && "response" in error
-                                    ? (
-                                        error as {
-                                          response?: {
-                                            data?: { detail?: string };
-                                          };
-                                        }
-                                      ).response?.data?.detail
-                                    : "Failed to delete user";
-                                toast.error(
-                                  errorMessage || "Failed to delete user",
-                                );
-                              }
-                            }}
-                            className="text-red-600 hover:text-red-800"
-                            title="Delete"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* User Form Modal */}
-              {showUserForm && (
-                <UserFormModal
-                  visible={showUserForm}
-                  editing={editingUserId !== null}
-                  userForm={userForm}
-                  setUserForm={setUserForm}
-                  onSubmit={async () => {
-                    try {
-                      setLoading(true);
-                      if (editingUserId) {
-                        await apiClient.updateUser(editingUserId, userForm as any);
-                        toast.success("User updated successfully");
-                      } else {
-                        await apiClient.post("/api/admin/user", userForm);
-                        toast.success("User created successfully");
-                      }
-                      setShowUserForm(false);
-                      setEditingUserId(null);
-                      setUserForm({
-                        username: "",
-                        email: "",
-                        password: "",
-                        role: "user",
-                      });
-                      loadData();
-                    } catch (error: unknown) {
-                      const errorMessage =
-                        error instanceof Error && "response" in error
-                          ? (
-                              error as {
-                                response?: { data?: { detail?: string } };
-                              }
-                            ).response?.data?.detail
-                          : "Operation failed";
-                      toast.error(errorMessage || "Operation failed");
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  onClose={() => {
-                    setShowUserForm(false);
-                    setEditingUserId(null);
-                    setUserForm({
-                      username: "",
-                      email: "",
-                      password: "",
-                      role: "user",
-                    });
-                  }}
-                  availableRoles={allRolesList}
-                />
-              )}
-            </div>
+            <UsersTab
+              users={users}
+              userForm={userForm}
+              setUserForm={setUserForm}
+              showUserForm={showUserForm}
+              setShowUserForm={setShowUserForm}
+              editingUserId={editingUserId}
+              setEditingUserId={setEditingUserId}
+              setLoading={setLoading}
+              allRolesList={allRolesList}
+              roleDisplayNames={roleDisplayNames}
+              loadData={loadData}
+            />
           )}
 
           {/* Menus Tab */}
@@ -1561,44 +1060,19 @@ const AdminPage: React.FC = () => {
 
           {/* Roles Tab */}
           {activeTab === "roles" && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">Roles</h2>
-                <button onClick={()=>setShowRoleForm(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"><PlusIcon className="h-5 w-5 mr-2"/>Add Role</button>
-              </div>
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">System</th><th className="px-6 py-3"></th></tr></thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {roles.map(r=> (
-                      <tr key={r.name}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{r.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">{r.is_system?"Yes":"No"}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                          {!r.is_system && (
-                            <button onClick={async ()=>{
-                              try {
-                                const resp:any = await apiClient.deleteRole(r.name);
-                                if(resp.success===false && resp.error==="ROLE_IN_USE"){
-                                  setRoleToDelete(r.name);
-                                  setUsersToReassign(resp.data||[]);
-                                  setShowReassignModal(true);
-                                } else {
-                                  toast.success(`Role ${r.name} deleted`);
-                                  loadData();
-                                }
-                              } catch(e:any){ toast.error(e?.response?.data?.detail||"Failed"); }
-                            }} className="text-red-600 hover:text-red-800" title="Delete"><TrashIcon className="h-5 w-5"/></button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {showRoleForm && <RoleFormModal visible={showRoleForm} onClose={()=>setShowRoleForm(false)} onCreate={async (roleName)=>{ await apiClient.createRole(roleName); toast.success("Role created"); setShowRoleForm(false); loadData(); }}/>} 
-              {showReassignModal && <ReassignRoleModal visible={showReassignModal} roleName={roleToDelete} users={usersToReassign} existingRoles={otherRoleNames} onConfirm={async(newRole)=>{await apiClient.deleteRole(roleToDelete,newRole); toast.success("Role deleted"); setShowReassignModal(false); loadData();}} onCancel={()=>setShowReassignModal(false)} />}
-            </div>
+            <RolesTab
+              roles={roles}
+              otherRoleNames={otherRoleNames}
+              showRoleForm={showRoleForm}
+              setShowRoleForm={setShowRoleForm}
+              showReassignModal={showReassignModal}
+              setShowReassignModal={setShowReassignModal}
+              roleToDelete={roleToDelete}
+              setRoleToDelete={setRoleToDelete}
+              usersToReassign={usersToReassign}
+              setUsersToReassign={setUsersToReassign}
+              loadData={loadData}
+            />
           )}
         </main>
       </div>

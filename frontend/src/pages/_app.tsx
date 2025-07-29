@@ -19,18 +19,26 @@ export default function App({ Component, pageProps }: AppProps) {
       router.push("/change-password");
     }
   }, [router]);
-  // Global auth guard – if no token, redirect to login before any data fetches
   useEffect(() => {
-    const guard = () => {
-      if (!apiClient.isAuthenticated() && router.pathname !== "/login" && router.pathname !== "/change-password") {
+    const authGuard = (url: string) => {
+      // Strip query/hash so that only the pathname remains
+      const path = url.split("?")[0].split("#")[0];
+      if (
+        !apiClient.isAuthenticated() &&
+        path !== "/login" &&
+        path !== "/change-password"
+      ) {
         router.replace("/login");
       }
     };
 
-    guard(); // Run on mount
-    router.events.on("routeChangeStart", guard);
+    // Run guard once on mount with the current url
+    authGuard(router.asPath);
+
+    // Listen for future route changes
+    router.events.on("routeChangeStart", authGuard);
     return () => {
-      router.events.off("routeChangeStart", guard);
+      router.events.off("routeChangeStart", authGuard);
     };
   }, [router]);
   useEffect(() => {
