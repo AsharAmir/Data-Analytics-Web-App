@@ -161,6 +161,22 @@ const Sidebar: React.FC<SidebarProps> = ({
     </svg>
   );
 
+  const ProcessIcon = () => (
+    <svg
+      className="h-5 w-5 flex-shrink-0"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-7 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+      />
+    </svg>
+  );
+
   const AdminIcon = () => (
     <svg
       className="h-5 w-5 flex-shrink-0"
@@ -219,6 +235,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       } else {
         return DocumentIcon;
       }
+    } else if (item.type === "process") {
+      return ProcessIcon;
     }
     return ReportsIcon; // Default fallback
   };
@@ -239,6 +257,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       name: "Data Explorer",
       path: "/data-explorer",
       icon: ExplorerIcon,
+    },
+    {
+      name: "Processes",
+      path: "/processes",
+      icon: ProcessIcon,
     },
     ...(isAdmin
       ? [
@@ -271,6 +294,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       router.push(`/dashboard?menu=${item.id}`);
     } else if (item.type === "report") {
       router.push(`/reports?menu=${item.id}`);
+    } else if (item.type === "process") {
+      router.push(`/processes`);
     }
     // Close mobile menu after navigation
     if (onMobileToggle && mobileOpen) {

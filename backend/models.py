@@ -249,5 +249,50 @@ class ReportImportResult(BaseModel):
     errors: List[str] = []
 
 
-# Update forward references
+# ---------------------------
+# Process models (Scenario 3)
+# ---------------------------
+
+
+class ParameterInputType(str, Enum):
+    """Supported input widgets for process parameters."""
+
+    TEXT = "text"
+    DROPDOWN = "dropdown"
+    DATE = "date"
+
+
+class ProcessParameter(BaseModel):
+    """Defines a single configurable parameter for a backend process."""
+
+    name: str  # Internal parameter name passed to the script
+    label: str  # User-friendly caption displayed in the UI
+    input_type: ParameterInputType = ParameterInputType.TEXT
+    default_value: Optional[str] = None
+    dropdown_values: Optional[List[str]] = None  # For DROPDOWN input
+
+
+class Process(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    script_path: str  # Absolute / relative Python file path
+    parameters: Optional[List[ProcessParameter]] = []
+    is_active: bool = True
+    role: Optional[Union[RoleType, List[RoleType]]] = UserRole.USER
+    created_at: datetime
+
+
+class ProcessCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    script_path: str
+    parameters: Optional[List[ProcessParameter]] = []
+    role: Optional[Union[RoleType, List[RoleType]]] = UserRole.USER
+
+
+# Update forward references for new nested models
 MenuItem.model_rebuild()
+ProcessParameter.model_rebuild()
+Process.model_rebuild()
+

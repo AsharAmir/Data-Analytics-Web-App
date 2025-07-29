@@ -13,6 +13,7 @@ import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
 import { MenuItem, UserRole, Role } from "../types";
 import MenuFormModal from "../components/Admin/MenuFormModal";
+import ProcessesTab from "../components/Admin/ProcessesTab";
 import WidgetsTab from "../components/Admin/WidgetsTab";
 import QueriesTab from "../components/Admin/QueriesTab";
 import KpisTab from "../components/Admin/KpisTab";
@@ -70,9 +71,10 @@ const roleDisplayNames: Record<UserRole, string> = {
 
 const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
-    "widgets" | "queries" | "users" | "menus" | "kpis" | "roles"
+    "widgets" | "queries" | "processes" | "users" | "menus" | "kpis" | "roles"
   >("widgets");
   const [queries, setQueries] = useState<Query[]>([]);
+  const [processes, setProcesses] = useState<any[]>([]);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -84,7 +86,9 @@ const AdminPage: React.FC = () => {
 
   // Form states
   const [showQueryForm, setShowQueryForm] = useState(false);
+  const [showProcessForm, setShowProcessForm] = useState(false);
   const [editingQueryId, setEditingQueryId] = useState<number | null>(null);
+  const [editingProcessId, setEditingProcessId] = useState<number | null>(null);
   const [showWidgetForm, setShowWidgetForm] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
@@ -136,6 +140,13 @@ const AdminPage: React.FC = () => {
     parent_id: null as number | null,
     sort_order: 0,
     role: [] as UserRole[],
+  });
+  const [processForm, setProcessForm] = useState({
+    name: "",
+    description: "",
+    script_path: "",
+    parameters: [] as any[],
+    role: [] as string[],
   });
 
   // Roles modal & reassignment states
@@ -204,9 +215,10 @@ const AdminPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [queriesRes, widgetsRes, menuRes, usersRes, kpisRes, rolesRes] =
+      const [queriesRes, processesRes, widgetsRes, menuRes, usersRes, kpisRes, rolesRes] =
         await Promise.all([
           apiClient.get<{ data?: Query[] } | Query[]>("/api/admin/queries"),
+          apiClient.listProcesses(),
           apiClient.get<{ data?: Widget[] } | Widget[]>(
             "/api/admin/dashboard/widgets",
           ),
@@ -224,6 +236,7 @@ const AdminPage: React.FC = () => {
           (queriesRes as Query[]) ??
           [],
       );
+      setProcesses(processesRes?.data ?? processesRes ?? []);
       setWidgets(
         (widgetsRes as { data?: Widget[] }).data ??
           (widgetsRes as Widget[]) ??
@@ -730,6 +743,17 @@ const AdminPage: React.FC = () => {
                   Queries ({queries.length})
                 </button>
                 <button
+                  onClick={() => setActiveTab("processes")}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === "processes"
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <Cog6ToothIcon className="h-5 w-5 inline mr-2" />
+                  Processes ({processes.length})
+                </button>
+                <button
                   onClick={() => setActiveTab("users")}
                   className={`py-2 px-1 border-b-2 font-medium text-sm ${
                     activeTab === "users"
@@ -1071,6 +1095,20 @@ const AdminPage: React.FC = () => {
               setRoleToDelete={setRoleToDelete}
               usersToReassign={usersToReassign}
               setUsersToReassign={setUsersToReassign}
+              loadData={loadData}
+            />
+          )}
+
+          {/* Processes Tab */}
+          {activeTab === "processes" && (
+            <ProcessesTab
+              processes={processes as any}
+              processForm={processForm as any}
+              setProcessForm={setProcessForm as any}
+              showProcessForm={showProcessForm}
+              setShowProcessForm={setShowProcessForm}
+              editingProcessId={editingProcessId}
+              setEditingProcessId={setEditingProcessId}
               loadData={loadData}
             />
           )}

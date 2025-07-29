@@ -785,3 +785,252 @@ class KPIService:
         except Exception as exc:
             logger.error(f"Error getting KPIs: {exc}")
             return []
+
+
+# ---------------------------------------------------------------------------
+# ProcessService – manage standalone backend processes/scripts (Scenario 3)
+# ---------------------------------------------------------------------------
+
+
+class ProcessService:
+    """Service layer for CRUD operations and execution of Python processes stored
+    in the *app_processes* catalog.  A process is simply a Python script that is
+    executed in a separate subprocess with user-supplied parameters.
+
+    Security considerations:
+    • Only scripts inside the workspace (or whitelisted path) should be allowed.
+    • Execution occurs via ``subprocess`` to isolate namespace.
+    • Timeouts prevent runaway jobs.
+    • Environment variables are *not* propagated by default – override at call
+      site if needed.
+    """
+
+    @staticmethod
+    def _serialize_roles(role_field: RoleType | List[RoleType] | None) -> str:
+        if role_field is None:
+            return "user"
+        if isinstance(role_field, list):
+            return ",".join(role_field)
+        return str(role_field)
+
+    # ---------------------- CRUD operations ----------------------
+
+    @staticmethod
+    def create_process(request: "ProcessCreate") -> int:
+        """Insert process metadata and parameter definitions. Returns new ID."""
+
+        insert_sql = (
+            "INSERT INTO app_processes (name, description, script_path, role) "
+            "VALUES (:1, :2, :3, :4)"
+        )
+
+        from models import ProcessCreate, ProcessParameter  # local to avoid circular
+
+        # Insert row
+        db_manager.execute_non_query(
+            insert_sql,
+            (
+                request.name,
+                request.description,
+                request.script_path,
+                ProcessService._serialize_roles(request.role),
+            ),
+        )
+
+        # Retrieve new ID
+        res = db_manager.execute_query(
+            "SELECT id FROM app_processes WHERE name = :1 ORDER BY created_at DESC",
+            (request.name,),
+        )
+        if not res:
+            raise ValueError("Failed to obtain ID for newly created process")
+        proc_id = res[0]["ID"]
+
+        # Insert parameter definitions
+        if request.parameters:
+            param_sql = (
+                "INSERT INTO app_process_params (process_id, name, label, input_type, "
+                "default_value, dropdown_values, sort_order) VALUES (:1, :2, :3, :4, :5, :6, :7)"
+            )
+            for idx, p in enumerate(request.parameters):
+                db_manager.execute_non_query(
+                    param_sql,
+                    (
+                        proc_id,
+                        p.name,
+                        p.label,
+                        p.input_type,
+                        p.default_value,
+                        ",".join(p.dropdown_values) if p.dropdown_values else None,
+                        idx,
+                    ),
+                )
+
+        return proc_id
+
+    @staticmethod
+    def get_process(proc_id: int) -> Optional["Process"]:
+        from models import Process, ProcessParameter, ParameterInputType
+
+        # 1) Fetch the main process row
+        proc_sql = """
+            SELECT id, name, description, script_path, role, is_active, created_at
+            FROM app_processes
+            WHERE id = :1
+        """
+
+        proc_rows = db_manager.execute_query(proc_sql, (proc_id,))
+        if not proc_rows:
+            return None
+
+        proc_row = proc_rows[0]
+
+        # 2) Fetch parameter definitions separately to avoid CLOB concat issues
+        param_sql = """
+            SELECT name, label, input_type, default_value, dropdown_values
+            FROM app_process_params
+            WHERE process_id = :1
+            ORDER BY sort_order
+        """
+
+        param_rows = db_manager.execute_query(param_sql, (proc_id,))
+
+        params: list[ProcessParameter] = []
+        for pr in param_rows:
+            params.append(
+                ProcessParameter(
+                    name=pr["NAME"],
+                    label=pr["LABEL"],
+                    input_type=ParameterInputType(pr["INPUT_TYPE"]),
+                    default_value=pr["DEFAULT_VALUE"],
+                    dropdown_values=pr["DROPDOWN_VALUES"].split(",") if pr.get("DROPDOWN_VALUES") else None,
+                )
+            )
+
+        return Process(
+            id=proc_row["ID"],
+            name=proc_row["NAME"],
+            description=proc_row["DESCRIPTION"],
+            script_path=proc_row["SCRIPT_PATH"],
+            parameters=params,
+            is_active=bool(proc_row["IS_ACTIVE"]),
+            role=proc_row.get("ROLE"),
+            created_at=proc_row["CREATED_AT"],
+        )
+
+    @staticmethod
+    def list_processes(user_role: str = None) -> list["Process"]:
+        from models import Process, ProcessParameter
+
+        sql = "SELECT id, name, description, script_path, role, is_active, created_at FROM app_processes WHERE is_active = 1 ORDER BY name"
+        rows = db_manager.execute_query(sql)
+
+        processes: list[Process] = []
+        for row in rows:
+            roles = row.get("ROLE")
+            if user_role and roles and user_role not in roles.split(",") and user_role != "admin":
+                continue
+
+            processes.append(
+                Process(
+                    id=row["ID"],
+                    name=row["NAME"],
+                    description=row["DESCRIPTION"],
+                    script_path=row["SCRIPT_PATH"],
+                    parameters=None,  # Parameters fetched lazily if required
+                    is_active=bool(row["IS_ACTIVE"]),
+                    role=roles,
+                    created_at=row["CREATED_AT"],
+                )
+            )
+
+        return processes
+
+    @staticmethod
+    def update_process(proc_id: int, request: "ProcessCreate") -> None:
+        update_sql = (
+            "UPDATE app_processes SET name = :1, description = :2, script_path = :3, "
+            "role = :4 WHERE id = :5"
+        )
+        db_manager.execute_non_query(
+            update_sql,
+            (
+                request.name,
+                request.description,
+                request.script_path,
+                ProcessService._serialize_roles(request.role),
+                proc_id,
+            ),
+        )
+
+        # Replace parameter definitions: delete then insert
+        db_manager.execute_non_query("DELETE FROM app_process_params WHERE process_id = :1", (proc_id,))
+        if request.parameters:
+            param_sql = (
+                "INSERT INTO app_process_params (process_id, name, label, input_type, "
+                "default_value, dropdown_values, sort_order) VALUES (:1, :2, :3, :4, :5, :6, :7)"
+            )
+            for idx, p in enumerate(request.parameters):
+                db_manager.execute_non_query(
+                    param_sql,
+                    (
+                        proc_id,
+                        p.name,
+                        p.label,
+                        p.input_type,
+                        p.default_value,
+                        ",".join(p.dropdown_values) if p.dropdown_values else None,
+                        idx,
+                    ),
+                )
+
+    @staticmethod
+    def delete_process(proc_id: int) -> None:
+        db_manager.execute_non_query("DELETE FROM app_processes WHERE id = :1", (proc_id,))
+
+    # ---------------------- Execution ----------------------
+
+    @staticmethod
+    def run_process(proc_id: int, args: dict[str, str], timeout: int = 600) -> str:
+        """Execute the given process with provided arguments.
+
+        Returns captured stdout text.  Raises RuntimeError on failure.
+        """
+
+        import shlex
+        import subprocess
+        import os
+        import sys
+
+        proc = ProcessService.get_process(proc_id)
+        if not proc:
+            raise ValueError("Process not found")
+
+        script_path = proc.script_path
+        
+        # Handle relative paths - resolve relative to backend directory
+        if not os.path.isabs(script_path):
+            backend_dir = os.path.dirname(os.path.abspath(__file__))
+            script_path = os.path.join(backend_dir, script_path)
+            
+        if not os.path.isfile(script_path):
+            raise RuntimeError(f"Script not found: {script_path}")
+
+        # Build argument list: use same interpreter running this service to avoid PATH issues
+        cmd = [sys.executable, script_path]
+        for k, v in args.items():
+            cmd.append(f"--{k}={shlex.quote(str(v))}")
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=True,
+            )
+            return completed.stdout
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"Process exited with code {exc.returncode}: {exc.stderr}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Process execution timed out")

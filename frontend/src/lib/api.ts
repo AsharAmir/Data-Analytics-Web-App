@@ -23,6 +23,19 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
+  /**
+   * Helper to unwrap our standard APIResponse envelope and return the contained
+   * `data` field. Falls back gracefully when the backend returns the raw data
+   * instead of the envelope (e.g. legacy endpoints).
+   */
+  private extractData<T>(response: AxiosResponse<import("../types").APIResponse<T>>): T {
+    const payload: any = response.data;
+    if (payload && typeof payload === "object" && "data" in payload) {
+      return payload.data as T;
+    }
+    // Fallback – assume the payload itself is the data we need.
+    return payload as T;
+  }
 
   constructor() {
     this.client = axios.create({
@@ -534,15 +547,15 @@ class ApiClient {
   // -----------------------------
 
   async listRoles(): Promise<Role[]> {
-    const response = await this.client.get<Role[]>("/api/roles");
-    return (response as any).data ?? response;
+    const response = await this.client.get<import("../types").APIResponse<Role[]>>("/api/roles");
+    return this.extractData<Role[]>(response);
   }
 
   async createRole(roleName: string): Promise<Role> {
-    const response = await this.client.post<Role>("/api/roles", {
+    const response = await this.client.post<import("../types").APIResponse<Role>>("/api/roles", {
       role_name: roleName,
     });
-    return (response as any).data ?? response;
+    return this.extractData<Role>(response);
   }
 
   /**
@@ -557,6 +570,40 @@ class ApiClient {
     }
     const response = await this.client.delete(`/api/roles/${roleName}`, config);
     return response.data;
+  }
+
+  // -----------------------------
+  // Processes (Scenario 3)
+  // -----------------------------
+
+  async listProcesses() {
+    const response = await this.client.get<import("../types").APIResponse<any[]>>("/api/processes");
+    return this.extractData<any[]>(response);
+  }
+
+  async createProcess(data: import("../types").ProcessCreate) {
+    const response = await this.client.post("/api/process", data);
+    return response as any;
+  }
+
+  async updateProcess(processId: number, data: import("../types").ProcessCreate) {
+    const response = await this.client.put(`/api/process/${processId}`, data);
+    return response as any;
+  }
+
+  async deleteProcess(processId: number) {
+    const response = await this.client.delete(`/api/process/${processId}`);
+    return response as any;
+  }
+
+  async runProcess(processId: number, params: Record<string, any> = {}) {
+    const response = await this.client.post(`/api/process/${processId}/run`, params);
+    return response as any;
+  }
+
+  async listAvailableScripts() {
+    const response = await this.client.get<import("../types").APIResponse<import("../types").ScriptFile[]>>("/api/scripts");
+    return this.extractData<import("../types").ScriptFile[]>(response);
   }
 }
 
@@ -590,6 +637,13 @@ export const {
   listRoles,
   createRole,
   deleteRole,
+  // Process endpoints
+  listProcesses,
+  createProcess,
+  updateProcess,
+  deleteProcess,
+  runProcess,
+  listAvailableScripts,
 } = apiClient;
 
 export async function createQuery(data: QueryFormData & { role?: string[] }) {

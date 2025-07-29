@@ -301,3 +301,46 @@ export interface WidgetConfig {
   refresh_interval?: number; // in seconds
   config?: Record<string, unknown>;
 }
+
+// ---------------------------
+// Process types (Scenario 3)
+// ---------------------------
+
+export type ParameterInputType = "text" | "dropdown" | "date";
+
+export interface ProcessParameter {
+  name: string;
+  label: string;
+  input_type: ParameterInputType;
+  default_value?: string;
+  dropdown_values?: string[];
+}
+
+export interface Process {
+  id: number;
+  name: string;
+  description?: string;
+  script_path: string;
+  parameters?: ProcessParameter[];
+  is_active: boolean;
+  role?: string | string[];
+  created_at: string;
+}
+
+export interface ProcessCreate {
+  name: string;
+  description?: string;
+  script_path: string;
+  parameters?: ProcessParameter[];
+  role?: string | string[];
+}
+
+// ---------------------------
+// Script file types
+// ---------------------------
+
+export interface ScriptFile {
+  path: string;
+  display: string;
+  description?: string;
+}
