@@ -215,6 +215,22 @@ const Sidebar: React.FC<SidebarProps> = ({
     </svg>
   );
 
+  const ExcelCompareIcon = () => (
+    <svg
+      className="h-5 w-5 flex-shrink-0"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"
+      />
+    </svg>
+  );
+
   // Get current user info (client-side only to avoid SSR mismatch)
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
 
@@ -237,6 +253,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       }
     } else if (item.type === "process") {
       return ProcessIcon;
+    } else if (item.type === "excel-compare") {
+      return ExcelCompareIcon;
     }
     return ReportsIcon; // Default fallback
   };
@@ -296,6 +314,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       router.push(`/reports?menu=${item.id}`);
     } else if (item.type === "process") {
       router.push(`/processes`);
+    } else if (item.type === "excel-compare") {
+      router.push(`/excel-compare`);
     }
     // Close mobile menu after navigation
     if (onMobileToggle && mobileOpen) {
@@ -311,7 +331,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       (currentPath === "/reports" &&
         router.query.menu === item.id.toString()) ||
       (currentPath === "/dashboard" &&
-        router.query.menu === item.id.toString());
+        router.query.menu === item.id.toString()) ||
+      (currentPath === "/excel-compare" && item.type === "excel-compare");
 
     const IconComponent = getMenuItemIcon(item);
 

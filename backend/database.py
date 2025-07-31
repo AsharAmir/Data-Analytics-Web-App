@@ -410,6 +410,7 @@ def insert_default_data():
             ("Dashboard", "dashboard", "dashboard", None, 1),
             ("Reports", "report", "chart-bar", None, 2),
             ("Processes", "process", "play-circle", None, 3),
+            ("Excel Compare", "excel-compare", "document-duplicate", None, 4),
             ("Financial Overview", "report", "chart-line", 2, 1),
             ("Risk Analysis", "report", "shield-exclamation", 2, 2),
         ]

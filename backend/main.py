@@ -19,6 +19,7 @@ from routers.roles import router as roles_router
 from routers.importer import router as import_router
 from routers.processes import router as processes_router
 from routers.health import router as health_router
+from routers.excel_compare import router as excel_compare_router
 
 # Initialise structured logging *before* anything else so all modules inherit
 setup_logging()
@@ -86,6 +87,7 @@ for r in (
     import_router,
     processes_router,
     health_router,
+    excel_compare_router,
 ):
     app.include_router(r)
 
