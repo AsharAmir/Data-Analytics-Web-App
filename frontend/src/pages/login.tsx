@@ -44,12 +44,13 @@ const LoginPage: React.FC = () => {
       toast.success("Login successful!");
       router.push("/dashboard");
     } catch (error: unknown) {
+      console.error("Login error:", error);
       const errMessage =
         error && typeof error === "object" && "response" in error
           ? (error as { response?: { data?: { detail?: string } } }).response
               ?.data?.detail
           : null;
-      toast.error(errMessage || "Login failed", { duration: 5000 });
+      toast.error(errMessage || "Invalid username or password", { duration: 5000 });
     } finally {
       setLoading(false);
     }

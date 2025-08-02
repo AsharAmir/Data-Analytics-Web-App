@@ -475,21 +475,8 @@ def insert_default_data():
             except Exception as e:
                 logger.warning(f"Query insertion warning: {e}")
 
-        # Insert default dashboard widgets
-        widget_queries = [
-            ("Report Type Analysis", 1, 0, 0, 6, 4),
-            ("Product Distribution", 2, 6, 0, 6, 4),
-            ("Financial Value Ranges", 3, 0, 4, 12, 4),
-        ]
-
-        for title, query_id, pos_x, pos_y, width, height in widget_queries:
-            try:
-                db_manager.execute_non_query(
-                    "INSERT INTO app_dashboard_widgets (title, query_id, position_x, position_y, width, height) VALUES (:1, :2, :3, :4, :5, :6)",
-                    (title, query_id, pos_x, pos_y, width, height),
-                )
-            except Exception as e:
-                logger.warning(f"Widget insertion warning: {e}")
+        # Note: Default dashboard widgets creation removed to allow clean customization
+        # Users can create widgets through the admin panel as needed
 
         logger.info("Default data inserted successfully")
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { toast } from "react-hot-toast";
-import { PlayIcon, DocumentTextIcon, CalendarIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
+import { PlayIcon, DocumentTextIcon, CalendarIcon, ChevronDownIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import Sidebar from "../components/Layout/Sidebar";
 import RunProcessModal from "../components/Processes/RunProcessModal";
 import apiClient from "../lib/api";
-import { Process } from "../types";
+import { Process, User } from "../types";
 
 const ProcessesPage: React.FC = () => {
   const router = useRouter();
@@ -16,10 +16,32 @@ const ProcessesPage: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuItems, setMenuItems] = useState([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    loadData();
+    checkUserAccess();
   }, []);
+
+  const checkUserAccess = async () => {
+    try {
+      const user = apiClient.getUser();
+      setCurrentUser(user);
+      
+      // Check if user has access to processes (admin or specific role)
+      if (!user || (user.role !== "admin" && user.role !== "process_manager")) {
+        setAccessDenied(true);
+        setLoading(false);
+        return;
+      }
+      
+      loadData();
+    } catch (error) {
+      console.error("Access check failed:", error);
+      setAccessDenied(true);
+      setLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -105,6 +127,22 @@ const ProcessesPage: React.FC = () => {
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : accessDenied ? (
+            <div className="text-center py-12">
+              <ExclamationTriangleIcon className="mx-auto h-12 w-12 text-red-400" />
+              <h3 className="mt-2 text-lg font-medium text-gray-900">Access Denied</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                You don't have permission to access processes. Contact your administrator.
+              </p>
+              <div className="mt-6">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                >
+                  Return to Dashboard
+                </button>
+              </div>
             </div>
           ) : processes.length === 0 ? (
             <div className="text-center py-12">

@@ -5,14 +5,19 @@ import { MenuItem, User as UserType } from "../../types";
 import apiClient from "../../lib/api";
 
 // Helper function to filter active menu items recursively
-const filterActiveMenuItems = (items: MenuItem[]): MenuItem[] =>
-  items
-    .filter((it) => it.is_active)
+const filterActiveMenuItems = (items: MenuItem[]): MenuItem[] => {
+  if (!items || !Array.isArray(items)) {
+    return [];
+  }
+  
+  return items
+    .filter((it) => it && it.is_active)
     .map((it) => ({
       ...it,
       // Recursively filter children
       children: it.children ? filterActiveMenuItems(it.children) : [],
     }));
+};
 
 interface SidebarProps {
   /**
@@ -276,11 +281,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       path: "/data-explorer",
       icon: ExplorerIcon,
     },
-    {
-      name: "Processes",
-      path: "/processes",
-      icon: ProcessIcon,
-    },
+    ...(currentUser && (currentUser.role === "admin" || currentUser.role === "process_manager")
+      ? [
+          {
+            name: "Processes",
+            path: "/processes",
+            icon: ProcessIcon,
+          },
+        ]
+      : []),
     ...(isAdmin
       ? [
           {
