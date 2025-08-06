@@ -56,11 +56,13 @@ def setup_logging() -> None:
         },
         "handlers": {
             "file": {
-                "class": "logging.handlers.RotatingFileHandler",
+                "class": "logging.handlers.TimedRotatingFileHandler",
                 "formatter": "json",
                 "filename": str(log_file),
-                "maxBytes": 5 * 1024 * 1024,  # 5 MB per file
-                "backupCount": 3,
+                "when": "midnight",
+                "interval": 1,
+                "backupCount": 30,  # Keep 30 days of logs
+                "utc": True,
             },
             "console": {
                 "class": "logging.StreamHandler",

@@ -10,6 +10,7 @@ from auth import (
     saml_auth,
 )
 from config import settings
+from failure_tracker import failure_tracker
 from models import APIResponse, Token, User, UserLogin
 from auth import verify_password, get_password_hash
 from database import db_manager
@@ -30,6 +31,11 @@ async def login(user_login: UserLogin):
 
     user = authenticate_user(user_login.username, user_login.password)
     if not user:
+        # Track authentication failure
+        failure_tracker.track_auth_failure(
+            username=user_login.username,
+            failure_type="invalid_credentials"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -84,6 +90,24 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @router.get("/mode", response_model=APIResponse)
 async def get_authentication_mode():
     return APIResponse(success=True, data={"auth_mode": get_auth_mode()})
+
+
+@router.post("/refresh", response_model=AuthToken)
+async def refresh_token(current_user: User = Depends(get_current_user)):
+    """Refresh JWT token for active users"""
+    try:
+        # Create new access token
+        access_token = create_access_token(data={"sub": current_user.username})
+        
+        # Return new token with user data
+        return AuthToken(
+            access_token=access_token,
+            token_type="bearer",
+            user=current_user
+        )
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh token")
 
 
 # ---------------------------------------------------------------------------

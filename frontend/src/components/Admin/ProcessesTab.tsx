@@ -22,6 +22,7 @@ interface ProcessesTabProps {
   editingProcessId: number | null;
   setEditingProcessId: React.Dispatch<React.SetStateAction<number | null>>;
   loadData: () => void;
+  availableRoles: string[];
 }
 
 const ProcessesTab: React.FC<ProcessesTabProps> = ({
@@ -33,6 +34,7 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
   editingProcessId,
   setEditingProcessId,
   loadData,
+  availableRoles,
 }) => {
   const createOrUpdateProcess = async () => {
     try {
@@ -124,6 +126,7 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
         processForm={processForm as any}
         setProcessForm={setProcessForm as any}
         onSubmit={createOrUpdateProcess}
+        availableRoles={availableRoles}
       />
     </div>
   );

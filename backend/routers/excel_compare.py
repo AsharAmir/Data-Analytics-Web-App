@@ -53,44 +53,90 @@ async def compare_excel_files(
         sheets1 = workbook1.sheetnames
         sheets2 = workbook2.sheetnames
         
-        # Validate same number of sheets
+        # Handle different number of sheets gracefully
         if len(sheets1) != len(sheets2):
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Files have different number of sheets: {len(sheets1)} vs {len(sheets2)}"
-            )
+            logger.warning(f"Files have different number of sheets: {len(sheets1)} vs {len(sheets2)}")
+            # Still proceed with comparison of common sheets
+            common_sheets = set(sheets1) & set(sheets2)
+            if not common_sheets:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No common sheets found between files. File 1 has: {sheets1}. File 2 has: {sheets2}"
+                )
+            # Use common sheets for comparison
+            sheets_to_compare = list(common_sheets)
+            logger.info(f"Comparing {len(sheets_to_compare)} common sheets: {sheets_to_compare}")
+        else:
+            sheets_to_compare = sheets1
         
-        # Validate sheet names match
-        if sorted(sheets1) != sorted(sheets2):
-            raise HTTPException(
-                status_code=400, 
-                detail="Sheet names do not match between files"
-            )
+        # Note: We now handle mismatched sheets gracefully above
         
         comparison_results = []
         matched_sheets = 0
         
         # Compare each sheet
-        for sheet_name in sheets1:
-            sheet_result = compare_sheets(
-                workbook1[sheet_name], 
-                workbook2[sheet_name], 
-                sheet_name
-            )
-            comparison_results.append(sheet_result)
-            
-            if sheet_result["status"] == "matched":
-                matched_sheets += 1
+        for sheet_name in sheets_to_compare:
+            if sheet_name in workbook1.sheetnames and sheet_name in workbook2.sheetnames:
+                sheet_result = compare_sheets(
+                    workbook1[sheet_name], 
+                    workbook2[sheet_name], 
+                    sheet_name
+                )
+                comparison_results.append(sheet_result)
+                
+                if sheet_result["status"] == "matched":
+                    matched_sheets += 1
+            else:
+                # Sheet exists in one file but not the other
+                comparison_results.append({
+                    "sheet": sheet_name,
+                    "cell_id": "NA",
+                    "value1": "sheet exists" if sheet_name in workbook1.sheetnames else "sheet missing",
+                    "value2": "sheet exists" if sheet_name in workbook2.sheetnames else "sheet missing",
+                    "status": "sheet_mismatch",
+                    "differences": []
+                })
         
-        success = matched_sheets == len(sheets1)
-        summary = f"Compared {len(sheets1)} sheets. {matched_sheets} matched, {len(sheets1) - matched_sheets} had differences."
+        # Add info about sheets that exist in only one file
+        sheets1_only = set(sheets1) - set(sheets2)
+        sheets2_only = set(sheets2) - set(sheets1)
+        
+        for sheet_name in sheets1_only:
+            comparison_results.append({
+                "sheet": sheet_name,
+                "cell_id": "NA",
+                "value1": "sheet exists",
+                "value2": "sheet missing",
+                "status": "sheet_missing_in_file2",
+                "differences": []
+            })
+            
+        for sheet_name in sheets2_only:
+            comparison_results.append({
+                "sheet": sheet_name,
+                "cell_id": "NA",
+                "value1": "sheet missing",
+                "value2": "sheet exists", 
+                "status": "sheet_missing_in_file1",
+                "differences": []
+            })
+        
+        success = matched_sheets == len(sheets_to_compare) and len(sheets1_only) == 0 and len(sheets2_only) == 0
+        total_sheets_compared = len(sheets_to_compare) + len(sheets1_only) + len(sheets2_only)
+        summary = f"Compared {total_sheets_compared} sheets. {matched_sheets} matched, {total_sheets_compared - matched_sheets} had differences or were missing."
         
         result = {
             "success": success,
-            "total_sheets": len(sheets1),
+            "total_sheets": total_sheets_compared,
             "matched_sheets": matched_sheets,
             "comparison_results": comparison_results,
-            "summary": summary
+            "summary": summary,
+            "files_info": {
+                "file1_name": file1.filename,
+                "file2_name": file2.filename,
+                "file1_sheets": len(sheets1),
+                "file2_sheets": len(sheets2)
+            }
         }
         
         return APIResponse(

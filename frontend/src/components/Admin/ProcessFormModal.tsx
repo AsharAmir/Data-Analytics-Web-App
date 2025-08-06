@@ -10,6 +10,7 @@ interface ProcessFormModalProps {
   processForm: ProcessCreate;
   setProcessForm: React.Dispatch<React.SetStateAction<ProcessCreate>>;
   onSubmit: () => Promise<void>;
+  availableRoles: string[];
 }
 
 const inputTypeOptions: ParameterInputType[] = ["text", "dropdown", "date"];
@@ -20,6 +21,7 @@ const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
   processForm,
   setProcessForm,
   onSubmit,
+  availableRoles,
 }) => {
   const [newParam, setNewParam] = useState<ProcessParameter>({
     name: "",
@@ -244,6 +246,42 @@ const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
                       value={processForm.description}
                       onChange={(e) => setProcessForm(prev => ({ ...prev, description: e.target.value }))}
                     />
+                  </div>
+
+                  {/* Role Access Control */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Access Control</label>
+                    <p className="text-sm text-gray-600 mb-3">Select which roles can run this process</p>
+                    <div className="space-y-2">
+                      {availableRoles.map((role) => (
+                        <label key={role} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                            checked={Array.isArray(processForm.role) ? processForm.role.includes(role) : processForm.role === role}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                const currentRoles = Array.isArray(processForm.role) ? processForm.role : (processForm.role ? [processForm.role] : []);
+                                setProcessForm(prev => ({ 
+                                  ...prev, 
+                                  role: [...currentRoles, role] 
+                                }));
+                              } else {
+                                const currentRoles = Array.isArray(processForm.role) ? processForm.role : (processForm.role ? [processForm.role] : []);
+                                setProcessForm(prev => ({ 
+                                  ...prev, 
+                                  role: currentRoles.filter(r => r !== role) 
+                                }));
+                              }
+                            }}
+                          />
+                          <span className="ml-2 text-sm text-gray-900">{role}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {(!processForm.role || (Array.isArray(processForm.role) && processForm.role.length === 0)) && (
+                      <p className="mt-2 text-sm text-amber-600">⚠️ No roles selected - only admins will be able to run this process</p>
+                    )}
                   </div>
 
                   {/* Parameters Section */}

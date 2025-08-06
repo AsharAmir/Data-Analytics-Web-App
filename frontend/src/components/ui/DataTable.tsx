@@ -37,6 +37,7 @@ const DataTable: React.FC<DataTableProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filterOperators, setFilterOperators] = useState<Record<string, "eq" | "like">>({});
 
   // Notify parent component when filters change
   useEffect(() => {
@@ -45,12 +46,12 @@ const DataTable: React.FC<DataTableProps> = ({
         .filter(([, v]) => v !== "")
         .map(([idx, value]) => ({
           column: data.columns[parseInt(idx, 10)],
-          operator: "like",
+          operator: filterOperators[idx] || "like",
           value,
         }));
       onFilter(filterConditions);
     }
-  }, [filters, onFilter, data.columns]);
+  }, [filters, filterOperators, onFilter, data.columns]);
 
   // Filter and search data
   const filteredData = useMemo(() => {
@@ -70,13 +71,19 @@ const DataTable: React.FC<DataTableProps> = ({
           if (!filterValue) return true;
           const cellValue =
             row[parseInt(columnIndex)]?.toString().toLowerCase() || "";
-          return cellValue.includes(filterValue.toLowerCase());
+          const operator = filterOperators[columnIndex] || "like";
+          
+          if (operator === "eq") {
+            return cellValue === filterValue.toLowerCase();
+          } else {
+            return cellValue.includes(filterValue.toLowerCase());
+          }
         },
       );
 
       return searchMatch && filterMatch;
     });
-  }, [data.data, searchTerm, filters]);
+  }, [data.data, searchTerm, filters, filterOperators]);
 
   // Pagination
   const totalPages = Math.ceil(filteredData.length / pageSize);
@@ -101,6 +108,7 @@ const DataTable: React.FC<DataTableProps> = ({
 
   const clearFilters = () => {
     setFilters({});
+    setFilterOperators({});
     setSearchTerm("");
     setCurrentPage(1);
   };
@@ -215,15 +223,30 @@ const DataTable: React.FC<DataTableProps> = ({
                     >
                       {column}
                     </label>
-                    <input
-                      type="text"
-                      placeholder={`Filter ${column}...`}
-                      value={filters[index] || ""}
-                      onChange={(e) =>
-                        handleFilterChange(index, e.target.value)
-                      }
-                      className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    <div className="space-y-2">
+                      <select
+                        value={filterOperators[index] || "like"}
+                        onChange={(e) => {
+                          setFilterOperators(prev => ({
+                            ...prev,
+                            [index]: e.target.value as "eq" | "like"
+                          }));
+                        }}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-white"
+                      >
+                        <option value="like">Contains</option>
+                        <option value="eq">Exact Match</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder={`Filter ${column}...`}
+                        value={filters[index] || ""}
+                        onChange={(e) =>
+                          handleFilterChange(index, e.target.value)
+                        }
+                        className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

@@ -314,17 +314,23 @@ def init_database():
             except Exception as e:
                 logger.warning(f"Table creation warning for {table_name}: {e}")
         try:
-            distinct_role_query = "SELECT COUNT(*) FROM app_roles WHERE is_system = 1"
-            cnt = db_manager.execute_query(distinct_role_query)
-            if cnt and cnt[0]["COUNT(*)"] == 0:
-                for sys_role in ("ADMIN", "IT_USER"):
-                    try:
+            # Initialize all system roles from the frontend enum
+            system_roles = ["ADMIN", "CEO", "FINANCE_USER", "TECH_USER", "USER"]
+            
+            for sys_role in system_roles:
+                try:
+                    # Check if role exists
+                    check_query = "SELECT COUNT(*) FROM app_roles WHERE UPPER(name) = UPPER(:1)"
+                    exists = db_manager.execute_query(check_query, (sys_role,))
+                    
+                    if not exists or exists[0]["COUNT(*)"] == 0:
                         db_manager.execute_non_query(
                             "INSERT INTO app_roles (name, is_system) VALUES (:1, 1)",
                             (sys_role,),
                         )
-                    except Exception as e:
-                        logger.warning(f"Could not insert system role {sys_role}: {e}")
+                        logger.info(f"Created system role: {sys_role}")
+                except Exception as e:
+                    logger.warning(f"Could not insert system role {sys_role}: {e}")
         except Exception as exc:
             logger.warning(f"Error ensuring default roles: {exc}")
 

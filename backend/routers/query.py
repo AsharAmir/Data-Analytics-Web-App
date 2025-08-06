@@ -6,6 +6,7 @@ from functools import partial
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
+from failure_tracker import failure_tracker
 from models import (
     APIResponse,
     FilteredQueryRequest,
@@ -69,7 +70,33 @@ async def execute_query(request: QueryExecute, current_user: User = Depends(get_
             )
     except Exception as exc:
         logger.error(f"Error executing query: {exc}")
-        return QueryResult(success=False, error=str(exc))
+        
+        # Track the failure
+        query_id = request.query_id if hasattr(request, 'query_id') else None
+        sql_query = request.sql_query if hasattr(request, 'sql_query') else ""
+        if query_id and not sql_query:
+            try:
+                query_obj = QueryService.get_query_by_id(query_id)
+                sql_query = query_obj.sql_query if query_obj else ""
+            except:
+                pass
+        
+        failure_tracker.track_query_failure(
+            query_id=query_id,
+            sql_query=sql_query,
+            error=exc,
+            user_id=current_user.id
+        )
+        
+        # Don't expose internal database errors to users
+        error_msg = "Query execution failed. Please check your SQL syntax and try again."
+        if "ORA-00907" in str(exc) or "ORA-00936" in str(exc) or "missing right parenthesis" in str(exc):
+            error_msg = "SQL syntax error: Please check your query syntax."
+        elif "ORA-00942" in str(exc) or "table or view does not exist" in str(exc):
+            error_msg = "Table or view not found. Please verify the table name."
+        elif "ORA-00904" in str(exc) or "invalid identifier" in str(exc):
+            error_msg = "Column not found. Please verify the column names."
+        return QueryResult(success=False, error=error_msg)
 
 
 @router.get("/query/{query_id}", response_model=APIResponse)
@@ -127,7 +154,15 @@ async def execute_filtered_query(request: FilteredQueryRequest, current_user: Us
         raise
     except Exception as exc:
         logger.error(f"Error executing filtered query: {exc}")
-        raise HTTPException(status_code=500, detail=f"Query execution failed: {exc}")
+        # Don't expose internal database errors to users
+        error_msg = "Query execution failed. Please check your SQL syntax and try again."
+        if "ORA-00907" in str(exc) or "ORA-00936" in str(exc) or "missing right parenthesis" in str(exc):
+            error_msg = "SQL syntax error: Please check your query syntax."
+        elif "ORA-00942" in str(exc) or "table or view does not exist" in str(exc):
+            error_msg = "Table or view not found. Please verify the table name."
+        elif "ORA-00904" in str(exc) or "invalid identifier" in str(exc):
+            error_msg = "Column not found. Please verify the column names."
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.get("/reports/menu/{menu_item_id}", response_model=APIResponse)
@@ -193,7 +228,10 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         )
 
         if df.empty:
-            raise HTTPException(status_code=404, detail="Query returned no data")
+            # Create empty file with headers for empty results
+            logger.info(f"Export query returned no data, creating empty file for {filename}")
+            import pandas as pd
+            df = pd.DataFrame()  # Empty DataFrame will still have proper structure
 
         filename = request.filename or f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         logger.info(f"Export query completed, processing {len(df)} rows for {filename}")
@@ -233,4 +271,10 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         raise
     except Exception as exc:
         logger.error(f"Error exporting data: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to export data: {str(exc)}") 
+        # Don't expose internal database errors to users
+        error_msg = "Export failed. Please try again or contact support."
+        if "no data" in str(exc).lower():
+            error_msg = "No data available to export."
+        elif "timeout" in str(exc).lower():
+            error_msg = "Export timed out. Try filtering your data to reduce the result set."
+        raise HTTPException(status_code=500, detail=error_msg) 

@@ -141,7 +141,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
             if request.menu_item_id == -1:
                 # Default Dashboard assignment
                 db_menu_item_id = None
-            elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+            elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
                 # Explicitly no dashboard assignment - use special value -999
                 db_menu_item_id = -999
             else:
@@ -167,7 +167,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                 if request.menu_item_id == -1:
                     # Default Dashboard assignment
                     db_menu_item_id = None
-                elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
                     # Explicitly no dashboard assignment - use special value -999
                     db_menu_item_id = -999
                 else:
@@ -311,7 +311,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
             if request.menu_item_id == -1:
                 # Default Dashboard assignment
                 db_menu_item_id = None
-            elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+            elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
                 # Explicitly no dashboard assignment - use special value -999
                 db_menu_item_id = -999
             else:
@@ -338,7 +338,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                 if request.menu_item_id == -1:
                     # Default Dashboard assignment
                     db_menu_item_id = None
-                elif request.menu_item_id is None and (not request.menu_item_ids or len(request.menu_item_ids) == 0):
+                elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
                     # Explicitly no dashboard assignment - use special value -999
                     db_menu_item_id = -999
                 else:

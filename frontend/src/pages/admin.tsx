@@ -1110,6 +1110,7 @@ const AdminPage: React.FC = () => {
               editingProcessId={editingProcessId}
               setEditingProcessId={setEditingProcessId}
               loadData={loadData}
+              availableRoles={allRolesList}
             />
           )}
         </main>

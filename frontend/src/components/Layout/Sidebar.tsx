@@ -63,7 +63,17 @@ const Sidebar: React.FC<SidebarProps> = ({
   onMobileToggle,
 }) => {
   const router = useRouter();
-  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+  
+  // Initialize expanded items from localStorage
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const saved = localStorage.getItem("sidebar-expanded");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   const sidebarWidth = collapsed ? "w-16" : "w-64";
 
@@ -281,6 +291,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       path: "/data-explorer",
       icon: ExplorerIcon,
     },
+    {
+      name: "Excel Compare",
+      path: "/excel-compare",
+      icon: ExcelCompareIcon,
+    },
     ...(currentUser && (currentUser.role === "admin" || currentUser.role === "process_manager")
       ? [
           {
@@ -309,6 +324,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       newExpanded.add(itemId);
     }
     setExpandedItems(newExpanded);
+    
+    // Persist to localStorage
+    try {
+      localStorage.setItem("sidebar-expanded", JSON.stringify(Array.from(newExpanded)));
+    } catch (e) {
+      console.warn("Failed to save sidebar state:", e);
+    }
   };
 
   /**

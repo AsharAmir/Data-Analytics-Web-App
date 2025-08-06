@@ -7,6 +7,7 @@ from typing import List
 
 from auth import get_current_user
 from database import db_manager
+from failure_tracker import failure_tracker
 from models import (
     APIResponse,
     ReportImportOptions,
@@ -59,6 +60,13 @@ async def import_report_data(
             raise HTTPException(status_code=400, detail="Unsupported file type")
     except Exception as exc:
         logger.error(f"File parsing error: {exc}")
+        failure_tracker.track_import_failure(
+            table_name=table_name,
+            filename=file.filename or "unknown",
+            error=exc,
+            user_id=current_user.id,
+            records_processed=0
+        )
         raise HTTPException(status_code=400, detail="Failed to parse uploaded file")
 
     total_records = len(df)
@@ -83,7 +91,7 @@ async def import_report_data(
         raise
     except Exception as exc:
         logger.error(f"Metadata query failed: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to introspect table schema")
+        raise HTTPException(status_code=500, detail="Unable to access table information. Please verify the table exists.")
 
     # Ensure dataframe has only columns present in table (case-insensitive match)
     df.columns = [c.lower() for c in df.columns]
@@ -104,14 +112,37 @@ async def import_report_data(
             inserted += 1
         except Exception as exc:
             failed += 1
-            error_msg = f"Row {idx+1}: {exc}"
-            logger.warning(error_msg)
+            # Sanitize database errors for user display
+            sanitized_error = "Data validation error"
+            if "ORA-12899" in str(exc) or "value too large" in str(exc):
+                sanitized_error = "Value too large for column"
+            elif "ORA-01400" in str(exc) or "cannot insert NULL" in str(exc):
+                sanitized_error = "Required field is empty"
+            elif "ORA-02291" in str(exc) or "integrity constraint" in str(exc):
+                sanitized_error = "Invalid reference value"
+            elif "ORA-01722" in str(exc) or "invalid number" in str(exc):
+                sanitized_error = "Invalid number format"
+            elif "ORA-01830" in str(exc) or "date format" in str(exc):
+                sanitized_error = "Invalid date format"
+            
+            error_msg = f"Row {idx+1}: {sanitized_error}"
+            logger.warning(f"Import error for row {idx+1}: {exc}")  # Log full error for debugging
             errors.append(error_msg)
             if import_mode == ImportMode.ABORT_ON_ERROR:
                 break
             # else continue inserting next rows
 
     success = failed == 0 or import_mode == ImportMode.SKIP_FAILED
+    
+    # Track import failures if any records failed
+    if failed > 0:
+        failure_tracker.track_import_failure(
+            table_name=table_name,
+            filename=file.filename or "unknown",
+            error=Exception(f"Import failed for {failed} out of {total_records} records"),
+            user_id=current_user.id,
+            records_processed=inserted
+        )
 
     result = ReportImportResult(
         success=success,

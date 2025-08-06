@@ -23,6 +23,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
+  private refreshTimer: NodeJS.Timeout | null = null;
   /**
    * Helper to unwrap our standard APIResponse envelope and return the contained
    * `data` field. Falls back gracefully when the backend returns the raw data
@@ -45,6 +46,9 @@ class ApiClient {
         "Content-Type": "application/json",
       },
     });
+
+    // Auto-refresh timer
+    this.setupTokenRefresh();
 
     // Request interceptor to add auth token
     this.client.interceptors.request.use(
@@ -154,6 +158,49 @@ class ApiClient {
     Cookies.remove("auth_token");
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
+    this.clearRefreshTimer();
+  }
+
+  private setupTokenRefresh(): void {
+    if (typeof window === "undefined") return; // SSR safeguard
+    
+    // Clear any existing timer
+    this.clearRefreshTimer();
+    
+    // Set up refresh timer for 25 minutes (5 minutes before token expires)
+    if (this.isAuthenticated()) {
+      this.refreshTimer = setTimeout(() => {
+        this.refreshToken();
+      }, 25 * 60 * 1000); // 25 minutes
+    }
+  }
+
+  private clearRefreshTimer(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private async refreshToken(): Promise<void> {
+    try {
+      const response = await this.client.post<AuthToken>("/auth/refresh");
+      const { access_token, user } = response.data;
+      
+      this.setToken(access_token);
+      this.setUser(user);
+      
+      // Set up next refresh
+      this.setupTokenRefresh();
+      
+      logger.info("Token refreshed successfully");
+    } catch (error) {
+      logger.warn("Token refresh failed, redirecting to login");
+      this.removeToken();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
   }
 
   // User management
@@ -188,6 +235,9 @@ class ApiClient {
 
       this.setToken(access_token);
       this.setUser(user);
+      
+      // Set up token refresh
+      this.setupTokenRefresh();
 
       // If user must change password, redirect immediately
       if (user.must_change_password) {
