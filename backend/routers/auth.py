@@ -92,7 +92,7 @@ async def get_authentication_mode():
     return APIResponse(success=True, data={"auth_mode": get_auth_mode()})
 
 
-@router.post("/refresh", response_model=AuthToken)
+@router.post("/refresh", response_model=Token)
 async def refresh_token(current_user: User = Depends(get_current_user)):
     """Refresh JWT token for active users"""
     try:
@@ -100,7 +100,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
         access_token = create_access_token(data={"sub": current_user.username})
         
         # Return new token with user data
-        return AuthToken(
+        return Token(
             access_token=access_token,
             token_type="bearer",
             user=current_user
