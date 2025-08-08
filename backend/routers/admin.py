@@ -44,7 +44,7 @@ async def create_user_admin(request: UserCreate, current_user: User = Depends(re
         raise
     except Exception as exc:
         logger.error(f"Error creating user: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create user")
 
 
 @router.get("/users", response_model=APIResponse)
@@ -75,7 +75,7 @@ async def list_users(current_user: User = Depends(require_admin)):
         raise
     except Exception as exc:
         logger.error(f"Error listing users: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to list users: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to list users")
 
 
 @router.put("/user/{user_id}", response_model=APIResponse)
@@ -211,7 +211,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
         raise
     except Exception as exc:
         logger.error(f"Error creating query: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to create query: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create query")
 
 
 @router.get("/query/{query_id}", response_model=APIResponse)
@@ -480,7 +480,7 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
         return APIResponse(success=True, message=f"Found {len(queries)} queries", data=queries)
     except Exception as exc:
         logger.error(f"Error listing queries: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to list queries: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to list queries")
 
 # ------------------ Dashboard Widget Management ------------------
 
@@ -517,7 +517,7 @@ async def create_dashboard_widget(request: DashboardWidgetCreate, current_user: 
         raise
     except Exception as exc:
         logger.error(f"Error creating dashboard widget: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to create widget: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create widget")
 
 
 @router.delete("/dashboard/widget/{widget_id}", response_model=APIResponse)
@@ -533,7 +533,7 @@ async def delete_dashboard_widget(widget_id: int, current_user: User = Depends(g
         raise
     except Exception as exc:
         logger.error(f"Error deleting widget: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete widget: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to delete widget")
 
 
 # ------------------ Update widget layout/attrs ------------------
@@ -580,7 +580,7 @@ async def update_dashboard_widget(widget_id: int, request: DashboardWidgetUpdate
         raise
     except Exception as exc:
         logger.error(f"Error updating widget: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to update widget: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to update widget")
 
 
 @router.get("/dashboard/widgets", response_model=APIResponse)
@@ -614,7 +614,7 @@ async def list_dashboard_widgets(current_user: User = Depends(get_current_user))
         return APIResponse(success=True, message=f"Found {len(widgets)} dashboard widgets", data=widgets)
     except Exception as exc:
         logger.error(f"Error listing dashboard widgets: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to list widgets: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to list widgets")
 
 # ------------------ Menu Management ------------------
 
@@ -672,7 +672,7 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
     except Exception as exc:
         logger.error(f"Error creating menu item: {exc}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to create menu item: {exc}"
+            status_code=500, detail="Failed to create menu item"
         )
 
 
@@ -843,7 +843,7 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
         return APIResponse(success=True, message=f"Found {len(kpis)} KPIs", data=kpis)
     except Exception as exc:
         logger.error(f"Error listing KPIs: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to list KPIs: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to list KPIs")
 
 
 @router.post("/kpi", response_model=APIResponse)
@@ -906,7 +906,7 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
         raise
     except Exception as exc:
         logger.error(f"Error creating KPI: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to create KPI: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create KPI")
 
 
 @router.put("/kpi/{kpi_id}", response_model=APIResponse)

@@ -4,6 +4,7 @@ import Sidebar from "../components/Layout/Sidebar";
 import { MenuItem } from "../types";
 import { toast } from "react-hot-toast";
 import apiClient from "../lib/api";
+import { logger } from "../lib/logger";
 
 interface ComparisonResult {
   sheet: string;
@@ -48,7 +49,7 @@ const ExcelComparePage: React.FC = () => {
         const response = await apiClient.get("/api/menu");
         setMenuItems(response.data);
       } catch (error) {
-        console.error("Error fetching menu:", error);
+        logger.error("Error fetching menu for excel compare", { error });
         toast.error("Failed to load menu");
       }
     };
@@ -94,14 +95,30 @@ const ExcelComparePage: React.FC = () => {
       });
 
       if (response.data.success) {
-        setComparisonResult(response.data.data);
-        toast.success("Excel comparison completed successfully");
+        const result = response.data.data;
+        setComparisonResult(result);
+        
+        logger.info("Excel comparison completed", {
+          totalSheets: result.total_sheets,
+          matchedSheets: result.matched_sheets,
+          hasResults: result.comparison_results?.length > 0
+        });
+        
+        // Provide more detailed success message
+        const differences = result.total_sheets - result.matched_sheets;
+        const message = differences === 0 
+          ? `All ${result.total_sheets} sheets matched perfectly!` 
+          : `Comparison complete: ${result.matched_sheets} sheets matched, ${differences} had differences`;
+        
+        toast.success(message, { duration: 5000 });
       } else {
+        logger.error("Excel comparison API returned failure", { response: response.data });
         toast.error("Comparison failed: " + response.data.message);
       }
     } catch (error: any) {
-      console.error("Comparison error:", error);
-      toast.error(error.response?.data?.detail || "Failed to compare Excel files");
+      logger.error("Excel comparison error", { error, file1Name: file1?.name, file2Name: file2?.name });
+      const errorMessage = error.response?.data?.detail || "Failed to compare Excel files";
+      toast.error(errorMessage);
     } finally {
       setComparing(false);
     }
@@ -109,6 +126,12 @@ const ExcelComparePage: React.FC = () => {
 
   const exportResults = () => {
     if (!comparisonResult) return;
+
+    logger.info("Exporting excel comparison results", {
+      totalSheets: comparisonResult.total_sheets,
+      matchedSheets: comparisonResult.matched_sheets,
+      resultCount: comparisonResult.comparison_results.length
+    });
 
     // Create CSV content
     let csvContent = "Sheet,Cell ID,Value1,Value2,Status\n";
@@ -145,7 +168,7 @@ const ExcelComparePage: React.FC = () => {
     <div className="flex h-screen bg-gray-100">
       <Sidebar
         menuItems={menuItems}
-        currentPath={router.asPath}
+        currentPath="/excel-compare"
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileMenuOpen}

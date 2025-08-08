@@ -227,14 +227,28 @@ class ApiClient {
   // Authentication methods
   async login(credentials: LoginRequest): Promise<AuthToken> {
     try {
-      const response: AxiosResponse<AuthToken> = await this.client.post(
-        "/auth/login",
-        credentials,
-      );
+      logger.info("Attempting login", { username: credentials.username });
+      
+      // Create a timeout promise to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Login request timed out")), 15000);
+      });
+      
+      const loginPromise = this.client.post("/auth/login", credentials, {
+        timeout: 15000, // 15 second timeout for login specifically
+      });
+      
+      const response: AxiosResponse<AuthToken> = await Promise.race([
+        loginPromise,
+        timeoutPromise
+      ]);
+      
       const { access_token, user } = response.data;
 
       this.setToken(access_token);
       this.setUser(user);
+      
+      logger.info("Login successful", { username: user.username, role: user.role });
       
       // Set up token refresh
       this.setupTokenRefresh();
@@ -248,6 +262,11 @@ class ApiClient {
 
       return response.data;
     } catch (error: unknown) {
+      logger.error("Login failed", { 
+        error, 
+        username: credentials.username,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
       throw error;
     }
   }
@@ -275,6 +294,26 @@ class ApiClient {
   logout(): void {
     this.removeToken();
     window.location.href = "/login";
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<APIResponse> {
+    try {
+      logger.info("Attempting password change");
+      
+      const response: AxiosResponse<APIResponse> = await this.client.post(
+        "/auth/change-password",
+        {
+          current_password: currentPassword,
+          new_password: newPassword,
+        }
+      );
+      
+      logger.info("Password changed successfully");
+      return response.data;
+    } catch (error: unknown) {
+      logger.error("Password change failed", { error });
+      throw error;
+    }
   }
 
   // Health check

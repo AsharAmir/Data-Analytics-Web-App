@@ -148,8 +148,9 @@ async def compare_excel_files(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"Excel comparison error: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to compare Excel files: {str(exc)}")
+        logger.error(f"Excel comparison error: {exc}", exc_info=True)
+        # Don't expose internal errors to users
+        raise HTTPException(status_code=500, detail="Failed to compare Excel files. Please ensure both files are valid Excel files and try again.")
 
 
 def compare_sheets(sheet1, sheet2, sheet_name: str) -> Dict[str, Any]:

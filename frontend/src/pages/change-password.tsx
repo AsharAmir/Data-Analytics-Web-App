@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import apiClient from "../lib/api";
 import { User } from "../types";
+import { logger } from "../lib/logger";
+import { toast } from "react-hot-toast";
 
 const ChangePasswordPage: React.FC = () => {
   const router = useRouter();
@@ -27,16 +29,63 @@ const ChangePasswordPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    // Client-side validation
+    if (!oldPassword.trim()) {
+      setError("Please enter your current password");
+      return;
+    }
+
+    if (!newPassword.trim()) {
+      setError("Please enter a new password");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters long");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError("New passwords do not match");
       return;
     }
+
+    if (oldPassword === newPassword) {
+      setError("New password must be different from current password");
+      return;
+    }
+
     try {
       setLoading(true);
+      logger.info("Submitting password change request");
+      
       await apiClient.changePassword(oldPassword, newPassword);
+      
+      toast.success("Password changed successfully!");
+      logger.info("Password change successful, redirecting to dashboard");
       router.push("/dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to change password");
+      logger.error("Password change failed", { error: err });
+      
+      let errorMessage = "Failed to change password";
+      
+      if (err?.response?.status === 400) {
+        const detail = err.response?.data?.detail;
+        if (detail?.includes("current password") || detail?.includes("incorrect")) {
+          errorMessage = "Current password is incorrect";
+        } else if (detail?.includes("password")) {
+          errorMessage = detail;
+        }
+      } else if (err?.response?.status === 401) {
+        errorMessage = "Current password is incorrect";
+      } else if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      }
+      
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

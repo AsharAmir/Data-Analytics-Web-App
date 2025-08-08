@@ -6,6 +6,7 @@ import ChartComponent from "../../components/Charts/ChartComponent";
 import { Query, QueryResult, TableData, ChartData } from "../../types";
 import { toast } from "react-hot-toast";
 import FileImportModal from "../../components/Reports/FileImportModal";
+import { logger } from "../../lib/logger";
 
 const ReportDetailPage: React.FC = () => {
   const router = useRouter();
@@ -53,9 +54,20 @@ const ReportDetailPage: React.FC = () => {
       } else {
         setViewMode("table");
       }
-    } catch (err) {
-      console.error("Error loading report:", err);
-      setError("Failed to load report data");
+    } catch (err: any) {
+      logger.error("Error loading report", { error: err, reportId: id });
+      
+      // Handle specific authorization errors
+      if (err?.response?.status === 403) {
+        setError("You are not authorized to view this report");
+        toast.error("Access denied: You don't have permission to view this report");
+      } else if (err?.response?.status === 404) {
+        setError("Report not found");
+        toast.error("The requested report could not be found");
+      } else {
+        setError("Failed to load report data");
+        toast.error("Unable to load report. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -86,8 +98,11 @@ const ReportDetailPage: React.FC = () => {
         limit: 1000,
       });
       setChartData(response);
-    } catch (err) {
-      console.error("Error loading chart data:", err);
+    } catch (err: any) {
+      logger.error("Error loading chart data", { error: err, reportId });
+      if (err?.response?.status === 403) {
+        toast.error("Access denied: You don't have permission to view this chart data");
+      }
     }
   };
 
@@ -100,8 +115,11 @@ const ReportDetailPage: React.FC = () => {
         offset: 0,
       });
       setTableData(response);
-    } catch (err) {
-      console.error("Error loading table data:", err);
+    } catch (err: any) {
+      logger.error("Error loading table data", { error: err, reportId });
+      if (err?.response?.status === 403) {
+        toast.error("Access denied: You don't have permission to view this table data");
+      }
     }
   };
 

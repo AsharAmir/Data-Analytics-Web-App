@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import apiClient from "../lib/api";
 import { LoginFormData } from "../types";
+import { logger } from "../lib/logger";
 
 const LoginPage: React.FC = () => {
   const router = useRouter();
@@ -29,7 +30,7 @@ const LoginPage: React.FC = () => {
         const mode = await apiClient.getAuthMode();
         setAuthMode(mode as "form" | "saml");
       } catch (error) {
-        console.error("Error getting auth mode:", error);
+        logger.error("Error getting auth mode", { error });
       }
     };
 
@@ -38,20 +39,39 @@ const LoginPage: React.FC = () => {
 
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
+    
+    // Ensure loading state is cleared after a maximum time to prevent hanging
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+      toast.error("Login request timed out. Please try again.");
+      logger.warn("Login loading timeout triggered");
+    }, 20000); // 20 second safety timeout
 
     try {
       await apiClient.login(data);
+      clearTimeout(loadingTimeout);
       toast.success("Login successful!");
       router.push("/dashboard");
     } catch (error: unknown) {
-      console.error("Login error:", error);
-      const errMessage =
-        error && typeof error === "object" && "response" in error
-          ? (error as { response?: { data?: { detail?: string } } }).response
-              ?.data?.detail
-          : null;
-      toast.error(errMessage || "Invalid username or password", { duration: 5000 });
+      clearTimeout(loadingTimeout);
+      logger.error("Login error", { error, username: data?.username });
+      
+      let errMessage = "Invalid username or password";
+      
+      if (error && typeof error === "object" && "response" in error) {
+        const responseError = error as { response?: { data?: { detail?: string } } };
+        errMessage = responseError.response?.data?.detail || errMessage;
+      } else if (error instanceof Error) {
+        if (error.message.includes("timeout")) {
+          errMessage = "Login request timed out. Please check your connection and try again.";
+        } else if (error.message.includes("Network Error")) {
+          errMessage = "Network error. Please check your connection and try again.";
+        }
+      }
+      
+      toast.error(errMessage, { duration: 5000 });
     } finally {
+      clearTimeout(loadingTimeout);
       setLoading(false);
     }
   };

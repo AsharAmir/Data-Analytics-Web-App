@@ -80,6 +80,28 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Optional[User]:
+    """Get current user from JWT token, but return None if not authenticated (no exception)"""
+    if not credentials:
+        return None
+    
+    try:
+        payload = verify_token(credentials.credentials)
+        if payload is None:
+            return None
+
+        username = payload.get("sub")
+        if username is None:
+            return None
+
+        user = get_user_by_username(username)
+        return user
+    except Exception:
+        return None
+
+
 def get_user_by_username(username: str) -> Optional[User]:
     """Get user by username from database"""
     try:

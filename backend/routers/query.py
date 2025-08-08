@@ -125,7 +125,7 @@ async def get_query_detail(query_id: int, current_user: User = Depends(get_curre
         raise
     except Exception as exc:
         logger.error(f"Error getting query detail {query_id}: {exc}")
-        return APIResponse(success=False, error=str(exc))
+        return APIResponse(success=False, error="Failed to retrieve query details")
 
 
 @router.post("/query/filtered", response_model=QueryResult)
@@ -176,7 +176,7 @@ async def get_reports_by_menu(menu_item_id: int, current_user: User = Depends(ge
         return APIResponse(success=True, data=queries)
     except Exception as exc:
         logger.error(f"Error retrieving reports for menu {menu_item_id}: {exc}")
-        return APIResponse(success=False, error=str(exc))
+        return APIResponse(success=False, error="Failed to retrieve reports")
 
 # ------------------ Data Export ------------------
 
@@ -222,6 +222,8 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         )
 
         loop = asyncio.get_running_loop()
+        filename = request.filename or f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
         df = await loop.run_in_executor(
             None,  # default thread-pool executor
             partial(db_manager.execute_query_pandas, sql, timeout=0),
@@ -231,9 +233,8 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
             # Create empty file with headers for empty results
             logger.info(f"Export query returned no data, creating empty file for {filename}")
             import pandas as pd
-            df = pd.DataFrame()  # Empty DataFrame will still have proper structure
-
-        filename = request.filename or f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            # Create an empty DataFrame with at least one column to ensure proper file structure
+            df = pd.DataFrame({"No Data": ["No records found matching your criteria"]})
         logger.info(f"Export query completed, processing {len(df)} rows for {filename}")
 
         # 3. Convert to requested format and return

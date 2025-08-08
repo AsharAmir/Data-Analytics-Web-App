@@ -65,8 +65,16 @@ class DataService:
             )
         except Exception as e:
             logger.error(f"Query execution error: {e}")
+            # Don't expose internal database errors to users
+            error_msg = "Query execution failed. Please check your SQL syntax and try again."
+            if "ORA-00907" in str(e) or "ORA-00936" in str(e) or "missing right parenthesis" in str(e):
+                error_msg = "SQL syntax error: Please check your query syntax."
+            elif "ORA-00942" in str(e) or "table or view does not exist" in str(e):
+                error_msg = "Table or view not found. Please verify the table name."
+            elif "ORA-00904" in str(e) or "invalid identifier" in str(e):
+                error_msg = "Column not found. Please verify the column names."
             return QueryResult(
-                success=False, error=str(e), execution_time=time.time() - start_time
+                success=False, error=error_msg, execution_time=time.time() - start_time
             )
 
     @staticmethod
@@ -120,8 +128,16 @@ class DataService:
             )
         except Exception as e:
             logger.error(f"Table query execution error: {e}")
+            # Don't expose internal database errors to users
+            error_msg = "Query execution failed. Please check your SQL syntax and try again."
+            if "ORA-00907" in str(e) or "ORA-00936" in str(e) or "missing right parenthesis" in str(e):
+                error_msg = "SQL syntax error: Please check your query syntax."
+            elif "ORA-00942" in str(e) or "table or view does not exist" in str(e):
+                error_msg = "Table or view not found. Please verify the table name."
+            elif "ORA-00904" in str(e) or "invalid identifier" in str(e):
+                error_msg = "Column not found. Please verify the column names."
             return QueryResult(
-                success=False, error=str(e), execution_time=time.time() - start_time
+                success=False, error=error_msg, execution_time=time.time() - start_time
             )
 
     @staticmethod

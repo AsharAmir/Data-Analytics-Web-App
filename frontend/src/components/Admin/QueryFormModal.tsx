@@ -8,6 +8,7 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import apiClient from "../../lib/api";
+import { logger } from "../../lib/logger";
 
 interface QueryForm {
   name: string;
@@ -29,6 +30,7 @@ interface ValidationErrors {
   name?: string;
   sql_query?: string;
   role?: string;
+  dashboard?: string;
 }
 
 const roleDisplayNames: Record<UserRole, string> = {
@@ -105,6 +107,10 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
       errors.role = "At least one role must be selected";
     }
 
+    if (queryForm.menu_item_id !== -1 && queryForm.menu_item_ids.length === 0) {
+      errors.dashboard = "Please select at least one dashboard or page";
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -135,7 +141,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
     try {
       await onCreate();
     } catch (err) {
-      console.error("Query form submit failed", err);
+      logger.error("Query form submit failed", { error: err, queryForm });
     }
   };
 
@@ -150,7 +156,8 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
   const isFormValid =
     queryForm.name.trim() &&
     queryForm.sql_query.trim() &&
-    queryForm.role.length > 0;
+    queryForm.role.length > 0 &&
+    (queryForm.menu_item_id === -1 || queryForm.menu_item_ids.length > 0);
 
   const tabs = [
     { id: "basic", label: "Basic Info", icon: "ℹ️" },
@@ -373,7 +380,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                       })}
                       {queryForm.menu_item_id !== -1 &&
                         queryForm.menu_item_ids.length === 0 && (
-                          <div className="flex items-center text-sm text-amber-700">
+                          <div className="flex items-center text-sm text-red-700">
                             <ExclamationTriangleIcon className="h-4 w-4 mr-2" />
                             No pages selected - query will be hidden from
                             dashboards
@@ -381,6 +388,12 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                         )}
                     </div>
                   </div>
+                  {validationErrors.dashboard && (
+                    <p className="mt-2 text-sm text-red-600 flex items-center">
+                      <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
+                      {validationErrors.dashboard}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

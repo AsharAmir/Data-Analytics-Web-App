@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import apiClient from "../../lib/api";
 import Sidebar from "../Layout/Sidebar";
 import KPICard from "../ui/KPICard";
 import ChartComponent from "../Charts/ChartComponent";
 import DataTable from "../ui/DataTable";
+import { logger } from "../../lib/logger";
 
 import {
   DashboardWidget,
@@ -59,6 +60,8 @@ const Dashboard: React.FC = () => {
   const [widgetsLoading, setWidgetsLoading] = useState<Record<number, boolean>>(
     {},
   );
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // KPI customization state
   const [kpiPrefs, setKpiPrefs] = useState<Record<string, boolean>>({
@@ -179,20 +182,19 @@ const Dashboard: React.FC = () => {
     </svg>
   );
 
-  // Check if cached data is still valid
-  // Load widget data without caching
-  const loadWidgetData = React.useCallback(async (widgetId: number) => {
+  // Load widget data with proper error handling and logging
+  const loadWidgetData = useCallback(async (widgetId: number, isRefresh: boolean = false) => {
     setWidgetsLoading((prev) => ({ ...prev, [widgetId]: true }));
 
     try {
+      logger.debug(`Loading widget data`, { widgetId, isRefresh });
       const data = await apiClient.getWidgetData(widgetId);
+      
       if (data && data.success) {
         setWidgetData((prev) => ({ ...prev, [widgetId]: data }));
+        logger.debug(`Widget data loaded successfully`, { widgetId, executionTime: data.execution_time });
       } else {
-        console.warn(
-          `Widget ${widgetId} returned unsuccessful response:`,
-          data,
-        );
+        logger.warn(`Widget returned unsuccessful response`, { widgetId, error: data?.error });
         setWidgetData((prev) => ({
           ...prev,
           [widgetId]: {
@@ -203,7 +205,7 @@ const Dashboard: React.FC = () => {
         }));
       }
     } catch (error) {
-      console.error(`Error loading data for widget ${widgetId}:`, error);
+      logger.error(`Error loading widget data`, { widgetId, error });
       setWidgetData((prev) => ({
         ...prev,
         [widgetId]: {
@@ -272,10 +274,40 @@ const Dashboard: React.FC = () => {
         loadWidgetData(widget.id);
       });
     } catch (error) {
-      console.error("Error loading dashboard data:", error);
+      logger.error("Error loading dashboard data", { error, menu });
       setLoading(false);
     }
   }, [menu, summaryWidgetId, loadWidgetData]);
+
+  // Refresh all widgets data
+  const refreshWidgets = useCallback(async () => {
+    if (widgets.length === 0) return;
+    
+    setIsRefreshing(true);
+    logger.info("Refreshing all widgets", { widgetCount: widgets.length });
+    
+    try {
+      // Refresh all widgets concurrently
+      await Promise.all(widgets.map(widget => loadWidgetData(widget.id, true)));
+      setLastRefresh(new Date());
+      logger.info("All widgets refreshed successfully");
+    } catch (error) {
+      logger.error("Error refreshing widgets", { error });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [widgets, loadWidgetData]);
+
+  // Auto-refresh widgets every 5 minutes
+  useEffect(() => {
+    if (widgets.length === 0) return;
+    
+    const interval = setInterval(() => {
+      refreshWidgets();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    return () => clearInterval(interval);
+  }, [widgets, refreshWidgets]);
 
   useEffect(() => {
     if (!apiClient.isAuthenticated()) {
@@ -696,6 +728,32 @@ const Dashboard: React.FC = () => {
 
               {/* Right side - Actions */}
               <div className="flex items-center space-x-2">
+                {/* Refresh Button */}
+                <button
+                  onClick={refreshWidgets}
+                  disabled={isRefreshing}
+                  className={`p-2 rounded-lg transition-colors touch-manipulation ${
+                    isRefreshing
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                      : "hover:bg-gray-100 text-gray-600 hover:text-blue-600"
+                  }`}
+                  title={lastRefresh ? `Last refresh: ${lastRefresh.toLocaleTimeString()}` : "Refresh all widgets"}
+                  aria-label="Refresh widgets"
+                >
+                  <svg
+                    className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                </button>
                 {/* View Toggle - Desktop only */}
                 <div className="hidden lg:flex bg-gray-100 rounded-lg p-0.5">
                   {[

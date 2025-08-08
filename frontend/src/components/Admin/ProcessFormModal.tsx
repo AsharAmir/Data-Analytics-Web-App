@@ -66,6 +66,10 @@ const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
     if (!processForm.script_path?.trim()) {
       newErrors.script_path = "Script path is required";
     }
+    
+    if (!processForm.role || (Array.isArray(processForm.role) && processForm.role.length === 0)) {
+      newErrors.role = "At least one role must be selected";
+    }
 
     // Validate parameters
     processForm.parameters?.forEach((param, index) => {
@@ -282,6 +286,7 @@ const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
                     {(!processForm.role || (Array.isArray(processForm.role) && processForm.role.length === 0)) && (
                       <p className="mt-2 text-sm text-amber-600">⚠️ No roles selected - only admins will be able to run this process</p>
                     )}
+                    {errors.role && <p className="mt-2 text-sm text-red-600">{errors.role}</p>}
                   </div>
 
                   {/* Parameters Section */}

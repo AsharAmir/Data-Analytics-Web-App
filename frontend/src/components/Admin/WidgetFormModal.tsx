@@ -40,6 +40,7 @@ interface ValidationErrors {
   query_id?: string;
   query_name?: string;
   sql_query?: string;
+  query_test?: string;
 }
 
 const chartTypeOptions = [
@@ -109,6 +110,7 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
   const [isTestingQuery, setIsTestingQuery] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [queryTested, setQueryTested] = useState(false);
 
   // Filter queries to show only those with dashboard assignments (including default)
   const availableQueries = queries.filter(
@@ -122,8 +124,16 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
       setValidationErrors({});
       setTestResult(null);
       setTestError(null);
+      setQueryTested(false);
     }
   }, [visible]);
+
+  useEffect(() => {
+    // Reset query test status when SQL query changes
+    setQueryTested(false);
+    setTestResult(null);
+    setTestError(null);
+  }, [widgetForm.sql_query]);
 
   if (!visible) return null;
 
@@ -144,6 +154,8 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
         !widgetForm.sql_query.trim().toLowerCase().startsWith("select")
       ) {
         errors.sql_query = "Only SELECT statements are allowed";
+      } else if (!queryTested || testError) {
+        errors.query_test = "Please test your query and ensure it runs successfully";
       }
     } else {
       if (!widgetForm.query_id) {
@@ -168,8 +180,10 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
         limit: 5,
       });
       setTestResult(response);
+      setQueryTested(true);
     } catch (error: any) {
       setTestError(error.response?.data?.error || "Failed to execute query");
+      setQueryTested(false);
     } finally {
       setIsTestingQuery(false);
     }
@@ -192,7 +206,7 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
   const isFormValid =
     widgetForm.title.trim() &&
     (widgetForm.create_new_query
-      ? widgetForm.query_name?.trim() && widgetForm.sql_query?.trim()
+      ? widgetForm.query_name?.trim() && widgetForm.sql_query?.trim() && queryTested && !testError
       : widgetForm.query_id);
 
   const tabs = [
@@ -571,6 +585,12 @@ const WidgetFormModal: React.FC<WidgetFormModalProps> = ({
                         <p className="text-sm text-red-600 flex items-center">
                           <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
                           {validationErrors.sql_query}
+                        </p>
+                      )}
+                      {validationErrors.query_test && (
+                        <p className="text-sm text-red-600 flex items-center">
+                          <ExclamationTriangleIcon className="h-4 w-4 mr-1" />
+                          {validationErrors.query_test}
                         </p>
                       )}
 
