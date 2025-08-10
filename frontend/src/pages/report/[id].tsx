@@ -55,16 +55,24 @@ const ReportDetailPage: React.FC = () => {
         setViewMode("table");
       }
     } catch (err: any) {
-      logger.error("Error loading report", { error: err, reportId: id });
+      logger.error("Error loading report", { error: err, reportId: id, url: window.location.href });
       
       // Handle specific authorization errors
-      if (err?.response?.status === 403) {
+      if (err?.response?.status === 401) {
+        logger.warn("Authentication expired while loading report", { reportId: id });
+        setError("Your session has expired. Please log in again.");
+        toast.error("Session expired. Redirecting to login...");
+        setTimeout(() => router.replace("/login"), 2000);
+      } else if (err?.response?.status === 403) {
+        logger.warn("Access denied to report", { reportId: id, userRole: apiClient.getUser()?.role });
         setError("You are not authorized to view this report");
         toast.error("Access denied: You don't have permission to view this report");
       } else if (err?.response?.status === 404) {
+        logger.warn("Report not found", { reportId: id });
         setError("Report not found");
         toast.error("The requested report could not be found");
       } else {
+        logger.error("Unexpected error loading report", { error: err, reportId: id });
         setError("Failed to load report data");
         toast.error("Unable to load report. Please try again.");
       }
@@ -74,7 +82,17 @@ const ReportDetailPage: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
+    // Strict authentication check - redirect to login if not authenticated
     if (!apiClient.isAuthenticated()) {
+      logger.warn("Unauthorized access attempt to report", { reportId: id, url: window.location.href });
+      router.replace("/login");
+      return;
+    }
+
+    // Double-check user is still authenticated
+    const user = apiClient.getUser();
+    if (!user) {
+      logger.warn("No user found despite authentication check", { reportId: id });
       router.replace("/login");
       return;
     }

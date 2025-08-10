@@ -386,6 +386,12 @@ class ExportService:
         output = io.BytesIO()
 
         try:
+            # Handle empty DataFrame case
+            if df.empty:
+                logger.info("Creating empty Excel file with headers for empty dataset")
+                # Create a DataFrame with just headers if original is empty
+                df = pd.DataFrame(columns=["No Data Available"])
+                
             with pd.ExcelWriter(
                 output,
                 engine="xlsxwriter",
@@ -441,9 +447,18 @@ class ExportService:
 
         except Exception as e:
             logger.error(f"Error during Excel export: {e}")
-            raise
+            # Create a fallback empty Excel file with error message
+            try:
+                output = io.BytesIO()
+                fallback_df = pd.DataFrame({"Error": [f"Export failed: Please try again or contact support"]})
+                fallback_df.to_excel(output, index=False, engine='xlsxwriter')
+                output.seek(0)
+                return output.read()
+            except:
+                raise e
         finally:
-            output.close()
+            if 'output' in locals():
+                output.close()
 
     @staticmethod
     def export_to_csv(df: pd.DataFrame, filename: str = None) -> str:
@@ -454,6 +469,12 @@ class ExportService:
         logger.info(f"Starting CSV export for {len(df)} rows, {len(df.columns)} columns")
         
         try:
+            # Handle empty DataFrame case
+            if df.empty:
+                logger.info("Creating empty CSV file with headers for empty dataset")
+                # Create a DataFrame with just headers if original is empty
+                df = pd.DataFrame(columns=["No Data Available"])
+            
             # Use string buffer for better memory management
             output = io.StringIO()
             
@@ -474,7 +495,11 @@ class ExportService:
             
         except Exception as e:
             logger.error(f"Error during CSV export: {e}")
-            raise
+            # Create a fallback empty CSV file with error message
+            try:
+                return "Error\nExport failed: Please try again or contact support\n"
+            except:
+                raise e
         finally:
             if 'output' in locals():
                 output.close()
@@ -944,8 +969,18 @@ class ProcessService:
         processes: list[Process] = []
         for row in rows:
             roles = row.get("ROLE")
-            if user_role and roles and user_role not in roles.split(",") and user_role != "admin":
-                continue
+            
+            # Role-based filtering:
+            # - Admin users see all processes
+            # - Non-admin users only see processes where their role is included in the process role list
+            # - If process has no role restriction (empty/null), only admin can see it
+            if user_role != "admin":
+                if not roles or roles.strip() == "":
+                    # Process has no role restriction - only admin can see it
+                    continue
+                if user_role not in roles.split(","):
+                    # User's role not in the process's allowed roles
+                    continue
 
             processes.append(
                 Process(

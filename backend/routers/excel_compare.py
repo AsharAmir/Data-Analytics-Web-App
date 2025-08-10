@@ -43,11 +43,28 @@ async def compare_excel_files(
             raise HTTPException(status_code=400, detail="Both files must be Excel files (.xlsx or .xls)")
         
         # Read Excel files
-        file1_content = await file1.read()
-        file2_content = await file2.read()
+        logger.info(f"Reading Excel files: {file1.filename} ({file1.size} bytes), {file2.filename} ({file2.size} bytes)")
         
-        workbook1 = openpyxl.load_workbook(io.BytesIO(file1_content), data_only=True)
-        workbook2 = openpyxl.load_workbook(io.BytesIO(file2_content), data_only=True)
+        try:
+            file1_content = await file1.read()
+            file2_content = await file2.read()
+        except Exception as e:
+            logger.error(f"Error reading uploaded files: {e}")
+            raise HTTPException(status_code=400, detail="Error reading uploaded files. Please ensure files are not corrupted.")
+        
+        try:
+            workbook1 = openpyxl.load_workbook(io.BytesIO(file1_content), data_only=True)
+            logger.info(f"Successfully loaded {file1.filename}")
+        except Exception as e:
+            logger.error(f"Error loading {file1.filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Error loading {file1.filename}. Please ensure it's a valid Excel file.")
+            
+        try:
+            workbook2 = openpyxl.load_workbook(io.BytesIO(file2_content), data_only=True)
+            logger.info(f"Successfully loaded {file2.filename}")
+        except Exception as e:
+            logger.error(f"Error loading {file2.filename}: {e}")
+            raise HTTPException(status_code=400, detail=f"Error loading {file2.filename}. Please ensure it's a valid Excel file.")
         
         # Get sheet names
         sheets1 = workbook1.sheetnames
@@ -153,67 +170,122 @@ async def compare_excel_files(
         raise HTTPException(status_code=500, detail="Failed to compare Excel files. Please ensure both files are valid Excel files and try again.")
 
 
-def compare_sheets(sheet1, sheet2, sheet_name: str) -> Dict[str, Any]:
-    """Compare two Excel sheets cell by cell."""
+def compare_sheets(sheet1, sheet2, sheet_name: str, max_differences: int = 1000) -> Dict[str, Any]:
+    """Compare two Excel sheets cell by cell with performance optimizations."""
     
     differences = []
+    cells_compared = 0
     
-    # Get the maximum row and column from both sheets
-    max_row1, max_col1 = sheet1.max_row, sheet1.max_column
-    max_row2, max_col2 = sheet2.max_row, sheet2.max_column
+    try:
+        # Get the maximum row and column from both sheets
+        max_row1, max_col1 = sheet1.max_row, sheet1.max_column
+        max_row2, max_col2 = sheet2.max_row, sheet2.max_column
+        
+        # Handle empty sheets
+        if (max_row1 == 1 and max_col1 == 1 and sheet1.cell(1, 1).value is None and
+            max_row2 == 1 and max_col2 == 1 and sheet2.cell(1, 1).value is None):
+            logger.info(f"Both sheets '{sheet_name}' are empty - marked as matched")
+            return {
+                "sheet": sheet_name,
+                "cell_id": "NA",
+                "value1": "Empty sheet",
+                "value2": "Empty sheet",
+                "status": "matched",
+                "differences": []
+            }
+        
+        max_row = max(max_row1, max_row2)
+        max_col = max(max_col1, max_col2)
+        
+        # Performance check for very large sheets
+        total_cells = max_row * max_col
+        if total_cells > 1000000:  # Limit to 1M cells
+            logger.warning(f"Sheet '{sheet_name}' is very large ({total_cells} cells). Limiting comparison to first 1000 rows.")
+            max_row = min(max_row, 1000)
+        
+        logger.info(f"Comparing sheet '{sheet_name}': {max_row} rows × {max_col} columns")
+        
+        # Compare each cell
+        for row in range(1, max_row + 1):
+            for col in range(1, max_col + 1):
+                cells_compared += 1
+                cell1_value = None
+                cell2_value = None
+                
+                try:
+                    if row <= max_row1 and col <= max_col1:
+                        cell1 = sheet1.cell(row=row, column=col)
+                        cell1_value = cell1.value
+                    
+                    if row <= max_row2 and col <= max_col2:
+                        cell2 = sheet2.cell(row=row, column=col)
+                        cell2_value = cell2.value
+                except Exception as e:
+                    logger.warning(f"Error reading cell {row},{col} in sheet '{sheet_name}': {e}")
+                    continue
+                
+                # Normalize None values to empty string for comparison
+                if cell1_value is None:
+                    cell1_value = ""
+                if cell2_value is None:
+                    cell2_value = ""
+                
+                # Convert to string for comparison, handling special types
+                try:
+                    cell1_str = str(cell1_value) if cell1_value != "" else ""
+                    cell2_str = str(cell2_value) if cell2_value != "" else ""
+                except Exception as e:
+                    logger.warning(f"Error converting cell values to string at {row},{col}: {e}")
+                    cell1_str = "ERROR_CONVERTING"
+                    cell2_str = "ERROR_CONVERTING"
+                
+                if cell1_str != cell2_str:
+                    # Stop if we've found too many differences for performance
+                    if len(differences) >= max_differences:
+                        logger.warning(f"Reached maximum differences limit ({max_differences}) for sheet '{sheet_name}'")
+                        break
+                        
+                    cell_id = f"{openpyxl.utils.get_column_letter(col)}{row}"
+                    differences.append({
+                        "sheet": sheet_name,
+                        "cell_id": cell_id,
+                        "value1": cell1_str[:100],  # Limit length for display
+                        "value2": cell2_str[:100],  # Limit length for display
+                        "status": "not matched"
+                    })
+            
+            # Break outer loop if we hit the limit
+            if len(differences) >= max_differences:
+                break
+        
+        logger.info(f"Sheet '{sheet_name}' comparison complete: {cells_compared} cells compared, {len(differences)} differences found")
+        
+        if not differences:
+            return {
+                "sheet": sheet_name,
+                "cell_id": "NA",
+                "value1": "NA", 
+                "value2": "NA",
+                "status": "matched",
+                "differences": []
+            }
+        else:
+            return {
+                "sheet": sheet_name,
+                "cell_id": "multiple",
+                "value1": "multiple",
+                "value2": "multiple", 
+                "status": "not matched",
+                "differences": differences
+            }
     
-    max_row = max(max_row1, max_row2)
-    max_col = max(max_col1, max_col2)
-    
-    # Compare each cell
-    for row in range(1, max_row + 1):
-        for col in range(1, max_col + 1):
-            cell1_value = None
-            cell2_value = None
-            
-            if row <= max_row1 and col <= max_col1:
-                cell1 = sheet1.cell(row=row, column=col)
-                cell1_value = cell1.value
-            
-            if row <= max_row2 and col <= max_col2:
-                cell2 = sheet2.cell(row=row, column=col)
-                cell2_value = cell2.value
-            
-            # Normalize None values to empty string for comparison
-            if cell1_value is None:
-                cell1_value = ""
-            if cell2_value is None:
-                cell2_value = ""
-            
-            # Convert to string for comparison
-            cell1_str = str(cell1_value) if cell1_value != "" else ""
-            cell2_str = str(cell2_value) if cell2_value != "" else ""
-            
-            if cell1_str != cell2_str:
-                cell_id = f"{openpyxl.utils.get_column_letter(col)}{row}"
-                differences.append({
-                    "sheet": sheet_name,
-                    "cell_id": cell_id,
-                    "value1": cell1_str,
-                    "value2": cell2_str,
-                    "status": "not matched"
-                })
-    
-    if not differences:
+    except Exception as e:
+        logger.error(f"Error comparing sheet '{sheet_name}': {e}")
         return {
             "sheet": sheet_name,
-            "cell_id": "NA",
-            "value1": "NA", 
-            "value2": "NA",
-            "status": "matched",
+            "cell_id": "ERROR",
+            "value1": "Error during comparison",
+            "value2": str(e),
+            "status": "comparison_error",
             "differences": []
-        }
-    else:
-        return {
-            "sheet": sheet_name,
-            "cell_id": "multiple",
-            "value1": "multiple",
-            "value2": "multiple", 
-            "status": "not matched",
-            "differences": differences
         }

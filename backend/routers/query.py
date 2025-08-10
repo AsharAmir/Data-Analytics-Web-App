@@ -118,6 +118,10 @@ async def get_query_detail(query_id: int, current_user: User = Depends(get_curre
         if current_user.role != UserRole.ADMIN:
             assigned_roles = {r.strip() for r in (query_obj.role or "").split(',') if r.strip()}
             if assigned_roles and current_user.role not in assigned_roles:
+                logger.warning(
+                    f"Access denied for query {query_id}: user {current_user.username} "
+                    f"(role: {current_user.role}) not in assigned roles: {assigned_roles}"
+                )
                 raise HTTPException(status_code=403, detail="Not authorised for this query")
 
         return APIResponse(success=True, data=query_obj)

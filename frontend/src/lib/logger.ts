@@ -175,6 +175,63 @@ class FrontendLogger {
       sessionStorage.removeItem("app_logs");
     }
   }
+
+  // Method to export logs as JSON for debugging
+  exportLogs(): void {
+    if (typeof window === "undefined") return;
+    
+    const logs = this.getLogs();
+    const dataStr = JSON.stringify(logs, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `frontend_logs_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    
+    URL.revokeObjectURL(link.href);
+  }
+
+  // Method to get recent error logs
+  getRecentErrors(minutes: number = 10): LogEntry[] {
+    const logs = this.getLogs();
+    const cutoff = Date.now() - (minutes * 60 * 1000);
+    
+    return logs.filter(log => 
+      log.level === "ERROR" && 
+      new Date(log.timestamp).getTime() > cutoff
+    );
+  }
+
+  // Method to print debug info to console
+  printDebugInfo(): void {
+    if (typeof window === "undefined") return;
+    
+    const logs = this.getLogs();
+    const recentErrors = this.getRecentErrors();
+    const bufferSize = this.logBuffer.length;
+    
+    console.group("🔍 Frontend Logger Debug Info");
+    console.log("📊 Total stored logs:", logs.length);
+    console.log("📦 Current buffer size:", bufferSize);
+    console.log("🔴 Recent errors (last 10 min):", recentErrors.length);
+    console.log("🆔 Session ID:", this.sessionId);
+    
+    if (recentErrors.length > 0) {
+      console.group("Recent Errors:");
+      recentErrors.forEach(error => {
+        console.error(`[${error.timestamp}] ${error.message}`, error.context);
+      });
+      console.groupEnd();
+    }
+    
+    console.log("💡 Commands available:");
+    console.log("- logger.exportLogs() - Download logs as JSON");
+    console.log("- logger.clearLogs() - Clear all logs");
+    console.log("- logger.getLogs() - Get all logs array");
+    console.log("- logger.getRecentErrors(minutes) - Get recent errors");
+    console.groupEnd();
+  }
 }
 
 const createLogger = () => {
@@ -194,4 +251,12 @@ const createLogger = () => {
 };
 
 export const logger = createLogger();
+
+// Make logger globally available for debugging in development
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  (window as any).logger = logger;
+  console.info("🔍 Frontend logger available globally as window.logger");
+  console.info("💡 Type logger.printDebugInfo() to see debug information");
+}
+
 export default logger;
