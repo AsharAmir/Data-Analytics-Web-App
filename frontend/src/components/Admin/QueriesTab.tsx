@@ -118,9 +118,24 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                     {query.role && typeof query.role === "string"
                       ? query.role
                           .split(",")
-                          .map((r) => roleDisplayNames[r.trim() as UserRole] || r.trim())
+                          .map((r) => {
+                            const normalizedRole = r.trim();
+                            // Handle case variations for known roles
+                            if (normalizedRole.toLowerCase() === "user") {
+                              return roleDisplayNames[UserRole.USER] || "User";
+                            }
+                            if (normalizedRole.toLowerCase() === "admin") {
+                              return roleDisplayNames[UserRole.ADMIN] || "Admin";
+                            }
+                            // Use display name if available, otherwise return normalized role
+                            return roleDisplayNames[normalizedRole as UserRole] || normalizedRole;
+                          })
+                          .filter((role, index, array) => 
+                            // Remove duplicates based on lowercase comparison
+                            array.findIndex(r => r.toLowerCase() === role.toLowerCase()) === index
+                          )
                           .join(", ")
-                      : "user"}
+                      : "User"}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -133,6 +148,14 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                         const queryDetails = (await apiClient.get(`/api/admin/query/${query.id}`)) as any;
                         const queryData = queryDetails.data || queryDetails;
                         setEditingQueryId(query.id);
+                        
+                        // Parse current roles
+                        const currentRoles = queryData.role
+                          ? typeof queryData.role === "string"
+                            ? queryData.role.split(",").map((r: string) => r.trim() as UserRole)
+                            : queryData.role
+                          : [];
+                        
                         setQueryForm({
                           name: queryData.name,
                           description: queryData.description || "",
@@ -141,11 +164,7 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                           chart_config: queryData.chart_config || {},
                           menu_item_id: queryData.menu_item_id || null,
                           menu_item_ids: queryData.menu_item_ids || [],
-                          role: queryData.role
-                            ? typeof queryData.role === "string"
-                              ? queryData.role.split(",").map((r: string) => r.trim() as UserRole)
-                              : queryData.role
-                            : [],
+                          role: currentRoles,
                         });
                         setShowQueryForm(true);
                       } catch (error) {

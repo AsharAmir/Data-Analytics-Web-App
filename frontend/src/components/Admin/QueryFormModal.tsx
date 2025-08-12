@@ -575,33 +575,51 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                   User Roles with Access *
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {availableRoles.map((role) => (
-                    <label
-                      key={role}
-                      className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                        queryForm.role.includes(role as UserRole)
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        checked={queryForm.role.includes(role as UserRole)}
-                        onChange={() => {
-                          setQueryForm((prev) => {
-                            const newRoles = prev.role.includes(role as UserRole)
-                              ? prev.role.filter((r) => r !== role as UserRole)
-                              : [...prev.role, role as UserRole];
-                            return { ...prev, role: newRoles };
-                          });
-                        }}
-                      />
-                      <span className="text-gray-800 font-medium">
-                        {roleDisplayNames[role as UserRole] || role}
-                      </span>
-                    </label>
-                  ))}
+                  {availableRoles.map((role) => {
+                    // Check if this role is currently selected (case-insensitive)
+                    const isSelected = queryForm.role.some(selectedRole => 
+                      selectedRole.toLowerCase() === role.toLowerCase()
+                    );
+                    
+                    return (
+                      <label
+                        key={role}
+                        className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          checked={isSelected}
+                          onChange={() => {
+                            setQueryForm((prev) => {
+                              // Case-insensitive role management
+                              const hasRole = prev.role.some(selectedRole => 
+                                selectedRole.toLowerCase() === role.toLowerCase()
+                              );
+                              
+                              if (hasRole) {
+                                // Remove the role (case-insensitive)
+                                const newRoles = prev.role.filter(selectedRole => 
+                                  selectedRole.toLowerCase() !== role.toLowerCase()
+                                );
+                                return { ...prev, role: newRoles };
+                              } else {
+                                // Add the role (use the format from availableRoles)
+                                return { ...prev, role: [...prev.role, role as UserRole] };
+                              }
+                            });
+                          }}
+                        />
+                        <span className="text-gray-800 font-medium">
+                          {roleDisplayNames[role as UserRole] || role}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
                 {validationErrors.role && (
                   <p className="text-sm text-red-600 flex items-center">

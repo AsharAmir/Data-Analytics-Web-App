@@ -161,7 +161,23 @@ const AdminPage: React.FC = () => {
   const enumRoleNames = Object.values(UserRole).filter(
     (er) => !backendRoleNames.some((br) => br.toLowerCase() === er.toLowerCase()),
   );
-  const allRolesList = [...backendRoleNames, ...enumRoleNames];
+  
+  // Extract roles from existing queries to include custom roles
+  const queryRoles = queries.flatMap(query => 
+    query.role ? query.role.split(',').map(r => {
+      const trimmed = r.trim();
+      // Normalize known roles to standard case
+      if (trimmed.toLowerCase() === "user") return "user";
+      if (trimmed.toLowerCase() === "admin") return "admin";
+      return trimmed;
+    }) : []
+  );
+  
+  // Combine all roles and remove duplicates (case-insensitive)
+  const combinedRoles = [...backendRoleNames, ...enumRoleNames, ...queryRoles];
+  const allRolesList = combinedRoles.filter((role, index, arr) => 
+    arr.findIndex(r => r.toLowerCase() === role.toLowerCase()) === index
+  );
 
   // For reassignment modal exclude current deleting / system
   const otherRoleNames = roles
@@ -264,11 +280,25 @@ const AdminPage: React.FC = () => {
 
   const createOrUpdateQuery = async () => {
     try {
+      // Normalize roles before sending to backend
+      const normalizedQueryForm = {
+        ...queryForm,
+        role: queryForm.role.map(role => {
+          // Ensure consistent case for known roles
+          if (typeof role === 'string') {
+            const lowerRole = role.toLowerCase();
+            if (lowerRole === 'user') return 'user';
+            if (lowerRole === 'admin') return 'admin';
+          }
+          return role;
+        })
+      };
+      
       if (editingQueryId) {
-        await apiClient.put(`/api/admin/query/${editingQueryId}`, queryForm);
+        await apiClient.put(`/api/admin/query/${editingQueryId}`, normalizedQueryForm);
         toast.success("Query updated successfully!");
       } else {
-        await apiClient.post("/api/admin/query", queryForm);
+        await apiClient.post("/api/admin/query", normalizedQueryForm);
         toast.success("Query created successfully!");
       }
       setShowQueryForm(false);
