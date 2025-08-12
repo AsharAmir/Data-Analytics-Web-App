@@ -57,7 +57,6 @@ const ReportDetailPage: React.FC = () => {
     } catch (err: any) {
       logger.error("Error loading report", { error: err, reportId: id, url: window.location.href });
       
-      // Handle specific authorization errors
       if (err?.response?.status === 401) {
         logger.warn("Authentication expired while loading report", { reportId: id });
         setError("Your session has expired. Please log in again.");
@@ -82,14 +81,12 @@ const ReportDetailPage: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
-    // Strict authentication check - redirect to login if not authenticated
     if (!apiClient.isAuthenticated()) {
       logger.warn("Unauthorized access attempt to report", { reportId: id, url: window.location.href });
       router.replace("/login");
       return;
     }
 
-    // Double-check user is still authenticated
     const user = apiClient.getUser();
     if (!user) {
       logger.warn("No user found despite authentication check", { reportId: id });

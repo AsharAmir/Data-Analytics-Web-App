@@ -8,6 +8,7 @@ from starlette.requests import Request
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from security_middleware import SecurityMiddleware, ContentSecurityPolicyMiddleware, RequestValidationMiddleware
 from config import settings
 from database import init_database
 from routers.auth import router as auth_router
@@ -73,8 +74,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register request logging middleware (after CORS so it times downstream
-# processing only).
+app.add_middleware(ContentSecurityPolicyMiddleware) 
 app.add_middleware(RequestLoggingMiddleware)
 
 # --- Register routers ---

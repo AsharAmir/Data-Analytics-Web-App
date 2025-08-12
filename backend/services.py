@@ -581,7 +581,7 @@ class QueryService:
             # 1. Attempt to fetch queries directly assigned via menu_item_id column
             base_sql = """
             SELECT id, name, description, sql_query, chart_type, chart_config,
-                   menu_item_id, is_active, created_at
+                   menu_item_id, role, is_active, created_at
             FROM app_queries
             WHERE is_active = 1 AND (menu_item_id = :menu_id)
             """
@@ -590,7 +590,7 @@ class QueryService:
             #    app_query_menu_items (query_id, menu_item_id)
             junction_sql = """
             SELECT q.id, q.name, q.description, q.sql_query, q.chart_type,
-                   q.chart_config, q.menu_item_id, q.is_active, q.created_at
+                   q.chart_config, q.menu_item_id, q.role, q.is_active, q.created_at
             FROM app_queries q
             JOIN app_query_menu_items j ON j.query_id = q.id
             WHERE q.is_active = 1 AND j.menu_item_id = :menu_id
@@ -617,6 +617,7 @@ class QueryService:
                     chart_type=row["CHART_TYPE"],
                     chart_config=chart_config,
                     menu_item_id=row["MENU_ITEM_ID"],
+                    role=row["ROLE"],
                     is_active=bool(row["IS_ACTIVE"]),
                     created_at=row["CREATED_AT"],
                 )
@@ -634,7 +635,7 @@ class QueryService:
         try:
             query = """
             SELECT id, name, description, sql_query, chart_type, chart_config, 
-                   menu_item_id, is_active, created_at
+                   menu_item_id, role, is_active, created_at
             FROM app_queries
             WHERE id = :1 AND is_active = 1
             """
@@ -658,6 +659,7 @@ class QueryService:
                     chart_type=row["CHART_TYPE"],
                     chart_config=chart_config,
                     menu_item_id=row["MENU_ITEM_ID"],
+                    role=row["ROLE"],
                     is_active=bool(row["IS_ACTIVE"]),
                     created_at=row["CREATED_AT"],
                 )

@@ -3,42 +3,93 @@ import "../styles/globals.css";
 import { Toaster } from "react-hot-toast";
 import { useRouter } from "next/router";
 import apiClient from "../lib/api";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { securityManager } from "../lib/security";
+import { logger } from "../lib/logger";
+import { toast } from "react-hot-toast";
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
+  const [isAuthorizing, setIsAuthorizing] = useState(true);
 
-  // Redirect to change-password page if flag is still true
   useEffect(() => {
-    const user = apiClient.getUser();
-    if (
-      user &&
-      user.must_change_password &&
-      router.pathname !== "/change-password"
-    ) {
-      router.push("/change-password");
-    }
-  }, [router]);
-  useEffect(() => {
-    const authGuard = (url: string) => {
-      // Strip query/hash so that only the pathname remains
-      const path = url.split("?")[0].split("#")[0];
-      if (
-        !apiClient.isAuthenticated() &&
-        path !== "/login" &&
-        path !== "/change-password"
-      ) {
+    const enhancedSecurityGuard = async (url: string) => {
+      try {
+        setIsAuthorizing(true);
+        
+        // Parse URL to get pathname and query
+        const [pathname, queryString] = url.split("?");
+        const urlParams = new URLSearchParams(queryString || "");
+        const query = Object.fromEntries(urlParams.entries());
+
+        const publicRoutes = ["/login", "/change-password"];
+        if (publicRoutes.includes(pathname)) {
+          setIsAuthorizing(false);
+          return;
+        }
+
+        if (!securityManager.isAuthenticated()) {
+          logger.warn("Unauthenticated access attempt", { 
+            pathname, 
+            query, 
+            userAgent: navigator.userAgent 
+          });
+          router.replace("/login");
+          return;
+        }
+
+        const user = apiClient.getUser();
+        if (user) {
+          securityManager.setUser(user);
+        }
+
+        // Force password change if required
+        if (user?.must_change_password && pathname !== "/change-password") {
+          logger.info("Redirecting user to change password", { username: user.username });
+          router.push("/change-password");
+          return;
+        }
+
+        const canAccess = await securityManager.canAccessRoute(pathname, query);
+        if (!canAccess) {
+          logger.warn("Access denied to route", { 
+            pathname, 
+            query, 
+            username: user?.username, 
+            role: user?.role 
+          });
+          
+          // Show appropriate error message
+          if (pathname.startsWith("/report/")) {
+            toast.error("Access denied: You don't have permission to view this report");
+          } else if (pathname.startsWith("/admin")) {
+            toast.error("Access denied: Admin privileges required");
+          } else {
+            toast.error("Access denied: Insufficient permissions");
+          }
+          
+          securityManager.handleUnauthorizedAccess(router, pathname);
+          return;
+        }
+
+        setIsAuthorizing(false);
+      } catch (error) {
+        logger.error("Security guard error", { error, url });
+        setIsAuthorizing(false);
+        // On error, redirect to login for safety
         router.replace("/login");
       }
     };
 
-    // Run guard once on mount with the current url
-    authGuard(router.asPath);
+    enhancedSecurityGuard(router.asPath);
 
-    // Listen for future route changes
-    router.events.on("routeChangeStart", authGuard);
+    const handleRouteChangeStart = (url: string) => {
+      enhancedSecurityGuard(url);
+    };
+
+    router.events.on("routeChangeStart", handleRouteChangeStart);
     return () => {
-      router.events.off("routeChangeStart", authGuard);
+      router.events.off("routeChangeStart", handleRouteChangeStart);
     };
   }, [router]);
   useEffect(() => {
@@ -72,6 +123,18 @@ export default function App({ Component, pageProps }: AppProps) {
       window.removeEventListener("error", errorHandler);
     };
   }, []);
+
+  if (isAuthorizing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-6"></div>
+          <p className="text-lg text-gray-700 font-medium">Verifying access permissions...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait while we check your authorization</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

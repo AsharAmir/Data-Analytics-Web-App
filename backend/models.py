@@ -4,7 +4,6 @@ from datetime import datetime
 from enum import Enum
 
 
-# Authentication Models
 class UserRole(str, Enum):
     ADMIN = "admin"
     IT_USER = "IT_USER"  # Fixed built-in role requested by scenario

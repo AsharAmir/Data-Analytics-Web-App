@@ -28,7 +28,6 @@ const ProcessesPage: React.FC = () => {
       const user = apiClient.getUser();
       setCurrentUser(user);
       
-      // All authenticated users can view their available processes
       // The backend will filter processes based on role
       if (!user) {
         setAccessDenied(true);

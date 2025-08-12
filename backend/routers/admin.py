@@ -59,15 +59,19 @@ async def list_users(current_user: User = Depends(require_admin)):
         result = db_manager.execute_query(query)
         users: List[dict] = []
         for row in result:
+            # Normalize role to match frontend enum values (lowercase)
+            raw_role = row.get("ROLE", "user")
+            normalized_role = raw_role.lower() if raw_role else "user"
+            
             users.append(
                 {
                     "id": row["ID"],
                     "username": row["USERNAME"],
                     "email": row["EMAIL"],
-                    "role": row.get("ROLE", "user"),
+                    "role": normalized_role,
                     "is_active": bool(row["IS_ACTIVE"]),
                     "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
-                    "is_admin": row.get("ROLE", "user") == "admin",
+                    "is_admin": normalized_role == "admin",
                 }
             )
         return APIResponse(success=True, message=f"Found {len(users)} users", data=users)

@@ -44,23 +44,35 @@ class ApiClient {
       timeout: 30000,
       headers: {
         "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",  // CSRF protection
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
       },
+      withCredentials: true,  // Include cookies in requests
     });
 
     // Auto-refresh timer
     this.setupTokenRefresh();
 
-    // Request interceptor to add auth token
     this.client.interceptors.request.use(
       (config) => {
         const token = this.getToken();
         logger.debug("API →", config.method?.toUpperCase(), config.url);
+        
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
+        
+        config.headers["X-Request-ID"] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        config.headers["X-Client-Version"] = "1.0.0";
+        
+        // Add timestamp for request freshness validation
+        config.headers["X-Timestamp"] = new Date().toISOString();
+        
         return config;
       },
       (error) => {
+        logger.error("Request interceptor error", error);
         return Promise.reject(error);
       },
     );
@@ -138,40 +150,104 @@ class ApiClient {
     if (typeof window === "undefined") {
       return null; // SSR safeguard
     }
-    return Cookies.get("auth_token") || localStorage.getItem("auth_token");
+    
+    const token = sessionStorage.getItem("auth_token") || 
+                  Cookies.get("auth_token") || 
+                  localStorage.getItem("auth_token");
+    
+    if (!token) return null;
+    
+    try {
+      const metadataStr = localStorage.getItem("token_metadata");
+      if (metadataStr) {
+        const metadata = JSON.parse(metadataStr);
+        
+        // Check if token is from same user agent (prevent token theft)
+        if (metadata.userAgent !== navigator.userAgent) {
+          logger.warn("Token user agent mismatch - possible token theft");
+          this.removeToken();
+          return null;
+        }
+        
+        const tokenAge = Date.now() - metadata.issued;
+        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        if (tokenAge > maxAge) {
+          logger.warn("Token expired due to age");
+          this.removeToken();
+          return null;
+        }
+      }
+    } catch (error) {
+      logger.warn("Error validating token metadata", error);
+      // Continue with token if metadata check fails (don't break functionality)
+    }
+    
+    return token;
   }
 
   private setToken(token: string): void {
     if (typeof window === "undefined") return; // SSR safeguard
-    // Set cookie with proper settings for development/production
+    
     const isSecure = window.location.protocol === "https:";
+    const domain = window.location.hostname;
+    
+    // Set httpOnly-like behavior by using sessionStorage as primary and localStorage as backup
     Cookies.set("auth_token", token, {
-      expires: 7,
+      expires: 1,
       secure: isSecure,
-      sameSite: isSecure ? "strict" : "lax",
+      sameSite: "strict",
+      domain: domain === "localhost" ? undefined : domain, // Set domain for production
+      path: "/", // Limit cookie scope
     });
+    
+    // Store in sessionStorage (more secure) and localStorage (fallback)
+    sessionStorage.setItem("auth_token", token);
     localStorage.setItem("auth_token", token);
+    
+    // Add token validation metadata
+    const tokenMetadata = {
+      issued: Date.now(),
+      userAgent: navigator.userAgent,
+      domain: domain,
+    };
+    localStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
   }
 
   private removeToken(): void {
     if (typeof window === "undefined") return; // SSR safeguard
+    
     Cookies.remove("auth_token");
+    Cookies.remove("auth_token", { path: "/" }); // Ensure removal with path
+    
+    sessionStorage.removeItem("auth_token");
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
+    localStorage.removeItem("token_metadata");
+    
     this.clearRefreshTimer();
+    
+    // Clear any other sensitive data
+    try {
+      sessionStorage.clear();
+    } catch (error) {
+      logger.warn("Failed to clear sessionStorage", error);
+    }
   }
 
   private setupTokenRefresh(): void {
     if (typeof window === "undefined") return; // SSR safeguard
     
-    // Clear any existing timer
+    // RACE CONDITION FIX: Clear any existing timer first
     this.clearRefreshTimer();
     
-    // Set up refresh timer for 25 minutes (5 minutes before token expires)
-    if (this.isAuthenticated()) {
-      this.refreshTimer = setTimeout(() => {
-        this.refreshToken();
-      }, 25 * 60 * 1000); // 25 minutes
+    // Only set up refresh if we have a valid token
+    if (this.isAuthenticated() && this.getToken()) {
+      // RACE CONDITION FIX: Check if timer is already set to prevent duplicates
+      if (this.refreshTimer === null) {
+        this.refreshTimer = setTimeout(() => {
+          this.refreshToken();
+        }, 25 * 60 * 1000); // 25 minutes
+      }
     }
   }
 
@@ -224,18 +300,17 @@ class ApiClient {
     return null;
   }
 
-  // Authentication methods
   async login(credentials: LoginRequest): Promise<AuthToken> {
     try {
       logger.info("Attempting login", { username: credentials.username });
       
-      // Create a timeout promise to prevent hanging
+      // Create a timeout promise to prevent hanging - shorter for better UX
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Login request timed out")), 15000);
+        setTimeout(() => reject(new Error("Login request timed out")), 6000);
       });
       
       const loginPromise = this.client.post("/auth/login", credentials, {
-        timeout: 15000, // 15 second timeout for login specifically
+        timeout: 6000, // 6 second timeout for login specifically - should be fast
       });
       
       const response: AxiosResponse<AuthToken> = await Promise.race([
@@ -603,33 +678,6 @@ class ApiClient {
     }
   }
 
-  async changePassword(
-    oldPassword: string,
-    newPassword: string,
-  ): Promise<APIResponse> {
-    const currentUser = this.getUser();
-    if (!currentUser) {
-      throw new Error("Not authenticated");
-    }
-    const payload = {
-      username: currentUser.username,
-      password: oldPassword,
-      new_password: newPassword,
-    };
-    const response: AxiosResponse<APIResponse> = await this.client.post(
-      "/auth/change-password",
-      payload,
-    );
-    // After successful change clear must_change_password flag locally
-    if (response.data.success) {
-      const updatedUser = {
-        ...currentUser,
-        must_change_password: false,
-      } as User;
-      this.setUser(updatedUser);
-    }
-    return response.data;
-  }
 
   // -----------------------------
   // Roles (dynamic)

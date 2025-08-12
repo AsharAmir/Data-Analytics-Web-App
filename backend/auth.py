@@ -25,7 +25,7 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token with enhanced security"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -34,7 +34,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
             minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),  # Issued at
+        "jti": f"{data.get('sub', '')}_{int(datetime.utcnow().timestamp())}"  # JWT ID for tracking
+    })
+    
     encoded_jwt = jwt.encode(
         to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
     )
@@ -265,7 +270,6 @@ def create_user(user_create: UserCreate, role: Any = "user") -> Optional[User]:
         )
 
 
-# SAML Authentication (placeholder - would need proper SAML library integration)
 class SAMLAuth:
     """Light-weight SAML authentication wrapper around python3-saml.
 
@@ -465,3 +469,75 @@ def require_user_or_admin(current_user: User = Depends(get_current_user)) -> Use
             status_code=status.HTTP_403_FORBIDDEN, detail="User access required"
         )
     return current_user
+
+
+def require_resource_access(resource_type: str, resource_id: int = None):
+    """Decorator to check if user has access to specific resource"""
+    def decorator(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role == "admin":
+            return current_user
+            
+        # Check resource-specific permissions
+        if resource_type == "query" and resource_id:
+            query_obj = get_query_by_id(resource_id)
+            if not query_obj:
+                raise HTTPException(status_code=404, detail="Resource not found")
+                
+            # Check if user has permission for this query
+            assigned_roles = {r.strip() for r in (query_obj.get('role', '') or "").split(",") if r.strip()}
+            if assigned_roles and current_user.role not in assigned_roles:
+                logger.warning(
+                    f"Access denied for {resource_type} {resource_id}: user {current_user.username} "
+                    f"(role: {current_user.role}) not in assigned roles: {assigned_roles}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: You don't have permission to access this resource"
+                )
+                
+        return current_user
+    return decorator
+
+
+def get_query_by_id(query_id: int):
+    """Get query by ID for permission checking"""
+    try:
+        result = db_manager.execute_query(
+            "SELECT id, name, role FROM app_queries WHERE id = :1 AND is_active = 1",
+            (query_id,),
+        )
+        if result:
+            return result[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error getting query by ID: {e}")
+        return None
+
+
+def check_rate_limit(username: str, action: str, limit: int = 10, window_minutes: int = 1) -> bool:
+    """Basic rate limiting for security-sensitive actions"""
+    import time
+    from collections import defaultdict
+    
+    # In production, use Redis or database for distributed rate limiting
+    if not hasattr(check_rate_limit, 'attempts'):
+        check_rate_limit.attempts = defaultdict(list)
+    
+    key = f"{username}:{action}"
+    now = time.time()
+    window_start = now - (window_minutes * 60)
+    
+    # Clean old attempts
+    check_rate_limit.attempts[key] = [
+        attempt_time for attempt_time in check_rate_limit.attempts[key]
+        if attempt_time > window_start
+    ]
+    
+    # Check if limit exceeded
+    if len(check_rate_limit.attempts[key]) >= limit:
+        logger.warning(f"Rate limit exceeded for {username} action {action}")
+        return False
+    
+    # Record this attempt
+    check_rate_limit.attempts[key].append(now)
+    return True

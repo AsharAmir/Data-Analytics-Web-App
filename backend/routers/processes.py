@@ -12,7 +12,6 @@ from services import ProcessService
 router = APIRouter(prefix="/api", tags=["processes"])
 
 
-# ------------------ Public (authorised) endpoints ------------------
 
 
 @router.get("/processes", response_model=APIResponse)
@@ -65,7 +64,6 @@ async def list_available_scripts(current_user: User = Depends(require_admin)):
 async def run_process(proc_id: int, params: Dict[str, Any] | None = None, current_user: User = Depends(get_current_user)):
     """Execute a process with optional parameters."""
     try:
-        # Authorisation: ensure user has role access
         proc = ProcessService.get_process(proc_id)
         if not proc or not proc.is_active:
             raise HTTPException(status_code=404, detail="Process not found")

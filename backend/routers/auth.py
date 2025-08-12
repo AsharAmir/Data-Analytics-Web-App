@@ -8,12 +8,14 @@ from auth import (
     get_auth_mode,
     get_current_user,
     saml_auth,
+    check_rate_limit,
 )
 from config import settings
 from failure_tracker import failure_tracker
 from models import APIResponse, Token, User, UserLogin
 from auth import verify_password, get_password_hash
 from database import db_manager
+from input_validation import InputValidator
 
 logger = logging.getLogger(__name__)
 
@@ -21,33 +23,83 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=Token)
-async def login(user_login: UserLogin):
-    """Standard form-based login returning JWT token."""
+async def login(user_login: UserLogin, request: Request):
+    """Enhanced secure form-based login with comprehensive validation"""
+    import time
+    
     if get_auth_mode() != "form":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Form-based authentication is disabled",
         )
 
-    user = authenticate_user(user_login.username, user_login.password)
-    if not user:
-        # Track authentication failure
-        failure_tracker.track_auth_failure(
-            username=user_login.username,
-            failure_type="invalid_credentials"
+    try:
+        # Validate and sanitize username
+        if not InputValidator.validate_username(user_login.username):
+            logger.warning(f"Invalid username format in login attempt: {user_login.username}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid username format"
+            )
+        
+        sanitized_username = InputValidator.sanitize_string(user_login.username, max_length=50)
+        
+        # Validate password (basic checks)
+        if not user_login.password or len(user_login.password) > 500:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid password"
+            )
+        
+        # Rate limiting check
+        client_ip = request.client.host if request.client else "unknown"
+        if not check_rate_limit(sanitized_username, "login_attempt", limit=5, window_minutes=15):
+            logger.warning(f"Rate limit exceeded for login attempts: {sanitized_username} from {client_ip}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please try again in 15 minutes."
+            )
+        
+        user = authenticate_user(sanitized_username, user_login.password)
+        if not user:
+            failure_tracker.track_auth_failure(
+                username=sanitized_username,
+                failure_type="invalid_credentials"
+            )
+            logger.warning(
+                f"Failed login attempt: {sanitized_username} from {client_ip} "
+                f"[User-Agent: {request.headers.get('User-Agent', 'Unknown')}]"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={
+                "sub": user.username,
+                "role": user.role,
+                "iat": int(time.time()),  # Issued at time
+            }, 
+            expires_delta=access_token_expires
         )
+
+        logger.info(
+            f"Successful login: {user.username} (role: {user.role}) from {client_ip}"
+        )
+
+        return Token(access_token=access_token, token_type="bearer", user=user)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during login: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service temporarily unavailable"
         )
-
-    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-
-    return Token(access_token=access_token, token_type="bearer", user=user)
 
 
 # ---------------- Password Change ----------------
@@ -111,7 +163,6 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
-# SAML Authentication Routes
 # ---------------------------------------------------------------------------
 
 

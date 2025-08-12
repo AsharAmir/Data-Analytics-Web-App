@@ -18,13 +18,11 @@ const LoginPage: React.FC = () => {
   } = useForm<LoginFormData>();
 
   useEffect(() => {
-    // Check if user is already authenticated
     if (apiClient.isAuthenticated()) {
       router.push("/dashboard");
       return;
     }
 
-    // Get authentication mode
     const getAuthMode = async () => {
       try {
         const mode = await apiClient.getAuthMode();
@@ -40,40 +38,50 @@ const LoginPage: React.FC = () => {
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
     
-    // Ensure loading state is cleared after a maximum time to prevent hanging
+    // Much shorter timeout for better UX - 8 seconds max
     const loadingTimeout = setTimeout(() => {
       setLoading(false);
-      toast.error("Login request timed out. Please try again.");
-      logger.warn("Login loading timeout triggered");
-    }, 20000); // 20 second safety timeout
+      toast.error("Login is taking too long. Please try again.");
+      logger.warn("Login timeout - request took too long");
+    }, 8000);
 
     try {
       await apiClient.login(data);
       clearTimeout(loadingTimeout);
-      toast.success("Login successful!");
+      // Login successful - user will see dashboard page as confirmation
       router.push("/dashboard");
     } catch (error: unknown) {
       clearTimeout(loadingTimeout);
+      setLoading(false); // Immediately stop loading on error
+      
       logger.error("Login error", { error, username: data?.username });
       
       let errMessage = "Invalid username or password";
       
       if (error && typeof error === "object" && "response" in error) {
-        const responseError = error as { response?: { data?: { detail?: string } } };
-        errMessage = responseError.response?.data?.detail || errMessage;
+        const responseError = error as { response?: { data?: { detail?: string, message?: string } } };
+        // Handle different error response formats
+        errMessage = responseError.response?.data?.detail || 
+                    responseError.response?.data?.message || 
+                    errMessage;
       } else if (error instanceof Error) {
         if (error.message.includes("timeout")) {
-          errMessage = "Login request timed out. Please check your connection and try again.";
+          errMessage = "Connection timed out. Please check your internet connection.";
         } else if (error.message.includes("Network Error")) {
-          errMessage = "Network error. Please check your connection and try again.";
+          errMessage = "Cannot connect to server. Please check if the server is running.";
+        } else if (error.message.includes("429")) {
+          errMessage = "Too many login attempts. Please wait a few minutes and try again.";
         }
       }
       
-      toast.error(errMessage, { duration: 5000 });
-    } finally {
-      clearTimeout(loadingTimeout);
-      setLoading(false);
+      // Show error immediately
+      toast.error(errMessage, { duration: 4000 });
+      return; // Exit early, don't execute finally block
     }
+    
+    // Only clear loading if we got here successfully
+    clearTimeout(loadingTimeout);
+    setLoading(false);
   };
 
   const handleSamlLogin = () => {

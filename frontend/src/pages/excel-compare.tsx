@@ -46,11 +46,11 @@ const ExcelComparePage: React.FC = () => {
   React.useEffect(() => {
     const fetchMenuItems = async () => {
       try {
-        const response = await apiClient.get("/api/menu");
-        setMenuItems(response.data);
+        const response = await apiClient.getMenuItems();
+        setMenuItems(response);
+        logger.info("Menu items loaded for excel compare", { count: response.length });
       } catch (error) {
         logger.error("Error fetching menu for excel compare", { error });
-        toast.error("Failed to load menu");
       }
     };
 
@@ -90,12 +90,16 @@ const ExcelComparePage: React.FC = () => {
 
       const response = await apiClient.post("/api/excel-compare", formData, {
         headers: {
-          "Content-Type": "multipart/form-data",
+          'Content-Type': undefined, // Remove default Content-Type to let browser set multipart/form-data
         },
       });
 
-      if (response.data.success) {
-        const result = response.data.data;
+      // The response structure has:
+      // - response.success: API call success
+      // - response.data: comparison results (with its own success field for whether files matched)
+      
+      if (response.success) {
+        const result = response.data;
         setComparisonResult(result);
         
         logger.info("Excel comparison completed", {
@@ -104,7 +108,7 @@ const ExcelComparePage: React.FC = () => {
           hasResults: result.comparison_results?.length > 0
         });
         
-        // Provide more detailed success message
+        // Provide detailed success message based on comparison results
         const differences = result.total_sheets - result.matched_sheets;
         const message = differences === 0 
           ? `All ${result.total_sheets} sheets matched perfectly!` 
@@ -112,12 +116,40 @@ const ExcelComparePage: React.FC = () => {
         
         toast.success(message, { duration: 5000 });
       } else {
-        logger.error("Excel comparison API returned failure", { response: response.data });
-        toast.error("Comparison failed: " + response.data.message);
+        logger.error("Excel comparison API returned failure", { response: response });
+        const errorMsg = response.message || "Unknown error occurred";
+        toast.error("Comparison failed: " + errorMsg);
       }
     } catch (error: any) {
       logger.error("Excel comparison error", { error, file1Name: file1?.name, file2Name: file2?.name });
-      const errorMessage = error.response?.data?.detail || "Failed to compare Excel files";
+      
+      // Handle different error response formats
+      let errorMessage = "Failed to compare Excel files";
+      
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        
+        // Handle validation errors (array of error objects)
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((err: any) => {
+            if (typeof err === 'string') return err;
+            if (err.msg) return err.msg;
+            if (err.message) return err.message;
+            return JSON.stringify(err);
+          }).join('. ');
+        } 
+        // Handle string error messages
+        else if (typeof detail === 'string') {
+          errorMessage = detail;
+        }
+        // Handle object error messages
+        else if (detail.message) {
+          errorMessage = detail.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast.error(errorMessage);
     } finally {
       setComparing(false);

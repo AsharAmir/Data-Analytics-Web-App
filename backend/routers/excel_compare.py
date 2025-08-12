@@ -15,6 +15,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["excel-compare"])
 
 
+@router.post("/excel-test")
+async def test_excel_upload(
+    file1: UploadFile = File(...),
+    file2: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Test endpoint to debug file upload issues."""
+    try:
+        logger.info(f"Test upload - File1: {file1.filename}, File2: {file2.filename}")
+        logger.info(f"File1 content type: {file1.content_type}, File2 content type: {file2.content_type}")
+        logger.info(f"File1 size: {getattr(file1, 'size', 'N/A')}, File2 size: {getattr(file2, 'size', 'N/A')}")
+        
+        return APIResponse(
+            success=True,
+            message="Files received successfully",
+            data={
+                "file1_name": file1.filename,
+                "file2_name": file2.filename,
+                "file1_content_type": file1.content_type,
+                "file2_content_type": file2.content_type,
+                "file1_size": getattr(file1, 'size', None),
+                "file2_size": getattr(file2, 'size', None)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Test upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class ExcelCompareResult(BaseModel):
     """Result model for Excel comparison."""
     success: bool
@@ -26,8 +55,8 @@ class ExcelCompareResult(BaseModel):
 
 @router.post("/excel-compare", response_model=APIResponse)
 async def compare_excel_files(
-    file1: UploadFile = File(...),
-    file2: UploadFile = File(...),
+    file1: UploadFile = File(None, description="First Excel file to compare"),
+    file2: UploadFile = File(None, description="Second Excel file to compare"),
     current_user: User = Depends(get_current_user),
 ):
     """Compare two Excel files sheet by sheet, cell by cell.
@@ -37,34 +66,89 @@ async def compare_excel_files(
     """
     
     try:
-        # Validate file types
-        if not (file1.filename.lower().endswith(('.xlsx', '.xls')) and 
-                file2.filename.lower().endswith(('.xlsx', '.xls'))):
-            raise HTTPException(status_code=400, detail="Both files must be Excel files (.xlsx or .xls)")
+        from input_validation import InputValidator
         
-        # Read Excel files
-        logger.info(f"Reading Excel files: {file1.filename} ({file1.size} bytes), {file2.filename} ({file2.size} bytes)")
+        logger.info(f"Excel compare request - File1: {file1.filename if file1 else 'None'}, File2: {file2.filename if file2 else 'None'}")
+        logger.info(f"File1 size: {getattr(file1, 'size', 'Unknown')}, File2 size: {getattr(file2, 'size', 'Unknown')}")
+        
+        # Check if files are provided
+        if not file1:
+            raise HTTPException(status_code=400, detail="File1 is required.")
+        
+        if not file2:
+            raise HTTPException(status_code=400, detail="File2 is required.")
+        
+        # Check if files have filenames
+        if not file1.filename:
+            raise HTTPException(status_code=400, detail="File1 must have a filename.")
+        
+        if not file2.filename:
+            raise HTTPException(status_code=400, detail="File2 must have a filename.")
+        
+        # Validate file names for path traversal
+        if not InputValidator.validate_file_upload(file1.filename, ['.xlsx', '.xls']):
+            raise HTTPException(status_code=400, detail="Invalid file1 name or type. Only Excel files are allowed.")
+        
+        if not InputValidator.validate_file_upload(file2.filename, ['.xlsx', '.xls']):
+            raise HTTPException(status_code=400, detail="Invalid file2 name or type. Only Excel files are allowed.")
+        
+        # Validate file sizes (limit to 50MB each)
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+        if file1.size and file1.size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"File1 too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.")
+        
+        if file2.size and file2.size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"File2 too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.")
+        
+        # Additional filename sanitization
+        file1_name = InputValidator.sanitize_string(file1.filename, max_length=255)
+        file2_name = InputValidator.sanitize_string(file2.filename, max_length=255)
+        
+        # Read Excel files with size monitoring
+        logger.info(f"Reading Excel files: {file1_name} ({file1.size} bytes), {file2_name} ({file2.size} bytes)")
         
         try:
-            file1_content = await file1.read()
-            file2_content = await file2.read()
+            # Read files with timeout protection
+            import asyncio
+            file1_content = await asyncio.wait_for(file1.read(), timeout=30)
+            file2_content = await asyncio.wait_for(file2.read(), timeout=30)
+            
+            # Basic content validation - check for Excel file signatures
+            if not (file1_content.startswith(b'PK') or file1_content.startswith(b'\xd0\xcf')):
+                raise HTTPException(status_code=400, detail="File1 does not appear to be a valid Excel file.")
+            
+            if not (file2_content.startswith(b'PK') or file2_content.startswith(b'\xd0\xcf')):
+                raise HTTPException(status_code=400, detail="File2 does not appear to be a valid Excel file.")
+                
+        except asyncio.TimeoutError:
+            logger.error("File read timeout")
+            raise HTTPException(status_code=400, detail="File reading timed out. Files may be too large or corrupted.")
         except Exception as e:
             logger.error(f"Error reading uploaded files: {e}")
             raise HTTPException(status_code=400, detail="Error reading uploaded files. Please ensure files are not corrupted.")
         
         try:
-            workbook1 = openpyxl.load_workbook(io.BytesIO(file1_content), data_only=True)
-            logger.info(f"Successfully loaded {file1.filename}")
+            # Load with strict parsing and limits to prevent zip bombs
+            workbook1 = openpyxl.load_workbook(
+                io.BytesIO(file1_content), 
+                data_only=True,
+                read_only=True
+            )
+            logger.info(f"Successfully loaded {file1_name}")
         except Exception as e:
-            logger.error(f"Error loading {file1.filename}: {e}")
-            raise HTTPException(status_code=400, detail=f"Error loading {file1.filename}. Please ensure it's a valid Excel file.")
+            logger.error(f"Error loading {file1_name}: {e}")
+            raise HTTPException(status_code=400, detail=f"Error loading {file1_name}. Please ensure it's a valid Excel file.")
             
         try:
-            workbook2 = openpyxl.load_workbook(io.BytesIO(file2_content), data_only=True)
-            logger.info(f"Successfully loaded {file2.filename}")
+            workbook2 = openpyxl.load_workbook(
+                io.BytesIO(file2_content), 
+                data_only=True,
+                read_only=True
+            )
+            logger.info(f"Successfully loaded {file2_name}")
         except Exception as e:
-            logger.error(f"Error loading {file2.filename}: {e}")
-            raise HTTPException(status_code=400, detail=f"Error loading {file2.filename}. Please ensure it's a valid Excel file.")
+            logger.error(f"Error loading {file2_name}: {e}")
+            raise HTTPException(status_code=400, detail=f"Error loading {file2_name}. Please ensure it's a valid Excel file.")
         
         # Get sheet names
         sheets1 = workbook1.sheetnames

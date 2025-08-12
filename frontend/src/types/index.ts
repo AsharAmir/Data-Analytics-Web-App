@@ -1,4 +1,3 @@
-// User and Authentication Types
 export enum UserRole {
   ADMIN = "admin",
   CEO = "CEO",

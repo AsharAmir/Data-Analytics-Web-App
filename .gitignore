@@ -4,3 +4,5 @@
 /frontend/node_modules
 *.log
 /node_modules
+/backend/logs
+backend/comprehensive_security_test.py
