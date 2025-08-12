@@ -11,6 +11,22 @@ import { toast } from "react-hot-toast";
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const [isAuthorizing, setIsAuthorizing] = useState(true);
+  const [lastToastMessage, setLastToastMessage] = useState<string>("");
+  const [lastToastTime, setLastToastTime] = useState<number>(0);
+
+  // Function to show toast only if it hasn't been shown recently (within 3 seconds)
+  const showDedupedToast = (message: string) => {
+    const now = Date.now();
+    const timeSinceLastToast = now - lastToastTime;
+    const isDuplicateMessage = lastToastMessage === message;
+    
+    // Only show toast if it's a different message OR it's been more than 3 seconds
+    if (!isDuplicateMessage || timeSinceLastToast > 3000) {
+      toast.error(message);
+      setLastToastMessage(message);
+      setLastToastTime(now);
+    }
+  };
 
   useEffect(() => {
     const enhancedSecurityGuard = async (url: string) => {
@@ -59,13 +75,13 @@ export default function App({ Component, pageProps }: AppProps) {
             role: user?.role 
           });
           
-          // Show appropriate error message
+          // Show appropriate error message (with deduplication)
           if (pathname.startsWith("/report/")) {
-            toast.error("Access denied: You don't have permission to view this report");
+            showDedupedToast("Access denied: You don't have permission to view this report");
           } else if (pathname.startsWith("/admin")) {
-            toast.error("Access denied: Admin privileges required");
+            showDedupedToast("Access denied: Admin privileges required");
           } else {
-            toast.error("Access denied: Insufficient permissions");
+            showDedupedToast("Access denied: Insufficient permissions");
           }
           
           securityManager.handleUnauthorizedAccess(router, pathname);

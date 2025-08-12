@@ -65,7 +65,7 @@ const ReportDetailPage: React.FC = () => {
       } else if (err?.response?.status === 403) {
         logger.warn("Access denied to report", { reportId: id, userRole: apiClient.getUser()?.role });
         setError("You are not authorized to view this report");
-        toast.error("Access denied: You don't have permission to view this report");
+        // Don't show toast here - security guard in _app.tsx handles access denied notifications
       } else if (err?.response?.status === 404) {
         logger.warn("Report not found", { reportId: id });
         setError("Report not found");
@@ -115,9 +115,7 @@ const ReportDetailPage: React.FC = () => {
       setChartData(response);
     } catch (err: any) {
       logger.error("Error loading chart data", { error: err, reportId });
-      if (err?.response?.status === 403) {
-        toast.error("Access denied: You don't have permission to view this chart data");
-      }
+      // Don't show toast here - security guard in _app.tsx handles access denied messages
     }
   };
 
@@ -132,9 +130,7 @@ const ReportDetailPage: React.FC = () => {
       setTableData(response);
     } catch (err: any) {
       logger.error("Error loading table data", { error: err, reportId });
-      if (err?.response?.status === 403) {
-        toast.error("Access denied: You don't have permission to view this table data");
-      }
+      // Don't show toast here - security guard in _app.tsx handles access denied messages
     }
   };
 
