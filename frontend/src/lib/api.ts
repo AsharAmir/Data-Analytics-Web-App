@@ -19,11 +19,59 @@ import {
 } from "../types";
 import { Role } from "../types";
 
+// Activity Tracker for monitoring user interactions
+class ActivityTracker {
+  private callback: () => void;
+  private events: string[] = [
+    'mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'
+  ];
+  private throttleDelay: number = 30000; // 30 seconds throttle
+  private lastTrigger: number = 0;
+
+  constructor(callback: () => void) {
+    this.callback = callback;
+  }
+
+  private handleActivity = (): void => {
+    const now = Date.now();
+    
+    // Throttle activity updates to avoid excessive calls
+    if (now - this.lastTrigger > this.throttleDelay) {
+      this.lastTrigger = now;
+      this.callback();
+      logger.debug("User activity detected");
+    }
+  };
+
+  start(): void {
+    if (typeof window === "undefined") return;
+    
+    this.events.forEach(event => {
+      window.addEventListener(event, this.handleActivity, { passive: true });
+    });
+    
+    logger.debug("Activity tracker started");
+  }
+
+  stop(): void {
+    if (typeof window === "undefined") return;
+    
+    this.events.forEach(event => {
+      window.removeEventListener(event, this.handleActivity);
+    });
+    
+    logger.debug("Activity tracker stopped");
+  }
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
   private refreshTimer: NodeJS.Timeout | null = null;
+  private activityTracker: ActivityTracker | null = null;
+  private lastActivity: number = Date.now();
+  private isRefreshing: boolean = false;
   /**
    * Helper to unwrap our standard APIResponse envelope and return the contained
    * `data` field. Falls back gracefully when the backend returns the raw data
@@ -68,6 +116,9 @@ class ApiClient {
         
         // Add timestamp for request freshness validation
         config.headers["X-Timestamp"] = new Date().toISOString();
+        
+        // Track API requests as user activity
+        this.lastActivity = Date.now();
         
         return config;
       },
@@ -237,11 +288,20 @@ class ApiClient {
     
     // Only set up refresh if we have a valid token
     if (this.isAuthenticated() && this.getToken()) {
+      // Set up activity tracking if not already done
+      if (!this.activityTracker) {
+        this.activityTracker = new ActivityTracker(() => {
+          this.lastActivity = Date.now();
+        });
+        this.activityTracker.start();
+      }
+      
       // RACE CONDITION FIX: Check if timer is already set to prevent duplicates
       if (this.refreshTimer === null) {
+        // Check for refresh more frequently but only refresh for active users
         this.refreshTimer = setTimeout(() => {
-          this.refreshToken();
-        }, 25 * 60 * 1000); // 25 minutes
+          this.checkAndRefreshToken();
+        }, 20 * 60 * 1000); // Check every 20 minutes
       }
     }
   }
@@ -251,26 +311,63 @@ class ApiClient {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    
+    if (this.activityTracker) {
+      this.activityTracker.stop();
+      this.activityTracker = null;
+    }
+  }
+
+  private async checkAndRefreshToken(): Promise<void> {
+    const now = Date.now();
+    const timeSinceActivity = now - this.lastActivity;
+    const inactivityThreshold = 10 * 60 * 1000; // 10 minutes of inactivity
+    
+    // If user has been inactive for too long, don't refresh and let them get logged out naturally
+    if (timeSinceActivity > inactivityThreshold) {
+      logger.info("User inactive for too long, skipping token refresh", { 
+        timeSinceActivity: Math.round(timeSinceActivity / 1000 / 60) + " minutes" 
+      });
+      // Set up next check in case they become active again
+      this.setupTokenRefresh();
+      return;
+    }
+    
+    // User is active, refresh the token
+    await this.refreshToken();
   }
 
   private async refreshToken(): Promise<void> {
+    if (this.isRefreshing) {
+      logger.debug("Token refresh already in progress, skipping");
+      return;
+    }
+    
+    this.isRefreshing = true;
+    
     try {
+      logger.info("Refreshing token for active user");
       const response = await this.client.post<AuthToken>("/auth/refresh");
       const { access_token, user } = response.data;
       
       this.setToken(access_token);
       this.setUser(user);
       
+      // Update last activity since refresh is a sign of usage
+      this.lastActivity = Date.now();
+      
       // Set up next refresh
       this.setupTokenRefresh();
       
       logger.info("Token refreshed successfully");
-    } catch {
-      logger.warn("Token refresh failed, redirecting to login");
+    } catch (error) {
+      logger.warn("Token refresh failed, redirecting to login", { error });
       this.removeToken();
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -598,6 +695,12 @@ class ApiClient {
     return !!this.getToken();
   }
 
+  // Manual activity update method
+  updateActivity(): void {
+    this.lastActivity = Date.now();
+    logger.debug("Activity updated manually");
+  }
+
   async downloadFile(url: string, filename: string): Promise<void> {
     try {
       const response = await this.client.get(url, {
@@ -765,6 +868,7 @@ export const {
   getReportsByMenu,
   isAuthenticated,
   getUser,
+  updateActivity,
   downloadFile,
   getQueryDetail,
   updateUser,

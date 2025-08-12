@@ -57,6 +57,8 @@ export default function App({ Component, pageProps }: AppProps) {
         const user = apiClient.getUser();
         if (user) {
           securityManager.setUser(user);
+          // Update activity on user interaction
+          apiClient.updateActivity();
         }
 
         // Force password change if required
