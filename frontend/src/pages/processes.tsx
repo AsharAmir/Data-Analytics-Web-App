@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { toast } from "react-hot-toast";
 import { PlayIcon, DocumentTextIcon, CalendarIcon, ChevronDownIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import Sidebar from "../components/Layout/Sidebar";
 import RunProcessModal from "../components/Processes/RunProcessModal";
 import apiClient from "../lib/api";
-import { Process, User } from "../types";
+import { Process } from "../types";
 
 const ProcessesPage: React.FC = () => {
   const router = useRouter();
@@ -16,17 +16,31 @@ const ProcessesPage: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuItems, setMenuItems] = useState([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
 
-  useEffect(() => {
-    checkUserAccess();
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [processesRes, menuRes] = await Promise.all([
+        apiClient.listProcesses(),
+        apiClient.getMenuItems(),
+      ]);
+      
+      setProcesses(Array.isArray(processesRes) ? processesRes : (processesRes as any)?.data ?? []);
+      setMenuItems(Array.isArray(menuRes) ? menuRes : (menuRes as any)?.data ?? []);
+    } catch (error) {
+      toast.error("Failed to load processes");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const checkUserAccess = async () => {
+  const checkUserAccess = useCallback(async () => {
     try {
       const user = apiClient.getUser();
-      setCurrentUser(user);
+      // setCurrentUser(user);
       
       // The backend will filter processes based on role
       if (!user) {
@@ -41,25 +55,11 @@ const ProcessesPage: React.FC = () => {
       setAccessDenied(true);
       setLoading(false);
     }
-  };
+  }, [loadData]);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [processesRes, menuRes] = await Promise.all([
-        apiClient.listProcesses(),
-        apiClient.getMenuItems(),
-      ]);
-      
-      setProcesses(processesRes?.data ?? processesRes ?? []);
-      setMenuItems((menuRes as any)?.data ?? menuRes ?? []);
-    } catch (error) {
-      toast.error("Failed to load processes");
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    checkUserAccess();
+  }, [checkUserAccess]);
 
   const handleRunProcess = async (params: Record<string, any>) => {
     if (!selectedProcess) return;
@@ -133,7 +133,7 @@ const ProcessesPage: React.FC = () => {
               <ExclamationTriangleIcon className="mx-auto h-12 w-12 text-red-400" />
               <h3 className="mt-2 text-lg font-medium text-gray-900">Access Denied</h3>
               <p className="mt-1 text-sm text-gray-500">
-                You don't have permission to access processes. Contact your administrator.
+                You don&apos;t have permission to access processes. Contact your administrator.
               </p>
               <div className="mt-6">
                 <button

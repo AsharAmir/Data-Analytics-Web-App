@@ -3,7 +3,7 @@ import "../styles/globals.css";
 import { Toaster } from "react-hot-toast";
 import { useRouter } from "next/router";
 import apiClient from "../lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { securityManager } from "../lib/security";
 import { logger } from "../lib/logger";
 import { toast } from "react-hot-toast";
@@ -15,7 +15,7 @@ export default function App({ Component, pageProps }: AppProps) {
   const [lastToastTime, setLastToastTime] = useState<number>(0);
 
   // Function to show toast only if it hasn't been shown recently (within 3 seconds)
-  const showDedupedToast = (message: string) => {
+  const showDedupedToast = useCallback((message: string) => {
     const now = Date.now();
     const timeSinceLastToast = now - lastToastTime;
     const isDuplicateMessage = lastToastMessage === message;
@@ -26,7 +26,7 @@ export default function App({ Component, pageProps }: AppProps) {
       setLastToastMessage(message);
       setLastToastTime(now);
     }
-  };
+  }, [lastToastMessage, lastToastTime]);
 
   useEffect(() => {
     const enhancedSecurityGuard = async (url: string) => {
@@ -107,7 +107,7 @@ export default function App({ Component, pageProps }: AppProps) {
     return () => {
       router.events.off("routeChangeStart", handleRouteChangeStart);
     };
-  }, [router]);
+  }, [router, showDedupedToast]);
   useEffect(() => {
     const rejectionHandler = (event: PromiseRejectionEvent) => {
       const reason: any = event.reason;

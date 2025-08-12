@@ -57,7 +57,7 @@ class ApiClient {
     this.client.interceptors.request.use(
       (config) => {
         const token = this.getToken();
-        logger.debug("API →", config.method?.toUpperCase(), config.url);
+        logger.debug(`API → ${config.method?.toUpperCase()} ${config.url}`);
         
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
@@ -80,12 +80,7 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        logger.debug(
-          "API ←",
-          response.config.method?.toUpperCase(),
-          response.config.url,
-          response.status,
-        );
+        logger.debug(`API ← ${response.config.method?.toUpperCase()} ${response.config.url} ${response.status}`);
         return response;
       },
       (error) => {
@@ -270,7 +265,7 @@ class ApiClient {
       this.setupTokenRefresh();
       
       logger.info("Token refreshed successfully");
-    } catch (error) {
+    } catch {
       logger.warn("Token refresh failed, redirecting to login");
       this.removeToken();
       if (typeof window !== "undefined") {

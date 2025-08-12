@@ -13,8 +13,6 @@ interface ProcessFormModalProps {
   availableRoles: string[];
 }
 
-const inputTypeOptions: ParameterInputType[] = ["text", "dropdown", "date"];
-
 const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
   isOpen,
   onClose,

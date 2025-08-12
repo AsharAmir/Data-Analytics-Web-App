@@ -38,12 +38,12 @@ const LoginPage: React.FC = () => {
   const onSubmit = async (data: LoginFormData) => {
     setLoading(true);
     
-    // Much shorter timeout for better UX - 8 seconds max
+    // Optimized timeout for better UX - 5 seconds max  
     const loadingTimeout = setTimeout(() => {
       setLoading(false);
       toast.error("Login is taking too long. Please try again.");
       logger.warn("Login timeout - request took too long");
-    }, 8000);
+    }, 5000);
 
     try {
       await apiClient.login(data);

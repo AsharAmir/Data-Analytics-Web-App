@@ -296,7 +296,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       path: "/excel-compare",
       icon: ExcelCompareIcon,
     },
-    ...(currentUser && (currentUser.role === "admin" || currentUser.role === "process_manager")
+    ...(currentUser && (currentUser.role === "admin" || currentUser.role === "IT_USER" || currentUser.role === "TECH_USER")
       ? [
           {
             name: "Processes",
@@ -362,8 +362,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       (currentPath === "/reports" &&
         router.query.menu === item.id.toString()) ||
       (currentPath === "/dashboard" &&
-        router.query.menu === item.id.toString()) ||
-      (currentPath === "/excel-compare" && item.type === "excel-compare");
+        router.query.menu === item.id.toString());
 
     const IconComponent = getMenuItemIcon(item);
 

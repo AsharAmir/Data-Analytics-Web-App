@@ -253,7 +253,7 @@ const AdminPage: React.FC = () => {
           (queriesRes as Query[]) ??
           [],
       );
-      setProcesses(processesRes?.data ?? processesRes ?? []);
+      setProcesses(processesRes ?? []);
       setWidgets(
         (widgetsRes as { data?: Widget[] }).data ??
           (widgetsRes as Widget[]) ??

@@ -61,7 +61,8 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
       await apiClient.deleteProcess(id);
       toast.success("Process deleted");
       loadData();
-    } catch (err) {
+    } catch (error) {
+      console.error("Error deleting process:", error);
       toast.error("Failed to delete process");
     }
   };

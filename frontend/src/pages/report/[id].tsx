@@ -78,7 +78,7 @@ const ReportDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, router]);
 
   useEffect(() => {
     if (!apiClient.isAuthenticated()) {

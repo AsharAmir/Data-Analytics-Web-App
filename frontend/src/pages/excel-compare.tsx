@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { useRouter } from "next/router";
 import Sidebar from "../components/Layout/Sidebar";
 import { MenuItem } from "../types";
 import { toast } from "react-hot-toast";
@@ -30,8 +29,6 @@ interface ExcelCompareResponse {
 }
 
 const ExcelComparePage: React.FC = () => {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -94,12 +91,8 @@ const ExcelComparePage: React.FC = () => {
         },
       });
 
-      // The response structure has:
-      // - response.success: API call success
-      // - response.data: comparison results (with its own success field for whether files matched)
-      
-      if (response.success) {
-        const result = response.data;
+      if ((response as any).success) {
+        const result = (response as any).data;
         setComparisonResult(result);
         
         logger.info("Excel comparison completed", {
@@ -117,7 +110,7 @@ const ExcelComparePage: React.FC = () => {
         toast.success(message, { duration: 5000 });
       } else {
         logger.error("Excel comparison API returned failure", { response: response });
-        const errorMsg = response.message || "Unknown error occurred";
+        const errorMsg = (response as any).message || "Unknown error occurred";
         toast.error("Comparison failed: " + errorMsg);
       }
     } catch (error: any) {

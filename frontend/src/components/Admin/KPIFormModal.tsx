@@ -34,6 +34,7 @@ interface ValidationErrors {
 
 const roleDisplayNames: Record<UserRole, string> = {
   [UserRole.ADMIN]: "Admin",
+  [UserRole.IT_USER]: "IT User",
   [UserRole.CEO]: "CEO",
   [UserRole.FINANCE_USER]: "Finance",
   [UserRole.TECH_USER]: "Tech",
