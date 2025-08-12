@@ -375,10 +375,16 @@ class ApiClient {
     try {
       logger.info("Attempting password change");
       
+      const user = this.getUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
       const response: AxiosResponse<APIResponse> = await this.client.post(
         "/auth/change-password",
         {
-          current_password: currentPassword,
+          username: user.username,
+          password: currentPassword,
           new_password: newPassword,
         }
       );

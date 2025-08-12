@@ -63,6 +63,17 @@ const ChangePasswordPage: React.FC = () => {
       
       await apiClient.changePassword(oldPassword, newPassword);
       
+      // Refresh user data to update must_change_password status
+      try {
+        const updatedUser = await apiClient.getCurrentUser();
+        logger.info("User data refreshed after password change", { 
+          mustChangePassword: updatedUser.must_change_password 
+        });
+      } catch (refreshError) {
+        logger.warn("Failed to refresh user data after password change", { error: refreshError });
+        // Continue anyway since password was changed successfully
+      }
+      
       toast.success("Password changed successfully!");
       logger.info("Password change successful, redirecting to dashboard");
       router.push("/dashboard");
@@ -81,7 +92,20 @@ const ChangePasswordPage: React.FC = () => {
       } else if (err?.response?.status === 401) {
         errorMessage = "Current password is incorrect";
       } else if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
+        const detail = err.response.data.detail;
+        // Handle FastAPI validation errors (array of objects)
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((error: any) => {
+            if (typeof error === 'string') return error;
+            if (error.msg) return error.msg;
+            if (error.message) return error.message;
+            return 'Validation error';
+          }).join('. ');
+        } else if (typeof detail === 'string') {
+          errorMessage = detail;
+        } else {
+          errorMessage = 'Validation error occurred';
+        }
       }
       
       setError(errorMessage);
