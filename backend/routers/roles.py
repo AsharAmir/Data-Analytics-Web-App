@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/roles", tags=["roles"])
 
-SYSTEM_ROLES = {"ADMIN", "CEO", "FINANCE_USER", "TECH_USER", "USER"}  # must stay in sync with enum / DB init
+SYSTEM_ROLES = {"ADMIN", "IT_USER", "CEO", "FINANCE_USER", "TECH_USER", "USER"}  # must stay in sync with enum / DB init
 
 
 # -----------------------------------------------------------------------------

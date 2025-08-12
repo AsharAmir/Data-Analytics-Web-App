@@ -314,7 +314,7 @@ def init_database():
                 logger.warning(f"Table creation warning for {table_name}: {e}")
         try:
             # Initialize all system roles from the frontend enum
-            system_roles = ["ADMIN", "CEO", "FINANCE_USER", "TECH_USER", "USER"]
+            system_roles = ["ADMIN", "IT_USER", "CEO", "FINANCE_USER", "TECH_USER", "USER"]
             
             for sys_role in system_roles:
                 try:

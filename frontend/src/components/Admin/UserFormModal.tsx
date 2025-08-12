@@ -27,6 +27,7 @@ interface ValidationErrors {
 
 const roleDisplayNames: Record<string, string> = {
   [UserRole.ADMIN]: "Admin",
+  [UserRole.IT_USER]: "IT User",
   [UserRole.CEO]: "CEO",
   [UserRole.FINANCE_USER]: "Finance",
   [UserRole.TECH_USER]: "Tech",
@@ -35,7 +36,8 @@ const roleDisplayNames: Record<string, string> = {
 
 const roleDescriptions: Record<string, string> = {
   [UserRole.ADMIN]: "Full system access and user management",
-  [UserRole.CEO]: "Executive dashboards and reports",
+  [UserRole.IT_USER]: "IT infrastructure and system administration",
+  [UserRole.CEO]: "Executive dashboards and reports", 
   [UserRole.FINANCE_USER]: "Financial data and analytics",
   [UserRole.TECH_USER]: "Technical metrics and system data",
   [UserRole.USER]: "Basic access to assigned dashboards",
