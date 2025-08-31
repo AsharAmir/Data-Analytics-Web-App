@@ -7,7 +7,7 @@ import {
 import { toast } from "react-hot-toast";
 import apiClient from "../../lib/api";
 import UserFormModal from "./UserFormModal";
-import { UserRole } from "../../types";
+import { formatRoleLabel, normalizeRoleCode } from "../../lib/roles";
 
 interface AdminUser {
   id: number;
@@ -35,7 +35,6 @@ interface UsersTabProps {
   setEditingUserId: React.Dispatch<React.SetStateAction<number | null>>;
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   allRolesList: string[];
-  roleDisplayNames: Record<UserRole, string>;
   loadData: () => void;
 }
 
@@ -49,7 +48,6 @@ const UsersTab: React.FC<UsersTabProps> = ({
   setEditingUserId,
   setLoading,
   allRolesList,
-  roleDisplayNames,
   loadData,
 }) => {
   return (
@@ -103,7 +101,7 @@ const UsersTab: React.FC<UsersTabProps> = ({
                   {user.is_active ? "Yes" : "No"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {roleDisplayNames[user.role as UserRole] || user.role}
+                  {formatRoleLabel(user.role)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {new Date(user.created_at).toLocaleDateString()}
@@ -165,11 +163,11 @@ const UsersTab: React.FC<UsersTabProps> = ({
             try {
               setLoading(true);
               if (editingUserId) {
-                const payload = { ...userForm, role: (userForm.role || '').toUpperCase() } as any;
+                const payload = { ...userForm, role: normalizeRoleCode(userForm.role) } as any;
                 await apiClient.updateUser(editingUserId, payload);
                 toast.success("User updated successfully");
               } else {
-                const payload = { ...userForm, role: (userForm.role || '').toUpperCase() } as any;
+                const payload = { ...userForm, role: normalizeRoleCode(userForm.role) } as any;
                 await apiClient.post("/api/admin/user", payload);
                 toast.success("User created successfully");
               }

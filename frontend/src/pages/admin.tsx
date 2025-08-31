@@ -11,7 +11,8 @@ import {
 } from "@heroicons/react/24/outline";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Layout/Sidebar";
-import { MenuItem, UserRole, Role } from "../types";
+import { MenuItem, Role } from "../types";
+import { SYSTEM_ROLE_CODES, formatRoleLabel, normalizeRoleCode } from "../lib/roles";
 import MenuFormModal from "../components/Admin/MenuFormModal";
 import ProcessesTab from "../components/Admin/ProcessesTab";
 import WidgetsTab from "../components/Admin/WidgetsTab";
@@ -61,14 +62,7 @@ interface AdminUser {
   role: string; // allow dynamic roles from backend
 }
 
-const roleDisplayNames: Record<UserRole, string> = {
-  [UserRole.ADMIN]: "Admin",
-  [UserRole.IT_USER]: "IT User", 
-  [UserRole.CEO]: "CEO",
-  [UserRole.FINANCE_USER]: "Finance",
-  [UserRole.TECH_USER]: "Tech", 
-  [UserRole.USER]: "User",
-};
+// Role labels are now sourced from lib/roles via formatRoleLabel
 
 const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
@@ -103,7 +97,7 @@ const AdminPage: React.FC = () => {
     chart_config: {},
     menu_item_id: null as number | null,
     menu_item_ids: [] as number[],
-    role: [] as UserRole[],
+    role: [] as string[],
   });
   const [widgetForm, setWidgetForm] = useState({
     title: "",
@@ -130,7 +124,7 @@ const AdminPage: React.FC = () => {
     description: "",
     sql_query: "",
     menu_item_id: null as number | null,
-    role: [] as UserRole[],
+    role: [] as string[],
   });
   const [showMenuForm, setShowMenuForm] = useState(false);
   const [editingMenuId, setEditingMenuId] = useState<number | null>(null);
@@ -140,7 +134,7 @@ const AdminPage: React.FC = () => {
     icon: "",
     parent_id: null as number | null,
     sort_order: 0,
-    role: [] as UserRole[],
+    role: [] as string[],
   });
   const [processForm, setProcessForm] = useState({
     name: "",
@@ -159,7 +153,7 @@ const AdminPage: React.FC = () => {
   // Helper lists for role dropdowns
   // Merge backend role names with fixed enum roles, case-insensitive de-dupe preferring backend
   const backendRoleNames = roles.map((r) => r.name);
-  const enumRoleNames = Object.values(UserRole).filter(
+  const enumRoleNames = SYSTEM_ROLE_CODES.filter(
     (er) => !backendRoleNames.some((br) => br.toLowerCase() === er.toLowerCase()),
   );
   
@@ -178,7 +172,7 @@ const AdminPage: React.FC = () => {
   const combinedRoles = [...backendRoleNames, ...enumRoleNames, ...queryRoles];
   // Canonicalize roles to uppercase for consistent UX and de-duplication
   const allRolesList = combinedRoles
-    .map((r) => r.toUpperCase())
+    .map((r) => normalizeRoleCode(r))
     .filter((role, index, arr) => arr.indexOf(role) === index);
 
   // For reassignment modal exclude only the role being deleted
@@ -286,8 +280,8 @@ const AdminPage: React.FC = () => {
       // Normalize roles before sending to backend
       const normalizedQueryForm = {
         ...queryForm,
-        // Uppercase all roles for backend storage consistency
-        role: queryForm.role.map((role) => (typeof role === 'string' ? role.toUpperCase() : (role as any).toUpperCase?.() || (role as any)))
+        // Normalize all roles for backend storage consistency
+        role: queryForm.role.map((role) => normalizeRoleCode(role))
       };
       
       if (editingQueryId) {
@@ -517,7 +511,7 @@ const AdminPage: React.FC = () => {
       // Uppercase roles before submitting
       const payload = {
         ...menuForm,
-        role: (menuForm.role || []).map((r) => r.toUpperCase()),
+        role: (menuForm.role || []).map((r) => normalizeRoleCode(r)),
       };
       if (editingMenuId) {
         await apiClient.put(`/api/admin/menu/${editingMenuId}`, payload);
@@ -599,7 +593,7 @@ const AdminPage: React.FC = () => {
 
   const createOrUpdateKpi = async () => {
     try {
-      const kpiPayload = { ...kpiForm, role: kpiForm.role.map((r) => (typeof r === 'string' ? r.toUpperCase() : (r as any))) };
+      const kpiPayload = { ...kpiForm, role: kpiForm.role.map((r) => normalizeRoleCode(r as any)) };
       if (editingKpiId) {
         await apiClient.put(`/api/admin/kpi/${editingKpiId}`, kpiPayload);
         toast.success("KPI updated successfully!");
@@ -855,7 +849,6 @@ const AdminPage: React.FC = () => {
               setEditingQueryId={setEditingQueryId}
               allMenuItems={allMenuItems}
               allRolesList={allRolesList}
-              roleDisplayNames={roleDisplayNames}
               createOrUpdateQuery={createOrUpdateQuery}
               loadData={loadData}
             />
@@ -873,7 +866,6 @@ const AdminPage: React.FC = () => {
               setEditingKpiId={setEditingKpiId}
               allMenuItems={allMenuItems}
               allRolesList={allRolesList}
-              roleDisplayNames={roleDisplayNames}
               createOrUpdateKpi={createOrUpdateKpi}
               deleteKpi={deleteKpi}
               loadData={loadData}
@@ -892,7 +884,6 @@ const AdminPage: React.FC = () => {
               setEditingUserId={setEditingUserId}
               setLoading={setLoading}
               allRolesList={allRolesList}
-              roleDisplayNames={roleDisplayNames}
               loadData={loadData}
             />
           )}
@@ -1016,7 +1007,7 @@ const AdminPage: React.FC = () => {
                                     key={role}
                                     className="inline-flex px-2 py-1 text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800"
                                   >
-                                    {roleDisplayNames[role as UserRole] || role}
+                                    {formatRoleLabel(role as string)}
                                   </span>
                                 ))
                               ) : (

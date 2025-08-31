@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UserRole } from "../../types";
+import { formatRoleLabel, normalizeRoleCode } from "../../lib/roles";
 import {
   XMarkIcon,
   PlayIcon,
@@ -18,7 +18,7 @@ interface QueryForm {
   chart_config: Record<string, unknown>;
   menu_item_id: number | null;
   menu_item_ids: number[];
-  role: UserRole[];
+  role: string[];
 }
 
 interface MenuItemOption {
@@ -33,14 +33,7 @@ interface ValidationErrors {
   dashboard?: string;
 }
 
-const roleDisplayNames: Record<UserRole, string> = {
-  [UserRole.ADMIN]: "Admin",
-  [UserRole.IT_USER]: "IT User",
-  [UserRole.CEO]: "CEO", 
-  [UserRole.FINANCE_USER]: "Finance",
-  [UserRole.TECH_USER]: "Tech",
-  [UserRole.USER]: "User",
-};
+// Role labels handled via formatRoleLabel from lib/roles
 
 const chartTypeOptions = [
   { value: "bar", label: "Bar Chart", icon: "📊" },
@@ -578,8 +571,8 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {availableRoles.map((role) => {
                     // Check if this role is currently selected (case-insensitive)
-                    const isSelected = queryForm.role.some(selectedRole => 
-                      selectedRole.toLowerCase() === role.toLowerCase()
+                    const isSelected = queryForm.role.some(
+                      (selectedRole) => selectedRole.toLowerCase() === role.toLowerCase(),
                     );
                     
                     return (
@@ -598,25 +591,25 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                           onChange={() => {
                             setQueryForm((prev) => {
                               // Case-insensitive role management
-                              const hasRole = prev.role.some(selectedRole => 
-                                selectedRole.toLowerCase() === role.toLowerCase()
+                              const hasRole = prev.role.some(
+                                (selectedRole) => selectedRole.toLowerCase() === role.toLowerCase(),
                               );
                               
                               if (hasRole) {
                                 // Remove the role (case-insensitive)
-                                const newRoles = prev.role.filter(selectedRole => 
-                                  selectedRole.toLowerCase() !== role.toLowerCase()
+                                const newRoles = prev.role.filter(
+                                  (selectedRole) => selectedRole.toLowerCase() !== role.toLowerCase(),
                                 );
                                 return { ...prev, role: newRoles };
                               } else {
-                                // Add the role (use the format from availableRoles)
-                                return { ...prev, role: [...prev.role, role as UserRole] };
+                                // Add the role (normalized)
+                                return { ...prev, role: [...prev.role, normalizeRoleCode(role)] };
                               }
                             });
                           }}
                         />
                         <span className="text-gray-800 font-medium">
-                          {roleDisplayNames[role as UserRole] || role}
+                          {formatRoleLabel(role)}
                         </span>
                       </label>
                     );

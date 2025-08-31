@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UserRole } from "../../types";
+import { formatRoleLabel, normalizeRoleCode } from "../../lib/roles";
 import {
   XMarkIcon,
   PlayIcon,
@@ -18,7 +18,7 @@ interface KPIForm {
   description: string;
   sql_query: string;
   menu_item_id: number | null;
-  role: UserRole[];
+  role: string[];
 }
 
 interface MenuItemOption {
@@ -32,14 +32,7 @@ interface ValidationErrors {
   role?: string;
 }
 
-const roleDisplayNames: Record<UserRole, string> = {
-  [UserRole.ADMIN]: "Admin",
-  [UserRole.IT_USER]: "IT User",
-  [UserRole.CEO]: "CEO",
-  [UserRole.FINANCE_USER]: "Finance",
-  [UserRole.TECH_USER]: "Tech",
-  [UserRole.USER]: "User",
-};
+// Labels now provided by formatRoleLabel from lib/roles
 
 interface KPIFormModalProps {
   visible: boolean;
@@ -552,19 +545,20 @@ const KPIFormModal: React.FC<KPIFormModalProps> = ({
                       <label
                         key={role}
                         className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                          kpiForm.role.includes(role as UserRole)
+                          kpiForm.role.includes(role)
                             ? "border-blue-500 bg-blue-50"
                             : "border-gray-200 hover:border-gray-300"
                         }`}
                       >
                         <input
                           type="checkbox"
-                          checked={kpiForm.role.includes(role as UserRole)}
+                          checked={kpiForm.role.includes(role)}
                           onChange={() => {
                             setKpiForm((prev) => {
-                              const newRoles = prev.role.includes(role as UserRole)
-                                ? prev.role.filter((r) => r !== role as UserRole)
-                                : [...prev.role, role as UserRole];
+                              const normalized = normalizeRoleCode(role);
+                              const newRoles = prev.role.includes(normalized)
+                                ? prev.role.filter((r) => r !== normalized)
+                                : [...prev.role, normalized];
                               return { ...prev, role: newRoles };
                             });
                           }}
@@ -572,7 +566,7 @@ const KPIFormModal: React.FC<KPIFormModalProps> = ({
                         />
                         <div>
                           <div className="font-medium text-gray-900">
-                            {roleDisplayNames[role as UserRole] || role}
+                            {formatRoleLabel(role)}
                           </div>
                         </div>
                       </label>
@@ -613,7 +607,7 @@ const KPIFormModal: React.FC<KPIFormModalProps> = ({
                           key={role}
                           className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
                         >
-                          {roleDisplayNames[role as UserRole] || role}
+                          {formatRoleLabel(role)}
                         </span>
                       ))
                     ) : (

@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback, useState } from "react";
+import { formatRoleLabel } from "../../lib/roles";
 
 interface MenuForm {
   name: string;
@@ -41,10 +42,7 @@ const MenuFormModal: React.FC<MenuFormModalProps> = ({
     () =>
       availableRoles.map((role) => ({
         value: role,
-        label: role
-          .replace(/_/g, " ")
-          .toLowerCase()
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        label: formatRoleLabel(role),
       })),
     [availableRoles],
   );

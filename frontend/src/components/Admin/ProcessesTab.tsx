@@ -4,6 +4,7 @@ import { toast } from "react-hot-toast";
 import ProcessFormModal from "./ProcessFormModal";
 import apiClient from "../../lib/api";
 import { Process } from "../../types";
+import { normalizeRoleCode } from "../../lib/roles";
 
 interface ProcessFormState {
   name: string;
@@ -40,7 +41,7 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
     try {
       const payload = {
         ...processForm,
-        role: (processForm.role || []).map((r) => r.toUpperCase()),
+        role: (processForm.role || []).map((r) => normalizeRoleCode(r)),
       } as any;
       if (editingProcessId) {
         await apiClient.updateProcess(editingProcessId, payload);
@@ -108,7 +109,7 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
                         description: p.description,
                         script_path: p.script_path,
                         parameters: p.parameters || [],
-                        role: typeof p.role === "string" ? (p.role as any).split(",") : (p.role as any) || [],
+                        role: typeof p.role === "string" ? (p.role as any).split(",").map((r: string) => normalizeRoleCode(r)) : (p.role as any) || [],
                       });
                       setShowProcessForm(true);
                     }}

@@ -3,6 +3,7 @@ import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon, PlusIcon, TrashIcon, FolderOpenIcon } from "@heroicons/react/24/outline";
 import { ParameterInputType, ProcessCreate, ProcessParameter, ScriptFile } from "../../types";
 import apiClient from "../../lib/api";
+import { formatRoleLabel } from "../../lib/roles";
 
 interface ProcessFormModalProps {
   isOpen: boolean;
@@ -277,7 +278,7 @@ const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
                               }
                             }}
                           />
-                          <span className="ml-2 text-sm text-gray-900">{role}</span>
+                          <span className="ml-2 text-sm text-gray-900">{formatRoleLabel(role)}</span>
                         </label>
                       ))}
                     </div>

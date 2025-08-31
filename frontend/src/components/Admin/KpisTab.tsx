@@ -3,7 +3,8 @@ import { PlusIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outli
 import { toast } from "react-hot-toast";
 import KPIFormModal from "./KPIFormModal";
 import apiClient from "../../lib/api";
-import { MenuItem, UserRole } from "../../types";
+import { MenuItem } from "../../types";
+import { formatRoleLabel, normalizeRoleCode } from "../../lib/roles";
 
 export interface KPIItem {
   id: number;
@@ -20,7 +21,7 @@ interface KpiFormState {
   description: string;
   sql_query: string;
   menu_item_id: number | null;
-  role: UserRole[];
+  role: string[];
 }
 
 interface KpisTabProps {
@@ -33,7 +34,6 @@ interface KpisTabProps {
   setEditingKpiId: React.Dispatch<React.SetStateAction<number | null>>;
   allMenuItems: MenuItem[];
   allRolesList: string[];
-  roleDisplayNames: Record<UserRole, string>;
   createOrUpdateKpi: () => Promise<void>;
   deleteKpi: (id: number) => void;
   loadData: () => void;
@@ -49,7 +49,6 @@ const KpisTab: React.FC<KpisTabProps> = ({
   setEditingKpiId,
   allMenuItems,
   allRolesList,
-  roleDisplayNames,
   createOrUpdateKpi,
   deleteKpi,
 }) => {
@@ -110,9 +109,9 @@ const KpisTab: React.FC<KpisTabProps> = ({
                     {kpi.role && typeof kpi.role === "string"
                       ? kpi.role
                           .split(",")
-                          .map((r) => roleDisplayNames[r.trim() as UserRole] || r.trim())
+                          .map((r) => formatRoleLabel(r.trim()))
                           .join(", ")
-                      : "user"}
+                      : "User"}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -132,7 +131,7 @@ const KpisTab: React.FC<KpisTabProps> = ({
                           menu_item_id: kpiData.menu_item_id || null,
                           role: kpiData.role
                             ? typeof kpiData.role === "string"
-                              ? kpiData.role.split(",").map((r: string) => r.trim() as UserRole)
+                              ? kpiData.role.split(",").map((r: string) => normalizeRoleCode(r))
                               : kpiData.role
                             : [],
                         });

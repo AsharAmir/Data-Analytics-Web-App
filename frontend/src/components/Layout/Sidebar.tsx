@@ -254,7 +254,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     setCurrentUser(apiClient.getUser());
   }, []);
 
-  const roleLc = (currentUser?.role || "").toString().toLowerCase();
   const roleUc = normalizeRoleCode(currentUser?.role as any);
   const isAdmin = isAdminRole(currentUser?.role as any);
 
@@ -447,7 +446,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar */}
       <div
         className={`
-          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-x-hidden overflow-y-auto
+          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-hidden
           lg:relative lg:translate-x-0 lg:transition-all lg:duration-300
           fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out
           ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -492,7 +491,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+        <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
           {/* Fixed Navigation Items */}
           {navigationItems.map((item) => {
             // For dashboard, only highlight if we're on dashboard page with no menu parameter

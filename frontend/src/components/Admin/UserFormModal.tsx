@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UserRole } from "../../types";
+import { formatRoleLabel, describeRole, normalizeRoleCode } from "../../lib/roles";
 import {
   XMarkIcon,
   UserIcon,
@@ -25,48 +25,7 @@ interface ValidationErrors {
   password?: string;
 }
 
-const roleDisplayNames: Record<string, string> = {
-  [UserRole.ADMIN]: "Admin",
-  [UserRole.IT_USER]: "IT User",
-  [UserRole.CEO]: "CEO",
-  [UserRole.FINANCE_USER]: "Finance",
-  [UserRole.TECH_USER]: "Tech",
-  [UserRole.USER]: "User",
-};
-
-const roleDescriptions: Record<string, string> = {
-  [UserRole.ADMIN]: "Full system access and user management",
-  [UserRole.IT_USER]: "IT infrastructure and system administration",
-  [UserRole.CEO]: "Executive dashboards and reports", 
-  [UserRole.FINANCE_USER]: "Financial data and analytics",
-  [UserRole.TECH_USER]: "Technical metrics and system data",
-  [UserRole.USER]: "Basic access to assigned dashboards",
-};
-
-// Case-insensitive helpers for display/description with sensible fallbacks
-function formatRoleLabel(role: string): string {
-  if (!role) return "User";
-  const lower = role.toLowerCase();
-  // Try enum-based labels first
-  const byEnum = roleDisplayNames[lower as UserRole];
-  if (byEnum) return byEnum;
-  // Fallback: title-case, replace underscores
-  return role
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (l) => l.toUpperCase());
-}
-
-function describeRole(role: string): string {
-  if (!role) return roleDescriptions[UserRole.USER];
-  const lower = role.toLowerCase();
-  return (
-    roleDescriptions[lower as UserRole] ||
-    (lower === "admin"
-      ? "Full system access and user management"
-      : "Basic access to assigned dashboards")
-  );
-}
+// Use shared helpers from lib/roles for labels and descriptions
 
 interface UserFormModalProps {
   visible: boolean;
@@ -103,10 +62,10 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
       // Normalize role casing to match available options (uppercase)
       setUserForm((prev) => ({
         ...prev,
-        role: (prev.role || "USER").toUpperCase(),
+        role: normalizeRoleCode(prev.role || 'USER'),
       }));
     }
-  }, [visible]);
+  }, [visible, setUserForm]);
 
   if (!visible) return null;
 
@@ -410,7 +369,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                 </label>
                 <select
                   value={userForm.role}
-                  onChange={(e)=>setUserForm({...userForm, role: e.target.value.toUpperCase()})}
+                  onChange={(e)=>setUserForm({...userForm, role: normalizeRoleCode(e.target.value)})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {availableRoles.map((r) => (

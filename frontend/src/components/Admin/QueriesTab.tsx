@@ -3,7 +3,8 @@ import { PlusIcon, PencilSquareIcon, TrashIcon } from "@heroicons/react/24/outli
 import { toast } from "react-hot-toast";
 import QueryFormModal from "./QueryFormModal"; // adjust path later maybe
 import apiClient from "../../lib/api";
-import { MenuItem, UserRole } from "../../types";
+import { MenuItem } from "../../types";
+import { formatRoleLabel, normalizeRoleCode } from "../../lib/roles";
 
 /*
   Props accepted by QueriesTab mimic the state & helpers previously living in AdminPage.
@@ -26,7 +27,7 @@ interface QueryFormState {
   chart_config: Record<string, unknown>;
   menu_item_id: number | null;
   menu_item_ids: number[];
-  role: UserRole[];
+  role: string[];
 }
 
 interface QueriesTabProps {
@@ -39,7 +40,6 @@ interface QueriesTabProps {
   setEditingQueryId: React.Dispatch<React.SetStateAction<number | null>>;
   allMenuItems: MenuItem[];
   allRolesList: string[];
-  roleDisplayNames: Record<UserRole, string>;
   createOrUpdateQuery: () => Promise<void>;
   loadData: () => void;
 }
@@ -54,7 +54,6 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
   setEditingQueryId,
   allMenuItems,
   allRolesList,
-  roleDisplayNames,
   createOrUpdateQuery,
   loadData,
 }) => {
@@ -118,21 +117,9 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                     {query.role && typeof query.role === "string"
                       ? query.role
                           .split(",")
-                          .map((r) => {
-                            const normalizedRole = r.trim();
-                            // Handle case variations for known roles
-                            if (normalizedRole.toLowerCase() === "user") {
-                              return roleDisplayNames[UserRole.USER] || "User";
-                            }
-                            if (normalizedRole.toLowerCase() === "admin") {
-                              return roleDisplayNames[UserRole.ADMIN] || "Admin";
-                            }
-                            // Use display name if available, otherwise return normalized role
-                            return roleDisplayNames[normalizedRole as UserRole] || normalizedRole;
-                          })
-                          .filter((role, index, array) => 
-                            // Remove duplicates based on lowercase comparison
-                            array.findIndex(r => r.toLowerCase() === role.toLowerCase()) === index
+                          .map((r) => formatRoleLabel(r.trim()))
+                          .filter((role, index, array) =>
+                            array.findIndex((rr) => rr.toLowerCase() === role.toLowerCase()) === index,
                           )
                           .join(", ")
                       : "User"}
@@ -152,7 +139,7 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                         // Parse current roles
                         const currentRoles = queryData.role
                           ? typeof queryData.role === "string"
-                            ? queryData.role.split(",").map((r: string) => r.trim() as UserRole)
+                            ? queryData.role.split(",").map((r: string) => normalizeRoleCode(r))
                             : queryData.role
                           : [];
                         
