@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { MenuItem, User as UserType } from "../../types";
 import apiClient from "../../lib/api";
+import { isAdmin as isAdminRole, normalizeRoleCode } from "../../lib/roles";
 
 // Helper function to filter active menu items recursively
 const filterActiveMenuItems = (items: MenuItem[]): MenuItem[] => {
@@ -253,7 +254,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     setCurrentUser(apiClient.getUser());
   }, []);
 
-  const isAdmin = currentUser?.role === "admin";
+  const roleLc = (currentUser?.role || "").toString().toLowerCase();
+  const roleUc = normalizeRoleCode(currentUser?.role as any);
+  const isAdmin = isAdminRole(currentUser?.role as any);
 
   // Get appropriate icon for menu item
   const getMenuItemIcon = (item: MenuItem) => {
@@ -296,7 +299,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       path: "/excel-compare",
       icon: ExcelCompareIcon,
     },
-    ...(currentUser && (currentUser.role === "admin" || currentUser.role === "IT_USER" || currentUser.role === "TECH_USER")
+    ...(currentUser && (isAdmin || roleUc === "IT_USER" || roleUc === "TECH_USER")
       ? [
           {
             name: "Processes",

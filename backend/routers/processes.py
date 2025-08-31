@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import get_current_user, require_admin
 from models import APIResponse, ProcessCreate, User
 from services import ProcessService
+from roles_utils import ensure_roles_exist, normalize_role
 
 router = APIRouter(prefix="/api", tags=["processes"])
 
@@ -88,6 +89,12 @@ async def run_process(proc_id: int, params: Dict[str, Any] | None = None, curren
 @router.post("/process", response_model=APIResponse)
 async def create_process(request: ProcessCreate, current_user: User = Depends(require_admin)):
     try:
+        # Validate roles if provided
+        try:
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
+        except Exception:
+            pass
         proc_id = ProcessService.create_process(request)
         return APIResponse(success=True, message="Process created", data={"process_id": proc_id})
     except Exception as exc:
@@ -97,6 +104,11 @@ async def create_process(request: ProcessCreate, current_user: User = Depends(re
 @router.put("/process/{proc_id}", response_model=APIResponse)
 async def update_process(proc_id: int, request: ProcessCreate, current_user: User = Depends(require_admin)):
     try:
+        try:
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
+        except Exception:
+            pass
         ProcessService.update_process(proc_id, request)
         return APIResponse(success=True, message="Process updated")
     except Exception as exc:

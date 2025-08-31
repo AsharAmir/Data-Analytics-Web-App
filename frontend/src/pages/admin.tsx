@@ -181,9 +181,10 @@ const AdminPage: React.FC = () => {
     .map((r) => r.toUpperCase())
     .filter((role, index, arr) => arr.indexOf(role) === index);
 
-  // For reassignment modal exclude current deleting / system
+  // For reassignment modal exclude only the role being deleted
+  // Allow reassigning to system roles as valid targets (e.g., ADMIN/USER)
   const otherRoleNames = roles
-    .filter((r) => !r.is_system && r.name !== roleToDelete)
+    .filter((r) => r.name !== roleToDelete)
     .map((r) => r.name);
 
   const flattenMenuItems = (items: MenuItem[]): MenuItem[] => {

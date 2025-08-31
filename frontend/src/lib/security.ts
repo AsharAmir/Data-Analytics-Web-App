@@ -1,5 +1,6 @@
 import { NextRouter } from "next/router";
 import apiClient from "./api";
+import { isAdmin as isAdminRole, normalizeRoleCode } from "./roles";
 import { User } from "../types";
 import { logger } from "./logger";
 
@@ -42,7 +43,7 @@ export class SecurityManager {
    */
   isAdmin(): boolean {
     const user = this.getUser();
-    return user?.role === "admin";
+    return isAdminRole(user?.role as any);
   }
 
   /**
@@ -50,7 +51,10 @@ export class SecurityManager {
    */
   hasRole(role: string): boolean {
     const user = this.getUser();
-    return user?.role === role || this.isAdmin();
+    if (!user) return false;
+    const target = normalizeRoleCode(role);
+    const current = normalizeRoleCode(user.role as any);
+    return current === target || this.isAdmin();
   }
 
   /**
@@ -60,7 +64,9 @@ export class SecurityManager {
     const user = this.getUser();
     if (!user) return false;
     if (this.isAdmin()) return true;
-    return roles.includes(user.role);
+    const current = normalizeRoleCode(user.role as any);
+    const set = new Set(roles.map((r) => normalizeRoleCode(r)));
+    return set.has(current);
   }
 
   /**

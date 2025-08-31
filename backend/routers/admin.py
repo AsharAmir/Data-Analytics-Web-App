@@ -5,6 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user, require_admin, get_password_hash
+from roles_utils import normalize_role, serialize_roles, ensure_roles_exist
 from database import db_manager
 from models import (
     APIResponse,
@@ -29,7 +30,12 @@ async def create_user_admin(request: UserCreate, current_user: User = Depends(re
     from auth import create_user  # local import to avoid circular deps
 
     try:
-        new_user = create_user(request, role=request.role)
+        # Validate and normalize role
+        try:
+            ensure_roles_exist([request.role])
+        except Exception:
+            pass
+        new_user = create_user(request, role=normalize_role(request.role))
         return APIResponse(
             success=True,
             message=f"User '{request.username}' created successfully",
@@ -101,7 +107,7 @@ async def update_user_admin(user_id: int, request: UserUpdate, current_user: Use
             fields.append("password_hash = :?")
             params.append(get_password_hash(request.password))
         if request.role:
-            from auth import normalize_role
+            ensure_roles_exist([request.role])
             fields.append("role = :?")
             params.append(normalize_role(request.role))
         if request.is_active is not None:
@@ -156,7 +162,9 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                 # Specific menu item or has other assignments
                 db_menu_item_id = request.menu_item_id
             
-            from auth import serialize_roles
+            # Validate roles provided
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
             db_manager.execute_non_query(
                 insert_sql,
                 (
@@ -183,7 +191,9 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                     # Specific menu item or has other assignments
                     db_menu_item_id = request.menu_item_id
                 
-                from auth import serialize_roles
+                # Validate roles provided
+                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+                ensure_roles_exist(roles_list)
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -328,6 +338,9 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                 # Specific menu item or has other assignments
                 db_menu_item_id = request.menu_item_id
             
+            # Validate roles
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
             db_manager.execute_non_query(
                 update_sql,
                 (
@@ -337,7 +350,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                     request.chart_type,
                     json.dumps(request.chart_config or {}),
                     db_menu_item_id,
-                    ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                    serialize_roles(request.role) or "USER",
                     query_id,
                 ),
             )
@@ -355,6 +368,9 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                     # Specific menu item or has other assignments
                     db_menu_item_id = request.menu_item_id
                 
+                # Validate roles
+                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+                ensure_roles_exist(roles_list)
                 db_manager.execute_non_query(
                     update_sql,
                     (
@@ -364,7 +380,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                         request.chart_type,
                         json.dumps(request.chart_config or {}),
                         db_menu_item_id,
-                        ",".join(request.role) if isinstance(request.role, list) else (request.role or "user"),
+                        serialize_roles(request.role) or "USER",
                         query_id,
                     ),
                 )
@@ -650,7 +666,9 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
         VALUES (:1, :2, :3, :4, :5, :6, 1)
         """
         try:
-            from auth import serialize_roles
+            # Validate roles
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
             db_manager.execute_non_query(
                 sql,
                 (
@@ -666,7 +684,9 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
             # If role column doesn't exist, add it and retry
             if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
-                from auth import serialize_roles
+                # Validate roles
+                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+                ensure_roles_exist(roles_list)
                 db_manager.execute_non_query(
                     sql,
                     (
@@ -712,7 +732,9 @@ async def update_menu_item(
         UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5, role=:6 WHERE id=:7
         """
         try:
-            from auth import serialize_roles
+            # Validate roles
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
             db_manager.execute_non_query(
                 update_sql,
                 (
@@ -729,7 +751,9 @@ async def update_menu_item(
             # If role column doesn't exist, add it and retry
             if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
-                from auth import serialize_roles
+                # Validate roles
+                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+                ensure_roles_exist(roles_list)
                 db_manager.execute_non_query(
                     update_sql,
                     (
@@ -872,7 +896,9 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
             # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
             db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
             
-            from auth import serialize_roles
+            # Validate roles for KPI
+            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+            ensure_roles_exist(roles_list)
             db_manager.execute_non_query(
                 insert_sql,
                 (
@@ -895,7 +921,9 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
                 # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
                 db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
                 
-                from auth import serialize_roles
+                # Validate roles for KPI
+                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+                ensure_roles_exist(roles_list)
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -942,7 +970,9 @@ async def update_kpi(kpi_id: int, request: QueryCreate, current_user: User = Dep
         # Convert menu_item_id = -1 (Default Dashboard) to None for database storage
         db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
         
-        from auth import serialize_roles
+        # Validate roles for KPI update
+        roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+        ensure_roles_exist(roles_list)
         db_manager.execute_non_query(
             update_sql,
             (

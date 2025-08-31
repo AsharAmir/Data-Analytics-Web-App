@@ -1,13 +1,12 @@
 import logging
 import time
 import secrets
-from typing import Dict, Set, Optional
+from typing import Dict, Set
 from collections import defaultdict, deque
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
-from fastapi import HTTPException, status
-import hashlib
+from fastapi import status
 
 logger = logging.getLogger(__name__)
 

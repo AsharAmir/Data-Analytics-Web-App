@@ -5,11 +5,10 @@ Run this script to add new users to your system.
 """
 
 import sys
-import os
 
 sys.path.append("backend")
 
-from backend.auth import create_user, get_password_hash
+from backend.auth import create_user
 from backend.models import UserCreate
 from backend.database import db_manager, init_database
 

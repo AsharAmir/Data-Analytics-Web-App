@@ -6,7 +6,6 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from database import db_manager
 from models import (
-    APIResponse,
     ChartData,
     DashboardWidget,
     FilteredQueryRequest,
@@ -17,6 +16,8 @@ from models import (
     TableData,
     RoleType,
     TableFilter,
+    ProcessCreate, 
+    Process,
 )
 import logging
 from sql_utils import escape_literal
@@ -869,7 +870,7 @@ class ProcessService:
     @staticmethod
     def _serialize_roles(role_field: RoleType | List[RoleType] | None) -> str:
         """Serialize roles to uppercase, comma-separated string with de-duplication."""
-        from auth import serialize_roles
+        from roles_utils import serialize_roles
         return serialize_roles(role_field) or "USER"
 
     # ---------------------- CRUD operations ----------------------

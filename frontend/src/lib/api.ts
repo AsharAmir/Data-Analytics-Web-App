@@ -82,7 +82,6 @@ class ApiClient {
     if (payload && typeof payload === "object" && "data" in payload) {
       return payload.data as T;
     }
-    // Fallback – assume the payload itself is the data we need.
     return payload as T;
   }
 
@@ -92,7 +91,7 @@ class ApiClient {
       timeout: 30000,
       headers: {
         "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",  // CSRF protection
+        "X-Requested-With": "XMLHttpRequest", 
         "X-Frame-Options": "DENY",
         "X-Content-Type-Options": "nosniff",
       },
@@ -150,8 +149,7 @@ class ApiClient {
         if (error.response?.status === 401) {
           logger.warn("401 unauthorised – handling per-endpoint policy");
           const originalUrl = error.config?.url || "";
-          // For the login endpoint, allow caller to handle 401 (e.g., show message)
-          if (originalUrl.includes("/auth/login")) {
+          if (originalUrl.includes("/auth/login") || originalUrl.includes("/auth/change-password")) {
             return Promise.reject(error);
           }
           // For other endpoints, clear auth and redirect to login
@@ -873,11 +871,9 @@ export const {
   deleteUser,
   deleteQuery,
   changePassword,
-  // Role endpoints
   listRoles,
   createRole,
   deleteRole,
-  // Process endpoints
   listProcesses,
   createProcess,
   updateProcess,
