@@ -45,8 +45,25 @@ class DataService:
                     execution_time=time.time() - start_time,
                 )
 
-            # Format data based on chart type
-            chart_data = DataService._format_chart_data(df, chart_type)
+            # Special handling for KPI pseudo-chart: expect a single value
+            if chart_type == "kpi":
+                try:
+                    # Use first cell as KPI value if present
+                    first_val = None
+                    if not df.empty:
+                        first_row = df.iloc[0]
+                        first_val = first_row.iloc[0] if len(first_row) > 0 else None
+                    # Coerce to number if possible
+                    try:
+                        num_val = float(first_val)
+                    except (TypeError, ValueError):
+                        num_val = 0
+                    chart_data = ChartData(labels=["KPI"], datasets=[{"data": [num_val]}])
+                except Exception:
+                    chart_data = ChartData(labels=["KPI"], datasets=[{"data": [0]}])
+            else:
+                # Format data based on chart type
+                chart_data = DataService._format_chart_data(df, chart_type)
 
             return QueryResult(
                 success=True,
@@ -535,10 +552,11 @@ class MenuService:
             for row in result:
                 menu_roles = row.get("ROLE")
                 if menu_roles:
-                    menu_roles = [r.strip() for r in menu_roles.split(",")]
+                    # Normalize to uppercase for consistent comparison
+                    menu_roles = [r.strip().upper() for r in menu_roles.split(",") if r.strip()]
                 
-                # Role filtering: skip if user doesn't have required role
-                if user_role and menu_roles and user_role not in menu_roles:
+                # Role filtering: skip if user doesn't have required role (case-insensitive)
+                if user_role and menu_roles and str(user_role).strip().upper() not in menu_roles:
                     continue
                 
                 item = MenuItem(
@@ -850,11 +868,9 @@ class ProcessService:
 
     @staticmethod
     def _serialize_roles(role_field: RoleType | List[RoleType] | None) -> str:
-        if role_field is None:
-            return "user"
-        if isinstance(role_field, list):
-            return ",".join(role_field)
-        return str(role_field)
+        """Serialize roles to uppercase, comma-separated string with de-duplication."""
+        from auth import serialize_roles
+        return serialize_roles(role_field) or "USER"
 
     # ---------------------- CRUD operations ----------------------
 
@@ -976,11 +992,11 @@ class ProcessService:
             # - Admin users see all processes
             # - Non-admin users only see processes where their role is included in the process role list
             # - If process has no role restriction (empty/null), only admin can see it
-            if user_role != "admin":
+            if str(user_role).strip().lower() != "admin":
                 if not roles or roles.strip() == "":
                     # Process has no role restriction - only admin can see it
                     continue
-                if user_role not in roles.split(","):
+                if str(user_role).strip().upper() not in {r.strip().upper() for r in roles.split(",")}:
                     # User's role not in the process's allowed roles
                     continue
 

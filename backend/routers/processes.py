@@ -68,9 +68,9 @@ async def run_process(proc_id: int, params: Dict[str, Any] | None = None, curren
         if not proc or not proc.is_active:
             raise HTTPException(status_code=404, detail="Process not found")
         if (
-            current_user.role != "admin"
+            str(current_user.role).strip().lower() != "admin"
             and proc.role
-            and current_user.role not in str(proc.role).split(",")
+            and str(current_user.role).strip().upper() not in {r.strip().upper() for r in str(proc.role).split(",")}
         ):
             raise HTTPException(status_code=403, detail="Access denied")
 

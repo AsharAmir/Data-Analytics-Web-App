@@ -38,11 +38,15 @@ const ProcessesTab: React.FC<ProcessesTabProps> = ({
 }) => {
   const createOrUpdateProcess = async () => {
     try {
+      const payload = {
+        ...processForm,
+        role: (processForm.role || []).map((r) => r.toUpperCase()),
+      } as any;
       if (editingProcessId) {
-        await apiClient.updateProcess(editingProcessId, processForm as any);
+        await apiClient.updateProcess(editingProcessId, payload);
         toast.success("Process updated!");
       } else {
-        await apiClient.createProcess(processForm as any);
+        await apiClient.createProcess(payload);
         toast.success("Process created!");
       }
       setShowProcessForm(false);

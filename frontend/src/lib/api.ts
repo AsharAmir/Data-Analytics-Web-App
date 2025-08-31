@@ -148,16 +148,18 @@ class ApiClient {
         }
 
         if (error.response?.status === 401) {
-          logger.warn("401 unauthorised – redirecting to login");
+          logger.warn("401 unauthorised – handling per-endpoint policy");
           const originalUrl = error.config?.url || "";
-          // Skip handling for the login endpoint itself to avoid loops
-          if (!originalUrl.includes("/auth/login")) {
-            this.removeToken();
-            if (typeof window !== "undefined") {
-              window.location.href = "/login";
-            }
+          // For the login endpoint, allow caller to handle 401 (e.g., show message)
+          if (originalUrl.includes("/auth/login")) {
+            return Promise.reject(error);
           }
-          // Return a non-resolving promise to halt further error propagation
+          // For other endpoints, clear auth and redirect to login
+          this.removeToken();
+          if (typeof window !== "undefined") {
+            window.location.href = "/login";
+          }
+          // Halt further error propagation for non-login 401s
           return new Promise(() => {});
         } else if (error.response?.status >= 500) {
           logger.error("Server error", error.response?.status);

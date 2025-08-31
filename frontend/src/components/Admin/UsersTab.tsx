@@ -15,7 +15,7 @@ interface AdminUser {
   email: string;
   is_active: boolean;
   created_at: string;
-  role: UserRole;
+  role: string; // dynamic roles may be any case
 }
 
 interface UserFormState {
@@ -103,7 +103,7 @@ const UsersTab: React.FC<UsersTabProps> = ({
                   {user.is_active ? "Yes" : "No"}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {roleDisplayNames[user.role]}
+                  {roleDisplayNames[user.role as UserRole] || user.role}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {new Date(user.created_at).toLocaleDateString()}
@@ -112,11 +112,15 @@ const UsersTab: React.FC<UsersTabProps> = ({
                   <button
                     onClick={() => {
                       setEditingUserId(user.id);
+                      // Prefer a role option matching availableRoles (case-insensitive)
+                      const matchedRole = allRolesList.find(
+                        (r) => r.toLowerCase() === (user.role || "").toLowerCase(),
+                      ) || user.role;
                       setUserForm({
                         username: user.username,
                         email: user.email,
                         password: "",
-                        role: user.role,
+                        role: matchedRole,
                       });
                       setShowUserForm(true);
                     }}
@@ -161,10 +165,12 @@ const UsersTab: React.FC<UsersTabProps> = ({
             try {
               setLoading(true);
               if (editingUserId) {
-                await apiClient.updateUser(editingUserId, userForm as any);
+                const payload = { ...userForm, role: (userForm.role || '').toUpperCase() } as any;
+                await apiClient.updateUser(editingUserId, payload);
                 toast.success("User updated successfully");
               } else {
-                await apiClient.post("/api/admin/user", userForm);
+                const payload = { ...userForm, role: (userForm.role || '').toUpperCase() } as any;
+                await apiClient.post("/api/admin/user", payload);
                 toast.success("User created successfully");
               }
               setShowUserForm(false);

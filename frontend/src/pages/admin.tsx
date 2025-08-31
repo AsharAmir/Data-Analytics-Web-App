@@ -58,7 +58,7 @@ interface AdminUser {
   email: string;
   is_active: boolean;
   created_at: string;
-  role: UserRole;
+  role: string; // allow dynamic roles from backend
 }
 
 const roleDisplayNames: Record<UserRole, string> = {
@@ -176,9 +176,10 @@ const AdminPage: React.FC = () => {
   
   // Combine all roles and remove duplicates (case-insensitive)
   const combinedRoles = [...backendRoleNames, ...enumRoleNames, ...queryRoles];
-  const allRolesList = combinedRoles.filter((role, index, arr) => 
-    arr.findIndex(r => r.toLowerCase() === role.toLowerCase()) === index
-  );
+  // Canonicalize roles to uppercase for consistent UX and de-duplication
+  const allRolesList = combinedRoles
+    .map((r) => r.toUpperCase())
+    .filter((role, index, arr) => arr.indexOf(role) === index);
 
   // For reassignment modal exclude current deleting / system
   const otherRoleNames = roles
@@ -284,15 +285,8 @@ const AdminPage: React.FC = () => {
       // Normalize roles before sending to backend
       const normalizedQueryForm = {
         ...queryForm,
-        role: queryForm.role.map(role => {
-          // Ensure consistent case for known roles
-          if (typeof role === 'string') {
-            const lowerRole = role.toLowerCase();
-            if (lowerRole === 'user') return 'user';
-            if (lowerRole === 'admin') return 'admin';
-          }
-          return role;
-        })
+        // Uppercase all roles for backend storage consistency
+        role: queryForm.role.map((role) => (typeof role === 'string' ? role.toUpperCase() : (role as any).toUpperCase?.() || (role as any)))
       };
       
       if (editingQueryId) {
@@ -519,11 +513,16 @@ const AdminPage: React.FC = () => {
 
   const createOrUpdateMenu = async () => {
     try {
+      // Uppercase roles before submitting
+      const payload = {
+        ...menuForm,
+        role: (menuForm.role || []).map((r) => r.toUpperCase()),
+      };
       if (editingMenuId) {
-        await apiClient.put(`/api/admin/menu/${editingMenuId}`, menuForm);
+        await apiClient.put(`/api/admin/menu/${editingMenuId}`, payload);
         toast.success("Menu updated successfully!");
       } else {
-        await apiClient.post("/api/admin/menu", menuForm);
+        await apiClient.post("/api/admin/menu", payload);
         toast.success("Menu created successfully!");
       }
       setShowMenuForm(false);
@@ -599,11 +598,12 @@ const AdminPage: React.FC = () => {
 
   const createOrUpdateKpi = async () => {
     try {
+      const kpiPayload = { ...kpiForm, role: kpiForm.role.map((r) => (typeof r === 'string' ? r.toUpperCase() : (r as any))) };
       if (editingKpiId) {
-        await apiClient.put(`/api/admin/kpi/${editingKpiId}`, kpiForm);
+        await apiClient.put(`/api/admin/kpi/${editingKpiId}`, kpiPayload);
         toast.success("KPI updated successfully!");
       } else {
-        await apiClient.post("/api/admin/kpi", kpiForm);
+        await apiClient.post("/api/admin/kpi", kpiPayload);
         toast.success("KPI created successfully!");
       }
       setShowKpiForm(false);

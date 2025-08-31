@@ -323,11 +323,13 @@ const KPIFormModal: React.FC<KPIFormModalProps> = ({
                           ? new Intl.NumberFormat().format(
                               testResult.data.data[0][0],
                             )
-                          : "12,345"}
+                          : "--"}
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {kpiForm.description || "Sample KPI description"}
-                      </div>
+                      {kpiForm.description && (
+                        <div className="text-sm text-gray-500">
+                          {kpiForm.description}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -437,14 +439,39 @@ const KPIFormModal: React.FC<KPIFormModalProps> = ({
                               Result:
                             </div>
                             <div className="text-2xl font-bold text-blue-600">
-                              {testResult.data &&
-                              testResult.data.data &&
-                              testResult.data.data[0] &&
-                              testResult.data.data[0][0] !== undefined
-                                ? new Intl.NumberFormat().format(
-                                    testResult.data.data[0][0],
-                                  )
-                                : "No result"}
+                              {(() => {
+                                // Handle TableData shape from /api/query/execute
+                                const table = testResult?.data;
+                                if (
+                                  table &&
+                                  Array.isArray(table.columns) &&
+                                  Array.isArray(table.data) &&
+                                  table.data.length > 0
+                                ) {
+                                  const row = table.data[0] as any[];
+                                  const cols = table.columns as string[];
+                                  // Prefer the first non-RN column; fallback to first cell
+                                  let idx = 0;
+                                  if (
+                                    cols.length > 0 &&
+                                    typeof cols[0] === "string" &&
+                                    cols[0].toUpperCase() === "RN" &&
+                                    row.length > 1
+                                  ) {
+                                    idx = 1;
+                                  }
+                                  const val = row[idx];
+                                  if (typeof val === "number") {
+                                    return new Intl.NumberFormat().format(val);
+                                  }
+                                  const num = Number(val);
+                                  if (!Number.isNaN(num)) {
+                                    return new Intl.NumberFormat().format(num);
+                                  }
+                                  return String(val ?? "No result");
+                                }
+                                return "No result";
+                              })()}
                             </div>
                             {testResult.execution_time && (
                               <div className="text-xs text-gray-500 mt-1">

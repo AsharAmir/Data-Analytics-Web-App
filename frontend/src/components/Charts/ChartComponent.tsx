@@ -65,7 +65,8 @@ interface ChartComponentProps {
     | "bubble"
     | "polarArea"
     | "radar"
-    | "area";
+    | "area"
+    | "kpi";
   config?: ChartConfig;
   height?: number;
   className?: string;
@@ -344,6 +345,38 @@ const ChartComponent: React.FC<ChartComponentProps> = ({
     ref: React.RefObject<ChartJS | null>,
     targetHeight: number,
   ) => {
+    // Special case: KPI pseudo-chart renders a simple metric card
+    if (type === "kpi") {
+      // Read first numeric value if present
+      let value: number | string | null = null;
+      try {
+        const d0 = (data?.datasets?.[0]?.data ?? []) as any[];
+        const raw = d0.length > 0 ? d0[0] : null;
+        if (typeof raw === "number") value = raw;
+        else if (raw != null && !isNaN(Number(raw))) value = Number(raw);
+      } catch {}
+
+      const formatted =
+        typeof value === "number"
+          ? new Intl.NumberFormat().format(value)
+          : "--";
+
+      return (
+        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 ${className}`}>
+          <div className="p-6 border-b border-gray-200">
+            {title && (
+              <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+            )}
+            {description && (
+              <p className="text-sm text-gray-600 mt-1">{description}</p>
+            )}
+          </div>
+          <div className="p-8 flex items-center justify-center">
+            <div className="text-5xl font-bold text-blue-600">{formatted}</div>
+          </div>
+        </div>
+      );
+    }
     const chartType = type === "area" ? "line" : type;
 
     switch (chartType) {

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 from jose import JWTError, jwt
 import bcrypt
 from fastapi import HTTPException, status, Depends, Request
@@ -14,6 +14,28 @@ logger = logging.getLogger(__name__)
 
 # Password hashing
 security = HTTPBearer()
+
+# -----------------------------
+# Role normalization helpers
+# -----------------------------
+
+def normalize_role(role: Union[str, "UserRole", None]) -> str:
+    """Return a canonical, uppercase role name for consistent storage and comparison."""
+    if role is None:
+        return "USER"
+    value = getattr(role, "value", role)
+    return str(value).strip().upper()
+
+
+def serialize_roles(value: Union[str, List[str], None]) -> Optional[str]:
+    """Serialize a role or list of roles into a comma-separated, uppercase string."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        roles = [normalize_role(r) for r in value if str(r).strip()]
+        # de-duplicate case-insensitively by using the normalized set
+        return ",".join(sorted(set(roles))) if roles else None
+    return normalize_role(value)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -120,7 +142,7 @@ def get_user_by_username(username: str) -> Optional[User]:
                 id=user_data["ID"],
                 username=user_data["USERNAME"],
                 email=user_data["EMAIL"],
-                role=user_data.get("ROLE", "user"),
+                role=normalize_role(user_data.get("ROLE", "user")),
                 is_active=bool(user_data["IS_ACTIVE"]),
                 must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
                 created_at=user_data["CREATED_AT"],
@@ -144,7 +166,7 @@ def get_user_by_email(email: str) -> Optional[User]:
                 id=user_data["ID"],
                 username=user_data["USERNAME"],
                 email=user_data["EMAIL"],
-                role=user_data.get("ROLE", "user"),
+                role=normalize_role(user_data.get("ROLE", "user")),
                 is_active=bool(user_data["IS_ACTIVE"]),
                 must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
                 created_at=user_data["CREATED_AT"],
@@ -176,7 +198,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
             id=user_data["ID"],
             username=user_data["USERNAME"],
             email=user_data["EMAIL"],
-            role=user_data.get("ROLE", "user"),
+            role=normalize_role(user_data.get("ROLE", "user")),
             is_active=bool(user_data["IS_ACTIVE"]),
             must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
             created_at=user_data["CREATED_AT"],
@@ -202,9 +224,8 @@ def create_user(user_create: UserCreate, role: Any = "user") -> Optional[User]:
                 detail="Email already registered",
             )
 
-        if not isinstance(role, str):  # covers Enum and any other object type
-            # Use `.value` for Enum, fallback to `str()` for anything else.
-            role = getattr(role, "value", str(role))
+        # Normalize role for storage (always uppercase)
+        role = normalize_role(role)
 
         # Hash password
         hashed_password = get_password_hash(user_create.password)
@@ -454,8 +475,8 @@ def init_default_user():
 
 # Role-based access control
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Require admin role for certain endpoints"""
-    if current_user.role != "admin":
+    """Require admin role for certain endpoints (case-insensitive)"""
+    if str(current_user.role).lower() != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
@@ -463,8 +484,9 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 def require_user_or_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Allow access to users and admins"""
-    if current_user.role not in ["user", "admin"]:
+    """Allow access to users and admins (case-insensitive)"""
+    role_lc = str(current_user.role).lower()
+    if role_lc not in ["user", "admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="User access required"
         )
@@ -474,7 +496,7 @@ def require_user_or_admin(current_user: User = Depends(get_current_user)) -> Use
 def require_resource_access(resource_type: str, resource_id: int = None):
     """Decorator to check if user has access to specific resource"""
     def decorator(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role == "admin":
+        if str(current_user.role).lower() == "admin":
             return current_user
             
         # Check resource-specific permissions
@@ -484,8 +506,8 @@ def require_resource_access(resource_type: str, resource_id: int = None):
                 raise HTTPException(status_code=404, detail="Resource not found")
                 
             # Check if user has permission for this query
-            assigned_roles = {r.strip() for r in (query_obj.get('role', '') or "").split(",") if r.strip()}
-            if assigned_roles and current_user.role not in assigned_roles:
+            assigned_roles = {r.strip().upper() for r in (query_obj.get('role', '') or "").split(",") if r.strip()}
+            if assigned_roles and str(current_user.role).strip().upper() not in assigned_roles:
                 logger.warning(
                     f"Access denied for {resource_type} {resource_id}: user {current_user.username} "
                     f"(role: {current_user.role}) not in assigned roles: {assigned_roles}"

@@ -43,6 +43,31 @@ const roleDescriptions: Record<string, string> = {
   [UserRole.USER]: "Basic access to assigned dashboards",
 };
 
+// Case-insensitive helpers for display/description with sensible fallbacks
+function formatRoleLabel(role: string): string {
+  if (!role) return "User";
+  const lower = role.toLowerCase();
+  // Try enum-based labels first
+  const byEnum = roleDisplayNames[lower as UserRole];
+  if (byEnum) return byEnum;
+  // Fallback: title-case, replace underscores
+  return role
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function describeRole(role: string): string {
+  if (!role) return roleDescriptions[UserRole.USER];
+  const lower = role.toLowerCase();
+  return (
+    roleDescriptions[lower as UserRole] ||
+    (lower === "admin"
+      ? "Full system access and user management"
+      : "Basic access to assigned dashboards")
+  );
+}
+
 interface UserFormModalProps {
   visible: boolean;
   editing: boolean;
@@ -75,6 +100,11 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
     if (visible) {
       setCurrentTab("basic");
       setValidationErrors({});
+      // Normalize role casing to match available options (uppercase)
+      setUserForm((prev) => ({
+        ...prev,
+        role: (prev.role || "USER").toUpperCase(),
+      }));
     }
   }, [visible]);
 
@@ -282,9 +312,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                         <div className="text-sm text-gray-500">
                           {userForm.email || "email@example.com"}
                         </div>
-                        <div className="text-xs text-blue-600 mt-1">
-                          {roleDisplayNames[userForm.role]}
-                        </div>
+                        <div className="text-xs text-blue-600 mt-1">{formatRoleLabel(userForm.role)}</div>
                       </div>
                     </div>
                   </div>
@@ -382,11 +410,13 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                 </label>
                 <select
                   value={userForm.role}
-                  onChange={(e)=>setUserForm({...userForm, role:e.target.value})}
+                  onChange={(e)=>setUserForm({...userForm, role: e.target.value.toUpperCase()})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {availableRoles.map(r=> (
-                    <option key={r} value={r}>{roleDisplayNames[r]||r}</option>
+                  {availableRoles.map((r) => (
+                    <option key={r} value={r}>
+                      {formatRoleLabel(r)}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -400,11 +430,9 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
                     </h5>
                     <div className="text-sm text-blue-700">
                       <p className="mb-2">
-                        <strong>
-                          Current selection: {roleDisplayNames[userForm.role]}
-                        </strong>
+                        <strong>Current selection: {formatRoleLabel(userForm.role)}</strong>
                       </p>
-                      <p>{roleDescriptions[userForm.role]}</p>
+                      <p>{describeRole(userForm.role)}</p>
                     </div>
                   </div>
                 </div>
