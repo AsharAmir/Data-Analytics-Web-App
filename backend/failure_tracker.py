@@ -25,8 +25,17 @@ class FailureTracker:
         self.failure_logger = logging.getLogger("failures")
         self.failure_logger.setLevel(logging.ERROR)
         
-        # Create file handler for failures
-        failure_handler = logging.FileHandler(self.failures_log_path)
+        # Create timed rotating file handler for failures (daily rollover)
+        use_utc = os.getenv("LOG_USE_UTC", "false").lower() == "true"
+        from logging.handlers import TimedRotatingFileHandler
+        failure_handler = TimedRotatingFileHandler(
+            filename=str(self.failures_log_path),
+            when="midnight",
+            interval=1,
+            backupCount=30,
+            utc=use_utc,
+            encoding="utf-8",
+        )
         failure_handler.setLevel(logging.ERROR)
         
         # JSON formatter for failures

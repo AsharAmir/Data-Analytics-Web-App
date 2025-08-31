@@ -41,6 +41,9 @@ def setup_logging() -> None:
     # local development.
     # ------------------------------------------------------------------
 
+    # Use local midnight rollover by default. Allow overriding via LOG_USE_UTC.
+    use_utc = os.getenv("LOG_USE_UTC", "false").lower() == "true"
+
     logging_config: dict = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -62,7 +65,9 @@ def setup_logging() -> None:
                 "when": "midnight",
                 "interval": 1,
                 "backupCount": 30,  # Keep 30 days of logs
-                "utc": True,
+                # Rotate at local midnight by default; can be toggled with LOG_USE_UTC=true
+                "utc": use_utc,
+                "encoding": "utf-8",
             },
             "console": {
                 "class": "logging.StreamHandler",
