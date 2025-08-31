@@ -59,11 +59,14 @@ const LoginPage: React.FC = () => {
       let errMessage = "Invalid username or password";
       
       if (error && typeof error === "object" && "response" in error) {
-        const responseError = error as { response?: { data?: { detail?: string, message?: string } } };
+        const responseError = error as { response?: { status?: number, data?: { detail?: string, message?: string } } };
         // Handle different error response formats
         errMessage = responseError.response?.data?.detail || 
                     responseError.response?.data?.message || 
                     errMessage;
+        if (responseError.response?.status === 429) {
+          errMessage = errMessage || "Too many attempts. Please wait and try again.";
+        }
       } else if (error instanceof Error) {
         if (error.message.includes("timeout")) {
           errMessage = "Connection timed out. Please check your internet connection.";

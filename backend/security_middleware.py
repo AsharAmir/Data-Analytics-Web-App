@@ -69,10 +69,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             )
             
             if response.status_code in [401, 403]:
-                self.failed_attempts[client_ip] += 1
-                if self.failed_attempts[client_ip] >= self.max_failed_attempts:
-                    self.blocked_ips[client_ip] = time.time() + 300  # Block for 5 minutes
-                    logger.warning(f"IP {client_ip} blocked due to repeated failed attempts")
+                # Do not escalate to IP-block for login endpoint – per-user limiter handles it
+                path = str(request.url.path).lower()
+                if not path.startswith("/auth/login"):
+                    self.failed_attempts[client_ip] += 1
+                    if self.failed_attempts[client_ip] >= self.max_failed_attempts:
+                        self.blocked_ips[client_ip] = time.time() + 300  # Block for 5 minutes
+                        logger.warning(f"IP {client_ip} blocked due to repeated failed attempts")
             else:
                 # Reset failed attempts on successful request
                 self.failed_attempts[client_ip] = 0

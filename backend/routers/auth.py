@@ -51,9 +51,9 @@ async def login(user_login: UserLogin, request: Request):
                 detail="Invalid password"
             )
         
-        # Rate limiting check
+        # Rate limiting check – use failed-attempt buckets only (username+IP)
         client_ip = request.client.host if request.client else "unknown"
-        if not check_rate_limit(sanitized_username, "login_attempt", limit=5, window_minutes=15):
+        if not check_rate_limit(sanitized_username, "login_attempt", limit=5, window_minutes=15, client_ip=client_ip):
             logger.warning(f"Rate limit exceeded for login attempts: {sanitized_username} from {client_ip}")
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -62,6 +62,12 @@ async def login(user_login: UserLogin, request: Request):
         
         user = authenticate_user(sanitized_username, user_login.password)
         if not user:
+            # Record only failed attempts for limiter
+            try:
+                from auth import record_login_attempt
+                record_login_attempt(sanitized_username, "login_attempt", success=False, client_ip=client_ip)
+            except Exception:
+                pass
             failure_tracker.track_auth_failure(
                 username=sanitized_username,
                 failure_type="invalid_credentials"
@@ -89,6 +95,12 @@ async def login(user_login: UserLogin, request: Request):
         logger.info(
             f"Successful login: {user.username} (role: {user.role}) from {client_ip}"
         )
+        # Reset limiter on success
+        try:
+            from auth import record_login_attempt
+            record_login_attempt(sanitized_username, "login_attempt", success=True, client_ip=client_ip)
+        except Exception:
+            pass
 
         return Token(access_token=access_token, token_type="bearer", user=user)
         

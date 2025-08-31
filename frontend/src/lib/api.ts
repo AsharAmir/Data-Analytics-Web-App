@@ -199,14 +199,12 @@ class ApiClient {
       return null; // SSR safeguard
     }
     
-    const token = sessionStorage.getItem("auth_token") || 
-                  Cookies.get("auth_token") || 
-                  localStorage.getItem("auth_token");
+    const token = sessionStorage.getItem("auth_token") || Cookies.get("auth_token");
     
     if (!token) return null;
     
     try {
-      const metadataStr = localStorage.getItem("token_metadata");
+      const metadataStr = sessionStorage.getItem("token_metadata");
       if (metadataStr) {
         const metadata = JSON.parse(metadataStr);
         
@@ -239,18 +237,16 @@ class ApiClient {
     const isSecure = window.location.protocol === "https:";
     const domain = window.location.hostname;
     
-    // Set httpOnly-like behavior by using sessionStorage as primary and localStorage as backup
+    // Session cookie (no explicit expires) + sessionStorage only
     Cookies.set("auth_token", token, {
-      expires: 1,
       secure: isSecure,
       sameSite: "strict",
       domain: domain === "localhost" ? undefined : domain, // Set domain for production
       path: "/", // Limit cookie scope
     });
     
-    // Store in sessionStorage (more secure) and localStorage (fallback)
+    // Store only in sessionStorage so closing the browser logs user out
     sessionStorage.setItem("auth_token", token);
-    localStorage.setItem("auth_token", token);
     
     // Add token validation metadata
     const tokenMetadata = {
@@ -258,7 +254,7 @@ class ApiClient {
       userAgent: navigator.userAgent,
       domain: domain,
     };
-    localStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
+    sessionStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
   }
 
   private removeToken(): void {
