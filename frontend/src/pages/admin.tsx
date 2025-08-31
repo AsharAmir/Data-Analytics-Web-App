@@ -288,8 +288,33 @@ const AdminPage: React.FC = () => {
         await apiClient.put(`/api/admin/query/${editingQueryId}`, normalizedQueryForm);
         toast.success("Query updated successfully!");
       } else {
-        await apiClient.post("/api/admin/query", normalizedQueryForm);
+        const createRes: any = await apiClient.post("/api/admin/query", normalizedQueryForm);
         toast.success("Query created successfully!");
+
+        // If the new query is assigned to any dashboard, open the Widget modal prefilled
+        const newQueryId = createRes?.data?.id ?? createRes?.id ?? createRes?.data?.query_id ?? null;
+        const selectedIds = new Set<number>();
+        if (normalizedQueryForm.menu_item_id && normalizedQueryForm.menu_item_id > 0) {
+          selectedIds.add(normalizedQueryForm.menu_item_id);
+        }
+        (normalizedQueryForm.menu_item_ids || []).forEach((mid: number) => selectedIds.add(mid));
+        const hasDefaultDashboard = normalizedQueryForm.menu_item_id === -1;
+        const hasCustomDashboard = menuItems.some((mi) => selectedIds.has(mi.id) && mi.type === "dashboard");
+
+        if (newQueryId && (hasDefaultDashboard || hasCustomDashboard)) {
+          // Ensure latest data is loaded so the modal has fresh query list
+          await loadData();
+          // Switch to Widgets tab and open with sensible defaults
+          setActiveTab("widgets");
+          setWidgetForm({
+            title: normalizedQueryForm.name || "New Widget",
+            query_id: newQueryId,
+            width: 6,
+            height: 4,
+            create_new_query: false,
+          });
+          setShowWidgetForm(true);
+        }
       }
       setShowQueryForm(false);
       setEditingQueryId(null);
