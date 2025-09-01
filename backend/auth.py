@@ -531,15 +531,18 @@ def get_query_by_id(query_id: int):
 def check_rate_limit(username: str, action: str, limit: int = 10, window_minutes: int = 1, *, client_ip: str | None = None) -> bool:
     """Check whether further attempts are allowed (failed attempts only).
 
-    This function NO LONGER records the attempt automatically. Call
-    ``record_login_attempt(..., success=False)`` on failed attempts and
-    ``reset_login_attempts(...)`` on success. This avoids locking users out when
-    they provide the correct password and prevents global IP lockouts.
+    Important behavior:
+    - The limiter is PER-USER (and per user+IP pair), not global per IP.
+    - This prevents one user's failures from blocking other users on the same IP
+      (e.g., office NAT, local dev machine).
+    - The function does not record attempts automatically. Call
+      ``record_login_attempt(..., success=False)`` on failed attempts and
+      ``record_login_attempt(..., success=True)`` on success.
     """
     import time
     from collections import defaultdict
 
-    # In production use Redis or DB for distributed rate limiting
+    # In production, use Redis/DB for distributed rate limiting
     if not hasattr(check_rate_limit, "attempts"):
         check_rate_limit.attempts = defaultdict(list)
 
@@ -549,27 +552,33 @@ def check_rate_limit(username: str, action: str, limit: int = 10, window_minutes
     def _prune(key: str):
         check_rate_limit.attempts[key] = [t for t in check_rate_limit.attempts[key] if t > window_start]
 
-    # Check both username and IP buckets (when provided)
+    # Buckets
     user_key = f"user:{username}:{action}"
-    ip_key = f"ip:{client_ip}:{action}" if client_ip else None
+    pair_key = f"pair:{client_ip}:{username}:{action}" if client_ip else None
 
     _prune(user_key)
-    if ip_key:
-        _prune(ip_key)
+    if pair_key:
+        _prune(pair_key)
 
+    # Enforce per-user limit and per (user+IP) limit
     if len(check_rate_limit.attempts[user_key]) >= limit:
         logger.warning(f"Rate limit exceeded for username={username} action={action}")
         return False
-    if ip_key and len(check_rate_limit.attempts[ip_key]) >= max(limit * 2, limit):
-        # Allow higher per-IP burst to reduce collateral blocking
-        logger.warning(f"Rate limit exceeded for ip={client_ip} action={action}")
+    if pair_key and len(check_rate_limit.attempts[pair_key]) >= limit:
+        logger.warning(f"Rate limit exceeded for pair ip={client_ip} username={username} action={action}")
         return False
 
     return True
 
 
 def record_login_attempt(username: str, action: str, success: bool, *, client_ip: str | None = None, window_minutes: int = 1) -> None:
-    """Record a login attempt only on failure; reset counters on success."""
+    """Record a login attempt; reset counters on success.
+
+    Maintains two buckets:
+    - user bucket: per username across IPs
+    - pair bucket: per (IP, username) pair
+    No global per-IP bucket is used to avoid collateral lockouts.
+    """
     import time
     from collections import defaultdict
 
@@ -577,16 +586,16 @@ def record_login_attempt(username: str, action: str, success: bool, *, client_ip
         check_rate_limit.attempts = defaultdict(list)
 
     user_key = f"user:{username}:{action}"
-    ip_key = f"ip:{client_ip}:{action}" if client_ip else None
+    pair_key = f"pair:{client_ip}:{username}:{action}" if client_ip else None
 
     if success:
         # Reset recent failures for both buckets on success
         check_rate_limit.attempts[user_key] = []
-        if ip_key:
-            check_rate_limit.attempts[ip_key] = []
+        if pair_key:
+            check_rate_limit.attempts[pair_key] = []
         return
 
     now = time.time()
     check_rate_limit.attempts[user_key].append(now)
-    if ip_key:
-        check_rate_limit.attempts[ip_key].append(now)
+    if pair_key:
+        check_rate_limit.attempts[pair_key].append(now)
