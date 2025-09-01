@@ -64,12 +64,7 @@ const Dashboard: React.FC = () => {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // KPI customization state
-  const [kpiPrefs, setKpiPrefs] = useState<Record<string, boolean>>({
-    totalRecords: true,
-    activeCharts: true,
-    dataTables: true,
-    avgQueryTime: true,
-  });
+  const [kpiPrefs, setKpiPrefs] = useState<Record<string, boolean>>({});
   const [showKpiConfig, setShowKpiConfig] = useState(false);
 
   // Dashboard widget visibility preferences (id -> visible)
@@ -550,18 +545,19 @@ const Dashboard: React.FC = () => {
             </button>
           </div>
           <div className="space-y-3">
-            {Object.entries(kpiPrefs).map(([key, value]) => (
-              <label key={key} className="flex items-center space-x-2">
+            {/* Show available KPIs */}
+            {calculateKPIs().map((kpi) => (
+              <label key={kpi.id} className="flex items-center space-x-2">
                 <input
                   type="checkbox"
                   className="h-4 w-4 text-blue-600"
-                  checked={value}
+                  checked={kpiPrefs[kpi.id] ?? true}
                   onChange={() =>
-                    setKpiPrefs((prev) => ({ ...prev, [key]: !prev[key] }))
+                    setKpiPrefs((prev) => ({ ...prev, [kpi.id]: !prev[kpi.id] }))
                   }
                 />
-                <span className="capitalize text-sm text-gray-700">
-                  {key.replace(/([A-Z])/g, " $1")}
+                <span className="text-sm text-gray-700">
+                  {kpi.title}
                 </span>
               </label>
             ))}
