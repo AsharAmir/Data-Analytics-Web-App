@@ -195,6 +195,7 @@ def init_database():
         icon VARCHAR2(50),
         parent_id NUMBER,
         sort_order NUMBER DEFAULT 0,
+        role VARCHAR2(255),
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT fk_menu_parent FOREIGN KEY (parent_id) REFERENCES app_menu_items(id)
@@ -211,7 +212,8 @@ def init_database():
         chart_type VARCHAR2(50),
         chart_config CLOB,
         menu_item_id NUMBER,
-        role VARCHAR2(20) DEFAULT 'USER',
+        -- Allow multiple comma-separated roles
+        role VARCHAR2(255) DEFAULT 'USER',
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -377,6 +379,21 @@ def init_database():
         except Exception as e:
             logger.warning(f"Error updating app_users table schema: {e}")
 
+        # Ensure ROLE column exists in APP_MENU_ITEMS (for role-based menus)
+        try:
+            check_menu_role_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_MENU_ITEMS' AND column_name = 'ROLE'
+            """
+            menu_role_result = db_manager.execute_query(check_menu_role_query)
+            if menu_role_result[0]["COUNT(*)"] == 0:
+                db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
+                logger.info("Added role column to app_menu_items table")
+            else:
+                logger.info("Role column already exists in app_menu_items table")
+        except Exception as e:
+            logger.warning(f"Error updating app_menu_items table schema: {e}")
+
         # Ensure ROLE column exists in APP_QUERIES
         try:
             check_role_query = """
@@ -385,7 +402,7 @@ def init_database():
             """
             role_result = db_manager.execute_query(check_role_query)
             if role_result[0]["COUNT(*)"] == 0:
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(20) DEFAULT 'USER')")
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'USER')")
                 logger.info("Added role column to app_queries table")
             else:
                 logger.info("Role column already exists in app_queries table")

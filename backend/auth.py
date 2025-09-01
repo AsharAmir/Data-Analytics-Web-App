@@ -9,7 +9,7 @@ from database import db_manager
 from config import settings
 import logging
 import os
-from roles_utils import normalize_role, is_admin, get_default_role, get_admin_role, get_user_role
+from roles_utils import normalize_role, is_admin, is_user, get_default_role, get_admin_role, get_user_role
 
 logger = logging.getLogger(__name__)
 

@@ -21,20 +21,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-# ------------------ User Management ------------------
+
 
 
 @router.post("/user", response_model=APIResponse)
 async def create_user_admin(request: UserCreate, current_user: User = Depends(require_admin)):
-    """Admin endpoint to create new users"""
-    from auth import create_user  # local import to avoid circular deps
+    from auth import create_user
 
     try:
-        # Validate and normalize role
-        try:
-            pass # Removed ensure_roles_exist
-        except Exception:
-            pass
         new_user = create_user(request, role=normalize_role(request.role))
         return APIResponse(
             success=True,
@@ -55,7 +49,6 @@ async def create_user_admin(request: UserCreate, current_user: User = Depends(re
 
 @router.get("/users", response_model=APIResponse)
 async def list_users(current_user: User = Depends(require_admin)):
-    """Admin endpoint to list all users"""
     try:
         query = """
         SELECT id, username, email, role, is_active, created_at
@@ -65,10 +58,8 @@ async def list_users(current_user: User = Depends(require_admin)):
         result = db_manager.execute_query(query)
         users: List[dict] = []
         for row in result:
-            # Preserve stored role casing for compatibility with dynamic roles
             from auth import normalize_role
             raw_role = row.get("ROLE") or get_default_role()
-            # Canonicalize to uppercase for API consumers
             raw_role = normalize_role(raw_role)
             is_admin = raw_role == "ADMIN"
 
@@ -93,7 +84,7 @@ async def list_users(current_user: User = Depends(require_admin)):
 
 @router.put("/user/{user_id}", response_model=APIResponse)
 async def update_user_admin(user_id: int, request: UserUpdate, current_user: User = Depends(require_admin)):
-    """Admin endpoint to update existing user"""
+
     try:
         fields = []
         params: List = []
@@ -107,7 +98,6 @@ async def update_user_admin(user_id: int, request: UserUpdate, current_user: Use
             fields.append("password_hash = :?")
             params.append(get_password_hash(request.password))
         if request.role:
-            # Removed ensure_roles_exist
             fields.append("role = :?")
             params.append(normalize_role(request.role))
         if request.is_active is not None:
@@ -129,7 +119,7 @@ async def update_user_admin(user_id: int, request: UserUpdate, current_user: Use
 
 @router.delete("/user/{user_id}", response_model=APIResponse)
 async def delete_user_admin(user_id: int, current_user: User = Depends(require_admin)):
-    """Admin endpoint to delete user"""
+
     try:
         db_manager.execute_non_query("DELETE FROM app_users WHERE id = :1", (user_id,))
         return APIResponse(success=True, message="User deleted successfully")
@@ -139,76 +129,76 @@ async def delete_user_admin(user_id: int, current_user: User = Depends(require_a
         logger.error(f"Error deleting user: {exc}")
         raise HTTPException(status_code=500, detail="Failed to delete user")
 
-# ------------------ Query Management ------------------
-
-
 @router.post("/query", response_model=APIResponse)
 async def create_query(request: QueryCreate, current_user: User = Depends(require_admin)):
-    """Create a new query for dashboard widgets or reports"""
     try:
+        # Try to add the column if it doesn't exist
+        try:
+            db_manager.execute_non_query(
+                "ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)"
+            )
+        except:
+            # Column already exists or other error, continue
+            pass
+
         insert_sql = """
-        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role)
-        VALUES (:1, :2, :3, :4, :5, :6, :7)
+        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role, is_default_dashboard)
+        VALUES (:name, :description, :sql_query, :chart_type, :chart_config, :menu_item_id, :role, :is_default_dashboard)
         """
         try:
-            # Handle menu_item_id conversion for database storage
-            if request.menu_item_id == -1:
-                # Default Dashboard assignment
-                db_menu_item_id = None
-            elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
-                # Explicitly no dashboard assignment - use special value -999
-                db_menu_item_id = -999
-            else:
-                # Specific menu item or has other assignments
-                db_menu_item_id = request.menu_item_id
+            # Determine if this is assigned to default dashboard
+            is_default_dashboard = 1 if request.menu_item_id == -1 else 0
+            # For menu_item_id, use None for default dashboard case, otherwise use the provided ID
+            db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
             
-            # Validate roles provided
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 insert_sql,
-                (
-                    request.name,
-                    request.description,
-                    request.sql_query,
-                    request.chart_type,
-                    json.dumps(request.chart_config or {}),
-                    db_menu_item_id,
-                    serialize_roles(request.role) or get_default_role(),
-                ),
+                {
+                    "name": request.name,
+                    "description": request.description,
+                    "sql_query": request.sql_query,
+                    "chart_type": request.chart_type,
+                    "chart_config": json.dumps(request.chart_config or {}),
+                    "menu_item_id": db_menu_item_id,
+                    "role": serialize_roles(request.role) or get_default_role(),
+                    "is_default_dashboard": is_default_dashboard,
+                },
             )
         except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                # Handle menu_item_id conversion for database storage
-                if request.menu_item_id == -1:
-                    # Default Dashboard assignment
-                    db_menu_item_id = None
-                elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
-                    # Explicitly no dashboard assignment - use special value -999
-                    db_menu_item_id = -999
-                else:
-                    # Specific menu item or has other assignments
-                    db_menu_item_id = request.menu_item_id
+            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_DEFAULT_DASHBOARD" in str(exc).upper()):
+                # Add missing columns
+                try:
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                except:
+                    pass
+                try:
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)")
+                except:
+                    pass
                 
-                # Validate roles provided
+                # Retry with proper logic
+                is_default_dashboard = 1 if request.menu_item_id == -1 else 0
+                db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
+                
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     insert_sql,
-                    (
-                        request.name,
-                        request.description,
-                        request.sql_query,
-                        request.chart_type,
-                        json.dumps(request.chart_config or {}),
-                        db_menu_item_id,
-                        serialize_roles(request.role) or get_default_role(),
-                    ),
+                    {
+                        "name": request.name,
+                        "description": request.description,
+                        "sql_query": request.sql_query,
+                        "chart_type": request.chart_type,
+                        "chart_config": json.dumps(request.chart_config or {}),
+                        "menu_item_id": db_menu_item_id,
+                        "role": serialize_roles(request.role) or get_default_role(),
+                        "is_default_dashboard": is_default_dashboard,
+                    },
                 )
             else:
                 logger.error(f"Error creating query: {exc}")
                 raise HTTPException(status_code=500, detail="Failed to create query")
+        
         # Get the ID of the newly created query
         get_id_query = "SELECT id FROM app_queries WHERE name = :1 ORDER BY created_at DESC"
         id_result = db_manager.execute_query(get_id_query, (request.name,))
@@ -216,15 +206,11 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
         
         # If menu_item_ids is provided, create the many-to-many relationships (filter out -1)
         if request.menu_item_ids and new_query_id:
-            junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:1, :2)"
+            junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:query_id, :menu_item_id)"
             for menu_id in request.menu_item_ids:
                 # Skip -1 (Default Dashboard) as it's handled by the main menu_item_id field
                 if menu_id != -1:
-                    try:
-                        db_manager.execute_non_query(junction_sql, (new_query_id, menu_id))
-                    except Exception as exc:
-                        # If table doesn't exist, it will be created by the database init
-                        logger.warning(f"Could not create query-menu relationship: {exc}")
+                    db_manager.execute_non_query(junction_sql, {"query_id": new_query_id, "menu_item_id": menu_id})
         
         return APIResponse(success=True, message="Query created", data={"id": new_query_id})
     except HTTPException:
@@ -236,10 +222,11 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
 
 @router.get("/query/{query_id}", response_model=APIResponse)
 async def get_query_admin(query_id: int, current_user: User = Depends(require_admin)):
-    """Get a single query by ID for editing"""
+
     try:
         query = """
-        SELECT id, name, description, sql_query, chart_type, chart_config, menu_item_id, role, created_at
+        SELECT id, name, description, sql_query, chart_type, chart_config, menu_item_id, role, created_at, 
+               COALESCE(is_default_dashboard, 0) as is_default_dashboard
         FROM app_queries
         WHERE id = :1 AND is_active = 1
         """
@@ -255,7 +242,6 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
             except:
                 chart_config = {}
         
-        # Get menu assignments from junction table
         menu_ids = []
         menu_names = []
         try:
@@ -270,25 +256,17 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
             menu_names = [r["NAME"] for r in menu_result]
         except Exception as exc:
             logger.warning(f"Could not get menu assignments: {exc}")
-            # Fallback to legacy single menu_item_id
             if row["MENU_ITEM_ID"]:
                 menu_ids = [row["MENU_ITEM_ID"]]
         
-        # Handle menu_item_id conversion based on stored values
-        if row["MENU_ITEM_ID"] is None:
-            # Query has menu_item_id = NULL in database (Default Dashboard)
-            if not menu_ids:
-                frontend_menu_item_id = -1
-                menu_ids.append(-1)
-                menu_names.append("Default Dashboard")
-            else:
-                # Has explicit menu assignments but no default dashboard
-                frontend_menu_item_id = None
-        elif row["MENU_ITEM_ID"] == -999:
-            # Explicitly no dashboard assignment
+        if row["IS_DEFAULT_DASHBOARD"] == 1:
+            # This is explicitly assigned to Default Dashboard
+            frontend_menu_item_id = -1
+        elif row["MENU_ITEM_ID"] is None and not menu_ids:
+            # NULL menu_item_id with no other assignments and NOT default dashboard = no assignment
             frontend_menu_item_id = None
         else:
-            # Query has a specific menu_item_id value
+            # Specific menu assignment
             frontend_menu_item_id = row["MENU_ITEM_ID"]
         
         query_data = {
@@ -323,88 +301,89 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
         
         update_sql = """
         UPDATE app_queries 
-        SET name=:1, description=:2, sql_query=:3, chart_type=:4, chart_config=:5, menu_item_id=:6, role=:7
-        WHERE id=:8
+        SET name=:name, description=:description, sql_query=:sql_query, chart_type=:chart_type, 
+            chart_config=:chart_config, menu_item_id=:menu_item_id, role=:role, is_default_dashboard=:is_default_dashboard
+        WHERE id=:query_id
         """
         try:
-            # Handle menu_item_id conversion for database storage
+            # Determine if this is assigned to default dashboard
+            is_default_dashboard = 1 if request.menu_item_id == -1 else 0
+            # For menu_item_id, handle different cases:
+            # -1 means Default Dashboard -> store as NULL with is_default_dashboard=1
+            # null means no dashboard assignment -> store as NULL with is_default_dashboard=0
+            # any other value means specific menu assignment
             if request.menu_item_id == -1:
-                # Default Dashboard assignment
-                db_menu_item_id = None
-            elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
-                # Explicitly no dashboard assignment - use special value -999
-                db_menu_item_id = -999
+                db_menu_item_id = None  # Default Dashboard case
+            elif request.menu_item_id is None:
+                db_menu_item_id = None  # No assignment case
             else:
-                # Specific menu item or has other assignments
-                db_menu_item_id = request.menu_item_id
+                db_menu_item_id = request.menu_item_id  # Specific menu case
             
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 update_sql,
-                (
-                    request.name,
-                    request.description,
-                    request.sql_query,
-                    request.chart_type,
-                    json.dumps(request.chart_config or {}),
-                    db_menu_item_id,
-                    serialize_roles(request.role) or get_default_role(),
-                    query_id,
-                ),
+                {
+                    "name": request.name,
+                    "description": request.description,
+                    "sql_query": request.sql_query,
+                    "chart_type": request.chart_type,
+                    "chart_config": json.dumps(request.chart_config or {}),
+                    "menu_item_id": db_menu_item_id,
+                    "role": serialize_roles(request.role) or get_default_role(),
+                    "is_default_dashboard": is_default_dashboard,
+                    "query_id": query_id,
+                },
             )
         except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                # Handle menu_item_id conversion for database storage
+            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_DEFAULT_DASHBOARD" in str(exc).upper()):
+                # Add missing columns
+                try:
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
+                except:
+                    pass
+                try:
+                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)")
+                except:
+                    pass
+                
+                # Retry with proper logic
+                is_default_dashboard = 1 if request.menu_item_id == -1 else 0
                 if request.menu_item_id == -1:
-                    # Default Dashboard assignment
-                    db_menu_item_id = None
-                elif request.menu_item_id is None and (not getattr(request, 'menu_item_ids', None) or len(getattr(request, 'menu_item_ids', [])) == 0):
-                    # Explicitly no dashboard assignment - use special value -999
-                    db_menu_item_id = -999
+                    db_menu_item_id = None  # Default Dashboard case
+                elif request.menu_item_id is None:
+                    db_menu_item_id = None  # No assignment case
                 else:
-                    # Specific menu item or has other assignments
-                    db_menu_item_id = request.menu_item_id
+                    db_menu_item_id = request.menu_item_id  # Specific menu case
                 
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     update_sql,
-                    (
-                        request.name,
-                        request.description,
-                        request.sql_query,
-                        request.chart_type,
-                        json.dumps(request.chart_config or {}),
-                        db_menu_item_id,
-                        serialize_roles(request.role) or get_default_role(),
-                        query_id,
-                    ),
+                    {
+                        "name": request.name,
+                        "description": request.description,
+                        "sql_query": request.sql_query,
+                        "chart_type": request.chart_type,
+                        "chart_config": json.dumps(request.chart_config or {}),
+                        "menu_item_id": db_menu_item_id,
+                        "role": serialize_roles(request.role) or get_default_role(),
+                        "is_default_dashboard": is_default_dashboard,
+                        "query_id": query_id,
+                    },
                 )
             else:
                 raise exc
         
-        # Handle many-to-many menu relationships
-        if request.menu_item_ids is not None:
-            # Clear existing relationships
-            try:
-                db_manager.execute_non_query("DELETE FROM app_query_menu_items WHERE query_id = :1", (query_id,))
-            except Exception as exc:
-                logger.warning(f"Could not clear existing query-menu relationships: {exc}")
-            
-            # Add new relationships (filter out -1 which represents Default Dashboard)
-            if request.menu_item_ids:
-                junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:1, :2)"
-                for menu_id in request.menu_item_ids:
-                    # Skip -1 (Default Dashboard) as it's handled by the main menu_item_id field
-                    if menu_id != -1:
-                        try:
-                            db_manager.execute_non_query(junction_sql, (query_id, menu_id))
-                        except Exception as exc:
-                            logger.warning(f"Could not create query-menu relationship: {exc}")
+        # Clear existing menu assignments and re-add them
+        if request.menu_item_ids:
+            # Delete existing assignments
+            db_manager.execute_non_query("DELETE FROM app_query_menu_items WHERE query_id = :1", (query_id,))
+            # Add new assignments
+            junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:query_id, :menu_item_id)"
+            for menu_id in request.menu_item_ids:
+                if menu_id != -1:  # Skip -1 (Default Dashboard)
+                    db_manager.execute_non_query(junction_sql, {"query_id": query_id, "menu_item_id": menu_id})
         
         return APIResponse(success=True, message="Query updated successfully")
     except HTTPException:
@@ -520,18 +499,18 @@ async def create_dashboard_widget(request: DashboardWidgetCreate, current_user: 
             raise HTTPException(status_code=404, detail="Query not found or inactive")
         insert_sql = """
         INSERT INTO app_dashboard_widgets (title, query_id, position_x, position_y, width, height)
-        VALUES (:1, :2, :3, :4, :5, :6)
+        VALUES (:title, :query_id, :position_x, :position_y, :width, :height)
         """
         db_manager.execute_non_query(
             insert_sql,
-            (
-                request.title,
-                request.query_id,
-                request.position_x,
-                request.position_y,
-                request.width,
-                request.height,
-            ),
+            {
+                "title": request.title,
+                "query_id": request.query_id,
+                "position_x": request.position_x,
+                "position_y": request.position_y,
+                "width": request.width,
+                "height": request.height,
+            },
         )
         result = db_manager.execute_query(
             "SELECT id FROM app_dashboard_widgets WHERE title = :1 ORDER BY created_at DESC",
@@ -668,7 +647,6 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
         try:
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 sql,
                 (
@@ -686,7 +664,6 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     sql,
                     (
@@ -734,7 +711,6 @@ async def update_menu_item(
         try:
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 update_sql,
                 (
@@ -753,7 +729,6 @@ async def update_menu_item(
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     update_sql,
                     (
@@ -898,7 +873,6 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
             
             # Validate roles for KPI
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 insert_sql,
                 (

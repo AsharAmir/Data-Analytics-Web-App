@@ -149,7 +149,7 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                           sql_query: queryData.sql_query || "",
                           chart_type: queryData.chart_type || "bar",
                           chart_config: queryData.chart_config || {},
-                          menu_item_id: queryData.menu_item_id || null,
+                          menu_item_id: queryData.menu_item_id,
                           menu_item_ids: queryData.menu_item_ids || [],
                           role: currentRoles,
                         });
@@ -167,24 +167,15 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                   <button
                     onClick={async () => {
                       if (!confirm("Delete this query?")) return;
-                      try {
-                        await apiClient.deleteQuery(query.id);
+                      
+                      const result = await apiClient.deleteQuery(query.id);
+
+                      if (result.success) {
                         toast.success("Query deleted");
                         loadData();
-                      } catch (error: any) {
-                        console.error("Delete query error:", error);
-                        let errorMessage = "Failed to delete query";
-                        if (error?.response?.data?.detail) {
-                          errorMessage = error.response.data.detail;
-                        } else if (error?.response?.data?.message) {
-                          errorMessage = error.response.data.message;
-                        } else if (error?.response?.data?.error) {
-                          errorMessage = error.response.data.error;
-                        } else if (error?.message) {
-                          errorMessage = error.message;
-                        }
-                        toast.error(errorMessage);
-                        console.error("Query delete failed:", errorMessage);
+                      } else {
+                        toast.error(result.error || "Failed to delete query");
+                        console.error("Query delete failed:", result.error);
                       }
                     }}
                     className="text-red-600 hover:text-red-800"

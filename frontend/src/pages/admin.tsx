@@ -277,42 +277,57 @@ const AdminPage: React.FC = () => {
 
   const createOrUpdateQuery = async () => {
     try {
+      // The backend expects menu_item_id to be -1 for the default dashboard.
+      // The form state correctly reflects this, so no special payload manipulation is needed here.
+      const payload = { ...queryForm };
+
       // Normalize roles before sending to backend
       const normalizedQueryForm = {
-        ...queryForm,
-        // Normalize all roles for backend storage consistency
-        role: queryForm.role.map((role) => normalizeRoleCode(role))
+        ...payload,
+        role: payload.role.map((role) => normalizeRoleCode(role)),
       };
-      
+
       if (editingQueryId) {
-        await apiClient.put(`/api/admin/query/${editingQueryId}`, normalizedQueryForm);
+        await apiClient.put(
+          `/api/admin/query/${editingQueryId}`,
+          normalizedQueryForm,
+        );
         toast.success("Query updated successfully!");
       } else {
-        const createRes: any = await apiClient.post("/api/admin/query", normalizedQueryForm);
+        const createRes: any = await apiClient.post(
+          "/api/admin/query",
+          normalizedQueryForm,
+        );
         toast.success("Query created successfully!");
 
-        // If the new query is assigned to any dashboard, open the Widget modal prefilled
-        const newQueryId = createRes?.data?.id ?? createRes?.id ?? createRes?.data?.query_id ?? null;
+        const newQueryId =
+          createRes?.data?.id ??
+          createRes?.id ??
+          createRes?.data?.query_id ??
+          null;
         const selectedIds = new Set<number>();
-        if (normalizedQueryForm.menu_item_id && normalizedQueryForm.menu_item_id > 0) {
+        if (normalizedQueryForm.menu_item_id !== null) {
           selectedIds.add(normalizedQueryForm.menu_item_id);
         }
-        (normalizedQueryForm.menu_item_ids || []).forEach((mid: number) => selectedIds.add(mid));
+        (normalizedQueryForm.menu_item_ids || []).forEach((mid: number) =>
+          selectedIds.add(mid),
+        );
         const hasDefaultDashboard = normalizedQueryForm.menu_item_id === -1;
-        const hasCustomDashboard = menuItems.some((mi) => selectedIds.has(mi.id) && mi.type === "dashboard");
+        const hasCustomDashboard = menuItems.some(
+          (mi) => selectedIds.has(mi.id) && mi.type === "dashboard",
+        );
 
         if (newQueryId && (hasDefaultDashboard || hasCustomDashboard)) {
-          // Ensure latest data is loaded so the modal has fresh query list
           await loadData();
-          // Switch to Widgets tab and open with sensible defaults
           setActiveTab("widgets");
-          setWidgetForm({
+          setWidgetForm((prev) => ({
+            ...prev,
             title: normalizedQueryForm.name || "New Widget",
             query_id: newQueryId,
             width: 6,
             height: 4,
             create_new_query: false,
-          });
+          }));
           setShowWidgetForm(true);
         }
       }

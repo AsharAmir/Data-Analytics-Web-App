@@ -705,45 +705,44 @@ class DashboardService:
         try:
             if menu_id:
                 # Filter widgets by menu item - show widgets whose queries belong to this menu item
+                # Check both main menu_item_id and junction table for multiple assignments
                 query = """
-                SELECT w.id, w.title, w.query_id, w.position_x, w.position_y, 
+                SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y, 
                        w.width, w.height, w.is_active,
-                       q.name as query_name, q.sql_query, q.chart_type, q.chart_config, q.menu_item_id
+                       q.name as query_name, q.chart_type, q.menu_item_id
                 FROM app_dashboard_widgets w
                 JOIN app_queries q ON w.query_id = q.id
-                WHERE w.is_active = 1 AND q.is_active = 1 AND q.menu_item_id = :1
+                LEFT JOIN app_query_menu_items qmi ON q.id = qmi.query_id
+                WHERE w.is_active = 1 AND q.is_active = 1 
+                AND (q.menu_item_id = :1 OR qmi.menu_item_id = :1)
                 ORDER BY w.position_y, w.position_x
                 """
-                result = db_manager.execute_query(query, (menu_id,))
+                result = db_manager.execute_query(query, (menu_id, menu_id))
             else:
-                # Default dashboard - show only widgets that don't belong to any custom menu
+                # Default dashboard - show widgets that belong to Default Dashboard
+                # Use is_default_dashboard flag instead of just checking NULL menu_item_id
                 query = """
-                SELECT w.id, w.title, w.query_id, w.position_x, w.position_y,
+                SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y,
                        w.width, w.height, w.is_active,
-                       q.name as query_name, q.sql_query, q.chart_type, q.chart_config, q.menu_item_id
+                       q.name as query_name, q.chart_type, q.menu_item_id
                 FROM app_dashboard_widgets w
                 JOIN app_queries q ON w.query_id = q.id
-                WHERE w.is_active = 1 AND q.is_active = 1 AND q.menu_item_id IS NULL
+                WHERE w.is_active = 1 AND q.is_active = 1 
+                AND COALESCE(q.is_default_dashboard, 0) = 1
                 ORDER BY w.position_y, w.position_x
                 """
                 result = db_manager.execute_query(query)
 
             widgets = []
             for row in result:
-                chart_config = {}
-                if row["CHART_CONFIG"]:
-                    try:
-                        chart_config = json.loads(row["CHART_CONFIG"])
-                    except:
-                        chart_config = {}
-
+                # Create a minimal query object with available data
                 query_obj = Query(
                     id=row["QUERY_ID"],
                     name=row["QUERY_NAME"],
                     description="",
-                    sql_query=row["SQL_QUERY"],
-                    chart_type=row["CHART_TYPE"],
-                    chart_config=chart_config,
+                    sql_query="",  # Not needed for dashboard display
+                    chart_type=row["CHART_TYPE"] or "bar",
+                    chart_config={},  # Default empty config
                     menu_item_id=row.get("MENU_ITEM_ID"),
                     is_active=True,
                     created_at=datetime.now(),
@@ -796,7 +795,7 @@ class KPIService:
                 else:
                     sql = (
                         "SELECT id, name, sql_query, role "
-                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND menu_item_id IS NULL"
+                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND COALESCE(is_default_dashboard, 0) = 1"
                     )
                     rows = db_manager.execute_query(sql)
             except Exception as exc:

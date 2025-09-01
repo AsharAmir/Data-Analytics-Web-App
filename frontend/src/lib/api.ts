@@ -769,12 +769,16 @@ class ApiClient {
     }
   }
 
-  async deleteQuery(queryId: number): Promise<APIResponse> {
+  async deleteQuery(queryId: number): Promise<{ success: boolean; data?: APIResponse; error?: string }> {
     try {
-      const response = await this.client.delete(`/api/admin/query/${queryId}`);
-      return response.data;
+      const response = await this.client.delete<APIResponse>(`/api/admin/query/${queryId}`);
+      return { success: true, data: response.data };
     } catch (error: unknown) {
-      throw error;
+      if (axios.isAxiosError(error) && error.response) {
+        const errorMessage = error.response.data?.detail || error.response.data?.message || 'Failed to delete query';
+        return { success: false, error: errorMessage };
+      }
+      return { success: false, error: 'An unknown error occurred while deleting the query.' };
     }
   }
 

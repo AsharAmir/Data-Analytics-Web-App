@@ -102,7 +102,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
     }
 
     if (queryForm.menu_item_id !== -1 && queryForm.menu_item_ids.length === 0) {
-      errors.dashboard = "Please select at least one dashboard or page";
+      errors.dashboard = "Please select at least one dashboard or page, or check 'Default Dashboard'";
     }
 
     setValidationErrors(errors);
