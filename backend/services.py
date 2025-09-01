@@ -1,3 +1,4 @@
+from roles_utils import get_admin_role, get_default_role
 import pandas as pd
 import json
 import io
@@ -871,7 +872,7 @@ class ProcessService:
     def _serialize_roles(role_field: RoleType | List[RoleType] | None) -> str:
         """Serialize roles to uppercase, comma-separated string with de-duplication."""
         from roles_utils import serialize_roles
-        return serialize_roles(role_field) or "USER"
+        return serialize_roles(role_field) or get_default_role()
 
     # ---------------------- CRUD operations ----------------------
 
@@ -993,7 +994,7 @@ class ProcessService:
             # - Admin users see all processes
             # - Non-admin users only see processes where their role is included in the process role list
             # - If process has no role restriction (empty/null), only admin can see it
-            if str(user_role).strip().lower() != "admin":
+            if str(user_role).strip().lower() != get_admin_role():
                 if not roles or roles.strip() == "":
                     # Process has no role restriction - only admin can see it
                     continue

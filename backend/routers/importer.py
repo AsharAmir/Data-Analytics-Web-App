@@ -1,3 +1,4 @@
+from roles_utils import get_admin_role, get_default_role
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import pandas as pd
@@ -38,7 +39,7 @@ async def import_report_data(
     """
 
     # --- Permissions -----------------------------------------------------------------
-    if str(current_user.role).lower() != "admin":
+    if str(current_user.role).lower() != get_admin_role():
         # Simple rule for demo – extend with proper ACL later
         raise HTTPException(status_code=403, detail="Not authorised to import data")
 

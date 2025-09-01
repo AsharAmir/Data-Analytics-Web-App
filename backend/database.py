@@ -5,6 +5,7 @@ from config import settings
 import logging
 import time
 from contextlib import contextmanager
+from roles_utils import get_default_role, get_admin_role
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ def init_database():
         username VARCHAR2(50) UNIQUE NOT NULL,
         email VARCHAR2(100) UNIQUE NOT NULL,
         password_hash VARCHAR2(255) NOT NULL,
-        role VARCHAR2(20) DEFAULT 'user' NOT NULL,
+        role VARCHAR2(20) DEFAULT 'USER' NOT NULL,
         is_active NUMBER(1) DEFAULT 1,
         must_change_password NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -210,7 +211,7 @@ def init_database():
         chart_type VARCHAR2(50),
         chart_config CLOB,
         menu_item_id NUMBER,
-        role VARCHAR2(20) DEFAULT 'user',
+        role VARCHAR2(20) DEFAULT 'USER',
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -263,7 +264,7 @@ def init_database():
         name VARCHAR2(200) NOT NULL,
         description CLOB,
         script_path VARCHAR2(500) NOT NULL,
-        role VARCHAR2(255) DEFAULT 'user',
+        role VARCHAR2(255) DEFAULT 'USER',
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -343,15 +344,15 @@ def init_database():
 
             if result[0]["COUNT(*)"] == 0:
                 # Add role column to existing table
-                alter_table_sql = """
-                    ALTER TABLE app_users ADD (role VARCHAR2(20) DEFAULT 'user' NOT NULL)
+                alter_table_sql = f"""
+                    ALTER TABLE app_users ADD (role VARCHAR2(20) DEFAULT '{get_default_role()}' NOT NULL)
                 """
                 db_manager.execute_non_query(alter_table_sql)
                 logger.info("Added role column to app_users table")
 
                 # Update admin user to have admin role
                 update_admin_sql = """
-                    UPDATE app_users SET role = 'admin' WHERE username = 'admin'
+                    UPDATE app_users SET role = 'ADMIN' WHERE username = 'admin'
                 """
                 db_manager.execute_non_query(update_admin_sql)
                 logger.info("Updated admin user with admin role")
@@ -384,7 +385,7 @@ def init_database():
             """
             role_result = db_manager.execute_query(check_role_query)
             if role_result[0]["COUNT(*)"] == 0:
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(20) DEFAULT 'user')")
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(20) DEFAULT 'USER')")
                 logger.info("Added role column to app_queries table")
             else:
                 logger.info("Role column already exists in app_queries table")

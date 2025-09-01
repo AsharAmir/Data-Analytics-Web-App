@@ -5,12 +5,12 @@ from enum import Enum
 
 
 class UserRole(str, Enum):
-    ADMIN = "admin"
-    IT_USER = "IT_USER"  # Fixed built-in role requested by scenario
+    ADMIN = "ADMIN"
+    IT_USER = "IT_USER"
     CEO = "CEO"
     FINANCE_USER = "FINANCE_USER"
     TECH_USER = "TECH_USER"
-    USER = "user"
+    USER = "USER"
 
 RoleType = Union[str, "UserRole"]
 

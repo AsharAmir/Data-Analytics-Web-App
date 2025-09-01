@@ -101,26 +101,26 @@ class ApiClient {
     // Auto-refresh timer
     this.setupTokenRefresh();
 
-    this.client.interceptors.request.use(
-      (config) => {
-        const token = this.getToken();
-        logger.debug(`API → ${config.method?.toUpperCase()} ${config.url}`);
-        
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-        
-        config.headers["X-Request-ID"] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        config.headers["X-Client-Version"] = "1.0.0";
-        
-        // Add timestamp for request freshness validation
-        config.headers["X-Timestamp"] = new Date().toISOString();
-        
-        // Track API requests as user activity
-        this.lastActivity = Date.now();
-        
-        return config;
-      },
+          this.client.interceptors.request.use(
+        (config) => {
+          const token = this.getToken();
+          logger.debug(`API → ${config.method?.toUpperCase()} ${config.url}`);
+          
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+          
+          config.headers["X-Request-ID"] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          config.headers["X-Client-Version"] = "1.0.0";
+          
+          // Add timestamp for request freshness validation
+          config.headers["X-Timestamp"] = new Date().toISOString();
+          
+          // Track API requests as user activity
+          this.lastActivity = Date.now();
+          
+          return config;
+        },
       (error) => {
         logger.error("Request interceptor error", error);
         return Promise.reject(error);

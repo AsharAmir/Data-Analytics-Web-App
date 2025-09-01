@@ -22,7 +22,8 @@ async def get_dashboard(menu_id: int = None, current_user: User = Depends(get_cu
         widgets = [
             w
             for w in widgets
-            if (not w.query) or (w.query.role in (None, "", current_user.role))
+            if (not w.query) or (w.query.role in (None, "", current_user.role)) or 
+               (w.query.role and current_user.role in w.query.role.split(','))
         ]
     return widgets
 

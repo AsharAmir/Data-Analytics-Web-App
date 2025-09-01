@@ -1,3 +1,4 @@
+from roles_utils import normalize_role, get_admin_role
 from typing import Dict, Any, List
 import os
 import glob
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import get_current_user, require_admin
 from models import APIResponse, ProcessCreate, User
 from services import ProcessService
-from roles_utils import ensure_roles_exist, normalize_role
+
 
 router = APIRouter(prefix="/api", tags=["processes"])
 
@@ -69,7 +70,7 @@ async def run_process(proc_id: int, params: Dict[str, Any] | None = None, curren
         if not proc or not proc.is_active:
             raise HTTPException(status_code=404, detail="Process not found")
         if (
-            str(current_user.role).strip().lower() != "admin"
+            str(current_user.role).strip().lower() != get_admin_role()
             and proc.role
             and str(current_user.role).strip().upper() not in {r.strip().upper() for r in str(proc.role).split(",")}
         ):
@@ -92,7 +93,7 @@ async def create_process(request: ProcessCreate, current_user: User = Depends(re
         # Validate roles if provided
         try:
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
         except Exception:
             pass
         proc_id = ProcessService.create_process(request)
@@ -106,7 +107,7 @@ async def update_process(proc_id: int, request: ProcessCreate, current_user: Use
     try:
         try:
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
         except Exception:
             pass
         ProcessService.update_process(proc_id, request)

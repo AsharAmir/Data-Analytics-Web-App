@@ -187,13 +187,17 @@ const Dashboard: React.FC = () => {
     setWidgetsLoading((prev) => ({ ...prev, [widgetId]: true }));
 
     try {
+      console.log(`🔄 Loading widget data for widget ${widgetId}`, { isRefresh });
       logger.debug(`Loading widget data`, { widgetId, isRefresh });
       const data = await apiClient.getWidgetData(widgetId);
+      
+      console.log(`📊 Widget ${widgetId} data response:`, data);
       
       if (data && data.success) {
         setWidgetData((prev) => ({ ...prev, [widgetId]: data }));
         logger.debug(`Widget data loaded successfully`, { widgetId, executionTime: data.execution_time });
       } else {
+        console.warn(`⚠️ Widget ${widgetId} returned unsuccessful response:`, data?.error);
         logger.warn(`Widget returned unsuccessful response`, { widgetId, error: data?.error });
         setWidgetData((prev) => ({
           ...prev,
@@ -205,6 +209,7 @@ const Dashboard: React.FC = () => {
         }));
       }
     } catch (error) {
+      console.error(`❌ Error loading widget ${widgetId} data:`, error);
       logger.error(`Error loading widget data`, { widgetId, error });
       setWidgetData((prev) => ({
         ...prev,
@@ -224,15 +229,13 @@ const Dashboard: React.FC = () => {
     try {
       // Parse menu ID from query parameter
       const menuId = menu ? parseInt(menu as string, 10) : undefined;
-
-      // Load layout, menu, and KPIs first (fast operations)
-      // Fetch KPI data from the correct backend endpoint. The backend exposes KPIs at `/api/kpis` (optionally filtered by `menu_id`)
-      // rather than `/api/dashboard/kpis`. Pointing to the wrong URL resulted in a 404 error during runtime.
-      // We keep the same conditional to append the menu filter when provided.
       const kpisUrl = menuId ? `/api/kpis?menu_id=${menuId}` : "/api/kpis";
       const [menuResponse, widgetsResponse, kpisResponse] = await Promise.all([
         apiClient.getMenuItems(),
-        apiClient.getDashboardLayout(menuId),
+        apiClient.getDashboardLayout(menuId).catch(error => {
+          console.error("❌ Error getting dashboard layout:", error);
+          return [];
+        }),
         apiClient.get<BackendKPI[]>(kpisUrl).catch(() => []), // Fallback to empty array if fails
       ]);
 

@@ -5,7 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user, require_admin, get_password_hash
-from roles_utils import normalize_role, serialize_roles, ensure_roles_exist
+from roles_utils import normalize_role, serialize_roles, get_default_role, get_admin_role, get_user_role
 from database import db_manager
 from models import (
     APIResponse,
@@ -32,7 +32,7 @@ async def create_user_admin(request: UserCreate, current_user: User = Depends(re
     try:
         # Validate and normalize role
         try:
-            ensure_roles_exist([request.role])
+            pass # Removed ensure_roles_exist
         except Exception:
             pass
         new_user = create_user(request, role=normalize_role(request.role))
@@ -67,7 +67,7 @@ async def list_users(current_user: User = Depends(require_admin)):
         for row in result:
             # Preserve stored role casing for compatibility with dynamic roles
             from auth import normalize_role
-            raw_role = row.get("ROLE") or "user"
+            raw_role = row.get("ROLE") or get_default_role()
             # Canonicalize to uppercase for API consumers
             raw_role = normalize_role(raw_role)
             is_admin = raw_role == "ADMIN"
@@ -107,7 +107,7 @@ async def update_user_admin(user_id: int, request: UserUpdate, current_user: Use
             fields.append("password_hash = :?")
             params.append(get_password_hash(request.password))
         if request.role:
-            ensure_roles_exist([request.role])
+            # Removed ensure_roles_exist
             fields.append("role = :?")
             params.append(normalize_role(request.role))
         if request.is_active is not None:
@@ -164,7 +164,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
             
             # Validate roles provided
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 insert_sql,
                 (
@@ -174,7 +174,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                     request.chart_type,
                     json.dumps(request.chart_config or {}),
                     db_menu_item_id,
-                    serialize_roles(request.role) or "USER",
+                    serialize_roles(request.role) or get_default_role(),
                 ),
             )
         except Exception as exc:
@@ -193,7 +193,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                 
                 # Validate roles provided
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                ensure_roles_exist(roles_list)
+                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -203,7 +203,7 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
                         request.chart_type,
                         json.dumps(request.chart_config or {}),
                         db_menu_item_id,
-                        serialize_roles(request.role) or "USER",
+                        serialize_roles(request.role) or get_default_role(),
                     ),
                 )
             else:
@@ -301,7 +301,7 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
             "menu_item_id": frontend_menu_item_id,  # Convert NULL to -1 for Default Dashboard
             "menu_item_ids": menu_ids,  # New multiple assignments
             "menu_names": menu_names,   # Names for display
-            "role": row.get("ROLE", "user"),
+            "role": row.get("ROLE", get_default_role()),
             "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
         }
         return APIResponse(success=True, data=query_data)
@@ -340,7 +340,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
             
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 update_sql,
                 (
@@ -350,7 +350,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                     request.chart_type,
                     json.dumps(request.chart_config or {}),
                     db_menu_item_id,
-                    serialize_roles(request.role) or "USER",
+                    serialize_roles(request.role) or get_default_role(),
                     query_id,
                 ),
             )
@@ -370,7 +370,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                 
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                ensure_roles_exist(roles_list)
+                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     update_sql,
                     (
@@ -380,7 +380,7 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                         request.chart_type,
                         json.dumps(request.chart_config or {}),
                         db_menu_item_id,
-                        serialize_roles(request.role) or "USER",
+                        serialize_roles(request.role) or get_default_role(),
                         query_id,
                     ),
                 )
@@ -499,7 +499,7 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
                     "chart_type": row["CHART_TYPE"],
                     "menu_name": ", ".join(menu_names) if menu_names else None,  # Multiple menus comma-separated
                     "menu_names": menu_names,  # Array for frontend
-                    "role": row.get("ROLE", "user"),
+                    "role": row.get("ROLE", get_default_role()),
                     "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
                 }
             )
@@ -668,7 +668,7 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
         try:
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 sql,
                 (
@@ -686,7 +686,7 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                ensure_roles_exist(roles_list)
+                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     sql,
                     (
@@ -734,7 +734,7 @@ async def update_menu_item(
         try:
             # Validate roles
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 update_sql,
                 (
@@ -753,7 +753,7 @@ async def update_menu_item(
                 db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
                 # Validate roles
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                ensure_roles_exist(roles_list)
+                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     update_sql,
                     (
@@ -874,7 +874,7 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
                     "description": row["DESCRIPTION"],
                     "sql_query": row["SQL_QUERY"],
                     "menu_name": menu_name,
-                    "role": row.get("ROLE", "user"),
+                    "role": row.get("ROLE", get_default_role()),
                     "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
                 }
             )
@@ -898,7 +898,7 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
             
             # Validate roles for KPI
             roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            ensure_roles_exist(roles_list)
+            # Removed ensure_roles_exist
             db_manager.execute_non_query(
                 insert_sql,
                 (
@@ -908,7 +908,7 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
                     "kpi",  # Set chart_type to "kpi" for KPIs
                     json.dumps({}),  # Empty chart config for KPIs
                     db_menu_item_id,
-                    serialize_roles(request.role) or "USER",
+                    serialize_roles(request.role) or get_default_role(),
                 ),
             )
         except Exception as exc:
@@ -923,7 +923,7 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
                 
                 # Validate roles for KPI
                 roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                ensure_roles_exist(roles_list)
+                # Removed ensure_roles_exist
                 db_manager.execute_non_query(
                     insert_sql,
                     (
@@ -933,7 +933,7 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
                         "kpi",
                         json.dumps({}),
                         db_menu_item_id,
-                        serialize_roles(request.role) or "USER",
+                        serialize_roles(request.role) or get_default_role(),
                     ),
                 )
             else:
@@ -972,7 +972,7 @@ async def update_kpi(kpi_id: int, request: QueryCreate, current_user: User = Dep
         
         # Validate roles for KPI update
         roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-        ensure_roles_exist(roles_list)
+        # Removed ensure_roles_exist
         db_manager.execute_non_query(
             update_sql,
             (
@@ -980,7 +980,7 @@ async def update_kpi(kpi_id: int, request: QueryCreate, current_user: User = Dep
                 request.description,
                 request.sql_query,
                 db_menu_item_id,
-                serialize_roles(request.role) or "USER",
+                serialize_roles(request.role) or get_default_role(),
                 kpi_id,
             ),
         )
@@ -1033,7 +1033,7 @@ async def get_kpi_admin(kpi_id: int, current_user: User = Depends(require_admin)
             "description": row["DESCRIPTION"],
             "sql_query": row["SQL_QUERY"],
             "menu_item_id": frontend_menu_item_id,
-            "role": row.get("ROLE", "user"),
+            "role": row.get("ROLE", get_default_role()),
             "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
         }
         return APIResponse(success=True, data=kpi_data)
