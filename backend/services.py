@@ -95,6 +95,7 @@ class DataService:
         start_time = time.time()
 
         try:
+            # Apply limit and offset for pagination
             paginated_query = f"""
             SELECT * FROM (
                 SELECT ROWNUM as rn, sub.* FROM (

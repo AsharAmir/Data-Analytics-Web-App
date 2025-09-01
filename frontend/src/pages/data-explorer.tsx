@@ -29,7 +29,7 @@ const DataExplorerPage: React.FC = () => {
     "SELECT * FROM SAMPLE_BT WHERE ROWNUM <= 100",
   );
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
-  const [limit, setLimit] = useState(1000);
+  const [limit, setLimit] = useState<number | null>(1000);
   const [offset, setOffset] = useState(0);
   const [viewMode, setViewMode] = useState<"table" | "chart">("table");
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
@@ -80,12 +80,14 @@ const DataExplorerPage: React.FC = () => {
   const executeQuery = async (newOffset = 0, newLimit = limit) => {
     setLoading(true);
     try {
-      const result = await apiClient.executeQuery({
+      const requestPayload: any = {
         sql_query: sqlQuery,
-        limit: newLimit,
         offset: newOffset,
-      });
-      setLimit(newLimit);
+        limit: newLimit || 1000, // Default limit of 1000
+      };
+      
+      const result = await apiClient.executeQuery(requestPayload);
+      setLimit(newLimit || 1000);
       setOffset(newOffset);
       setQueryResult(result);
     } catch (error) {
@@ -520,7 +522,7 @@ const DataExplorerPage: React.FC = () => {
 
                 {/* Pagination fetch controls */}
                 <div className="flex items-center justify-end space-x-3">
-                  {offset > 0 && (
+                  {offset > 0 && limit && (
                     <button
                       onClick={() => executeQuery(Math.max(0, offset - limit))}
                       className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
@@ -531,6 +533,7 @@ const DataExplorerPage: React.FC = () => {
                   {queryResult?.success &&
                     queryResult.data &&
                     "data" in queryResult &&
+                    limit &&
                     (queryResult.data as TableData).data.length === limit && (
                       <button
                         onClick={() => executeQuery(offset + limit)}
@@ -539,12 +542,6 @@ const DataExplorerPage: React.FC = () => {
                         Next {limit}
                       </button>
                     )}
-                  <button
-                    onClick={() => executeQuery(0, undefined)}
-                    className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm transition-colors"
-                  >
-                    Show All
-                  </button>
                 </div>
 
                 <div className="flex items-center space-x-4">
