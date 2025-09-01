@@ -128,15 +128,60 @@ class DatabaseManager:
 
     def execute_query_pandas(self, query: str, params: tuple = None, timeout: int = 45) -> pd.DataFrame:
         """Execute query and return pandas DataFrame for large datasets with timeout"""
+        start_time = time.time()
+        
         try:
-            # Use the timeout-enabled execute_query method
-            results = self.execute_query(query, params, timeout=timeout)
-            df = pd.DataFrame(results)
-            if timeout == 0:
-                logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns (unlimited timeout)")
-            else:
-                logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns")
-            return df
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Execute with timeout monitoring
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+
+                # Get column names from cursor description
+                columns = [column[0] for column in cursor.description] if cursor.description else []
+
+                # Fetch all results
+                results = []
+                while True:
+                    # Check for timeout only if timeout > 0 (0 means unlimited)
+                    if timeout > 0 and time.time() - start_time > timeout:
+                        logger.warning(f"Pandas query execution timeout after {timeout}s")
+                        cursor.close()
+                        raise TimeoutError(f"Query execution exceeded {timeout} seconds")
+                    
+                    rows = cursor.fetchmany(1000)  # Fetch in chunks
+                    if not rows:
+                        break
+
+                    for row in rows:
+                        # Convert Oracle LOB objects to plain strings
+                        row_data = []
+                        for val in row:
+                            if isinstance(val, oracledb.LOB):
+                                try:
+                                    row_data.append(val.read())
+                                except Exception:
+                                    row_data.append(str(val))
+                            else:
+                                row_data.append(val)
+                        results.append(row_data)
+
+                # Create DataFrame with explicit column names, preserving structure even when empty
+                if columns:
+                    df = pd.DataFrame(results, columns=columns)
+                else:
+                    df = pd.DataFrame(results)
+
+                execution_time = time.time() - start_time
+                if timeout == 0:
+                    logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns (unlimited timeout)")
+                else:
+                    logger.info(f"DataFrame created with {len(df)} rows, {len(df.columns)} columns")
+                return df
+
         except TimeoutError:
             if timeout > 0:
                 logger.error(f"Pandas query execution timeout after {timeout}s")

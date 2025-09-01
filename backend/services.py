@@ -118,6 +118,20 @@ class DataService:
             # Execute query with timeout
             df = db_manager.execute_query_pandas(paginated_query, timeout=timeout)
 
+            # If we get an empty result, try to get column structure from the original query
+            if df.empty:
+                logger.info("Query returned no data, attempting to get column structure")
+                try:
+                    # Get column structure by running the original query with WHERE 1=0
+                    structure_query = f"SELECT * FROM ({query}) WHERE 1=0"
+                    structure_df = db_manager.execute_query_pandas(structure_query, timeout=10)
+                    if len(structure_df.columns) > 0:
+                        df = pd.DataFrame(columns=structure_df.columns)
+                        logger.info(f"Got column structure: {list(df.columns)}")
+                except Exception as e:
+                    logger.warning(f"Could not get column structure for empty result: {e}")
+                    # Keep the original empty df as fallback
+
             # Get total count (without pagination) - with a shorter timeout for count queries
             count_query = f"SELECT COUNT(*) as total_count FROM ({query})"
             try:
@@ -212,6 +226,20 @@ class DataService:
 
             # 6. Execute query
             df = db_manager.execute_query_pandas(paginated_query)
+
+            # If we get an empty result, try to get column structure from the filtered query
+            if df.empty:
+                logger.info("Filtered query returned no data, attempting to get column structure")
+                try:
+                    # Get column structure by running the filtered query with WHERE 1=0
+                    structure_query = f"SELECT * FROM ({filtered_query}) WHERE 1=0"
+                    structure_df = db_manager.execute_query_pandas(structure_query, timeout=10)
+                    if len(structure_df.columns) > 0:
+                        df = pd.DataFrame(columns=structure_df.columns)
+                        logger.info(f"Got column structure: {list(df.columns)}")
+                except Exception as e:
+                    logger.warning(f"Could not get column structure for empty filtered result: {e}")
+                    # Keep the original empty df as fallback
 
             # 7. Format data for table
             table_data = TableData(
@@ -405,11 +433,15 @@ class ExportService:
         output = io.BytesIO()
 
         try:
-            # Handle empty DataFrame case
+            # Handle empty DataFrame case - preserve column structure
             if df.empty:
-                logger.info("Creating empty Excel file with headers for empty dataset")
-                # Create a DataFrame with just headers if original is empty
-                df = pd.DataFrame(columns=["No Data Available"])
+                logger.info("Creating empty Excel file with original headers for empty dataset")
+                # Keep the original columns but ensure it's truly empty (no dummy data)
+                if len(df.columns) == 0:
+                    # Fallback if somehow no columns exist
+                    df = pd.DataFrame(columns=["No Data Available"])
+                # df is already empty with proper columns, just log it
+                logger.info(f"Empty Excel will have columns: {list(df.columns)}")
                 
             with pd.ExcelWriter(
                 output,
@@ -488,11 +520,15 @@ class ExportService:
         logger.info(f"Starting CSV export for {len(df)} rows, {len(df.columns)} columns")
         
         try:
-            # Handle empty DataFrame case
+            # Handle empty DataFrame case - preserve column structure
             if df.empty:
-                logger.info("Creating empty CSV file with headers for empty dataset")
-                # Create a DataFrame with just headers if original is empty
-                df = pd.DataFrame(columns=["No Data Available"])
+                logger.info("Creating empty CSV file with original headers for empty dataset")
+                # Keep the original columns but ensure it's truly empty (no dummy data)
+                if len(df.columns) == 0:
+                    # Fallback if somehow no columns exist
+                    df = pd.DataFrame(columns=["No Data Available"])
+                # df is already empty with proper columns, just log it
+                logger.info(f"Empty CSV will have columns: {list(df.columns)}")
             
             # Use string buffer for better memory management
             output = io.StringIO()

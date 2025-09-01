@@ -248,11 +248,35 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
         )
 
         if df.empty:
-            # Create empty file with headers for empty results
-            logger.info(f"Export query returned no data, creating empty file for {filename}")
-            import pandas as pd
-            # Create an empty DataFrame with at least one column to ensure proper file structure
-            df = pd.DataFrame({"No Data": ["No records found matching your criteria"]})
+            # For empty results, try to get column names by executing query with LIMIT 0
+            logger.info(f"Export query returned no data, attempting to get column headers for {filename}")
+            try:
+                # Extract the SELECT part and add LIMIT 0 to get just column structure
+                sql_for_headers = sql.strip()
+                if sql_for_headers.upper().find('LIMIT') == -1 and sql_for_headers.upper().find('ROWNUM') == -1:
+                    # Add LIMIT 0 for most databases, or use WHERE 1=0 for broader compatibility
+                    sql_for_headers = f"SELECT * FROM ({sql_for_headers}) WHERE 1=0"
+                else:
+                    # If query already has LIMIT/ROWNUM, just execute as-is since it's already empty
+                    sql_for_headers = sql_for_headers
+                
+                headers_df = await loop.run_in_executor(
+                    None,
+                    partial(db_manager.execute_query_pandas, sql_for_headers, timeout=10),
+                )
+                # Create empty DataFrame with proper column structure
+                if not headers_df.empty or len(headers_df.columns) > 0:
+                    df = pd.DataFrame(columns=headers_df.columns)
+                    logger.info(f"Empty file will have {len(df.columns)} columns: {list(df.columns)}")
+                else:
+                    # Fallback if we can't get headers
+                    import pandas as pd
+                    df = pd.DataFrame({"No Data": []})
+                    logger.warning(f"Could not determine column structure, using fallback")
+            except Exception as e:
+                logger.warning(f"Failed to get column headers for empty result: {e}")
+                import pandas as pd
+                df = pd.DataFrame({"No Data": []})
         logger.info(f"Export query completed, processing {len(df)} rows for {filename}")
 
         # 3. Convert to requested format and return
