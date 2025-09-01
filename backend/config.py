@@ -16,7 +16,7 @@ class Settings:
     )
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "240")
     )
 
     # Application Configuration

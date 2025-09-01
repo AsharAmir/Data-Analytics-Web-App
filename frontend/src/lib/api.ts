@@ -19,58 +19,11 @@ import {
 } from "../types";
 import { Role } from "../types";
 
-// Activity Tracker for monitoring user interactions
-class ActivityTracker {
-  private callback: () => void;
-  private events: string[] = [
-    'mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'
-  ];
-  private throttleDelay: number = 30000; // 30 seconds throttle
-  private lastTrigger: number = 0;
-
-  constructor(callback: () => void) {
-    this.callback = callback;
-  }
-
-  private handleActivity = (): void => {
-    const now = Date.now();
-    
-    // Throttle activity updates to avoid excessive calls
-    if (now - this.lastTrigger > this.throttleDelay) {
-      this.lastTrigger = now;
-      this.callback();
-      logger.debug("User activity detected");
-    }
-  };
-
-  start(): void {
-    if (typeof window === "undefined") return;
-    
-    this.events.forEach(event => {
-      window.addEventListener(event, this.handleActivity, { passive: true });
-    });
-    
-    logger.debug("Activity tracker started");
-  }
-
-  stop(): void {
-    if (typeof window === "undefined") return;
-    
-    this.events.forEach(event => {
-      window.removeEventListener(event, this.handleActivity);
-    });
-    
-    logger.debug("Activity tracker stopped");
-  }
-}
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
   private refreshTimer: NodeJS.Timeout | null = null;
-  private activityTracker: ActivityTracker | null = null;
-  private lastActivity: number = Date.now();
   private isRefreshing: boolean = false;
   /**
    * Helper to unwrap our standard APIResponse envelope and return the contained
@@ -100,6 +53,9 @@ class ApiClient {
 
     // Auto-refresh timer
     this.setupTokenRefresh();
+    
+    // Browser close detection for logout
+    this.setupBrowserCloseDetection();
 
           this.client.interceptors.request.use(
         (config) => {
@@ -115,9 +71,6 @@ class ApiClient {
           
           // Add timestamp for request freshness validation
           config.headers["X-Timestamp"] = new Date().toISOString();
-          
-          // Track API requests as user activity
-          this.lastActivity = Date.now();
           
           return config;
         },
@@ -197,12 +150,17 @@ class ApiClient {
       return null; // SSR safeguard
     }
     
-    const token = sessionStorage.getItem("auth_token") || Cookies.get("auth_token");
+    // Check localStorage first, then sessionStorage, then cookies
+    const token = localStorage.getItem("auth_token") || 
+                  sessionStorage.getItem("auth_token") || 
+                  Cookies.get("auth_token");
     
     if (!token) return null;
     
+    // Validate token metadata for security
     try {
-      const metadataStr = sessionStorage.getItem("token_metadata");
+      const metadataStr = localStorage.getItem("token_metadata") || 
+                          sessionStorage.getItem("token_metadata");
       if (metadataStr) {
         const metadata = JSON.parse(metadataStr);
         
@@ -213,8 +171,16 @@ class ApiClient {
           return null;
         }
         
+        // Check if this is the same browser session
+        const currentSessionId = sessionStorage.getItem("browser_session_id");
+        if (metadata.browserSessionId && currentSessionId && metadata.browserSessionId !== currentSessionId) {
+          logger.info("New browser session detected, clearing old token");
+          this.removeToken();
+          return null;
+        }
+        
         const tokenAge = Date.now() - metadata.issued;
-        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days (increased from 24 hours)
         if (tokenAge > maxAge) {
           logger.warn("Token expired due to age");
           this.removeToken();
@@ -235,24 +201,29 @@ class ApiClient {
     const isSecure = window.location.protocol === "https:";
     const domain = window.location.hostname;
     
-    // Session cookie (no explicit expires) + sessionStorage only
+    // Store in localStorage for persistence across tabs
+    localStorage.setItem("auth_token", token);
+    
+    // Also store in sessionStorage as backup
+    sessionStorage.setItem("auth_token", token);
+    
+    // Long-lived cookie for browser restart persistence (but we'll clear on browser close)
     Cookies.set("auth_token", token, {
+      expires: 7, // 7 days
       secure: isSecure,
       sameSite: "strict",
-      domain: domain === "localhost" ? undefined : domain, // Set domain for production
-      path: "/", // Limit cookie scope
+      domain: domain === "localhost" ? undefined : domain,
+      path: "/",
     });
-    
-    // Store only in sessionStorage so closing the browser logs user out
-    sessionStorage.setItem("auth_token", token);
     
     // Add token validation metadata
     const tokenMetadata = {
       issued: Date.now(),
       userAgent: navigator.userAgent,
       domain: domain,
+      browserSessionId: sessionStorage.getItem("browser_session_id"),
     };
-    sessionStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
+    localStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
   }
 
   private removeToken(): void {
@@ -265,6 +236,7 @@ class ApiClient {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
     localStorage.removeItem("token_metadata");
+    sessionStorage.removeItem("token_metadata");
     
     this.clearRefreshTimer();
     
@@ -279,27 +251,99 @@ class ApiClient {
   private setupTokenRefresh(): void {
     if (typeof window === "undefined") return; // SSR safeguard
     
-    // RACE CONDITION FIX: Clear any existing timer first
+    // Clear any existing timer first
     this.clearRefreshTimer();
     
     // Only set up refresh if we have a valid token
     if (this.isAuthenticated() && this.getToken()) {
-      // Set up activity tracking if not already done
-      if (!this.activityTracker) {
-        this.activityTracker = new ActivityTracker(() => {
-          this.lastActivity = Date.now();
-        });
-        this.activityTracker.start();
+      // Set up a timer to refresh token before it expires
+      // Refresh every 3 hours (180 minutes) - well before 4 hour expiration
+      this.refreshTimer = setTimeout(() => {
+        this.refreshToken();
+      }, 3 * 60 * 60 * 1000); // 3 hours
+    }
+  }
+
+  private setupBrowserCloseDetection(): void {
+    if (typeof window === "undefined") return; // SSR safeguard
+    
+    // Generate a unique session ID for this browser session
+    if (!sessionStorage.getItem("browser_session_id")) {
+      sessionStorage.setItem("browser_session_id", `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    }
+    
+    // Track if user is navigating within the app vs closing browser
+    let isNavigating = false;
+    
+    // Handle page navigation (don't logout on navigation)
+    window.addEventListener("beforeunload", (e) => {
+      // If user is navigating to another page in the app, don't logout
+      if (isNavigating) {
+        return;
       }
       
-      // RACE CONDITION FIX: Check if timer is already set to prevent duplicates
-      if (this.refreshTimer === null) {
-        // Check for refresh more frequently but only refresh for active users
-        this.refreshTimer = setTimeout(() => {
-          this.checkAndRefreshToken();
-        }, 20 * 60 * 1000); // Check every 20 minutes
-      }
+      // Set a flag that browser is closing
+      sessionStorage.setItem("browser_closing", "true");
+      
+      // Small delay to distinguish between navigation and browser close
+      setTimeout(() => {
+        // If we're still here after delay, it was navigation, not browser close
+        sessionStorage.removeItem("browser_closing");
+      }, 100);
+    });
+    
+    // Track navigation within the app
+    window.addEventListener("pagehide", () => {
+      isNavigating = true;
+    });
+    
+    // On page load, check if browser was closed
+    if (sessionStorage.getItem("browser_closing") === "true") {
+      logger.info("Browser was closed, clearing authentication");
+      this.removeToken();
+      sessionStorage.removeItem("browser_closing");
     }
+    
+    // Enhanced detection: Use storage event to detect browser close across tabs
+    window.addEventListener("storage", (e) => {
+      if (e.key === "browser_session_check" && e.newValue === "ping") {
+        // Another tab is checking if any tabs are alive
+        localStorage.setItem("browser_session_check", "pong");
+        setTimeout(() => {
+          localStorage.removeItem("browser_session_check");
+        }, 100);
+      }
+    });
+    
+    // Periodically check if browser is still alive
+    setInterval(() => {
+      if (typeof window !== "undefined" && this.isAuthenticated()) {
+        this.checkBrowserAlive();
+      }
+    }, 30000); // Check every 30 seconds
+  }
+  
+  private checkBrowserAlive(): void {
+    if (typeof window === "undefined") return;
+    
+    // Ping other tabs to see if they respond
+    localStorage.setItem("browser_session_check", "ping");
+    
+    setTimeout(() => {
+      const response = localStorage.getItem("browser_session_check");
+      if (response !== "pong") {
+        // No other tabs responded, we might be the last tab
+        // Additional check: see if our session storage is intact
+        if (!sessionStorage.getItem("browser_session_id")) {
+          logger.info("Browser session ended, logging out");
+          this.removeToken();
+          if (typeof window !== "undefined") {
+            window.location.href = "/login";
+          }
+        }
+      }
+      localStorage.removeItem("browser_session_check");
+    }, 200);
   }
 
   private clearRefreshTimer(): void {
@@ -307,30 +351,6 @@ class ApiClient {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
-    
-    if (this.activityTracker) {
-      this.activityTracker.stop();
-      this.activityTracker = null;
-    }
-  }
-
-  private async checkAndRefreshToken(): Promise<void> {
-    const now = Date.now();
-    const timeSinceActivity = now - this.lastActivity;
-    const inactivityThreshold = 10 * 60 * 1000; // 10 minutes of inactivity
-    
-    // If user has been inactive for too long, don't refresh and let them get logged out naturally
-    if (timeSinceActivity > inactivityThreshold) {
-      logger.info("User inactive for too long, skipping token refresh", { 
-        timeSinceActivity: Math.round(timeSinceActivity / 1000 / 60) + " minutes" 
-      });
-      // Set up next check in case they become active again
-      this.setupTokenRefresh();
-      return;
-    }
-    
-    // User is active, refresh the token
-    await this.refreshToken();
   }
 
   private async refreshToken(): Promise<void> {
@@ -342,15 +362,12 @@ class ApiClient {
     this.isRefreshing = true;
     
     try {
-      logger.info("Refreshing token for active user");
+      logger.info("Refreshing token automatically");
       const response = await this.client.post<AuthToken>("/auth/refresh");
       const { access_token, user } = response.data;
       
       this.setToken(access_token);
       this.setUser(user);
-      
-      // Update last activity since refresh is a sign of usage
-      this.lastActivity = Date.now();
       
       // Set up next refresh
       this.setupTokenRefresh();
@@ -691,9 +708,8 @@ class ApiClient {
     return !!this.getToken();
   }
 
-  // Manual activity update method
+  // Manual activity update method (simplified)
   updateActivity(): void {
-    this.lastActivity = Date.now();
     logger.debug("Activity updated manually");
   }
 
