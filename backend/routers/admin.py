@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import List
+from typing import List, Optional
+from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -20,6 +21,81 @@ from models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# Constants for database values
+class QueryType(str, Enum):
+    KPI = "kpi"
+    CHART = "chart"
+    TABLE = "table"
+
+class DatabaseFlags:
+    ACTIVE = 1
+    INACTIVE = 0
+    DEFAULT_DASHBOARD = 1
+    NON_DEFAULT_DASHBOARD = 0
+    KPI = 1
+    NON_KPI = 0
+
+class MenuConstants:
+    DEFAULT_DASHBOARD_ID = -1  # Special ID representing default dashboard
+
+# Database column management utilities
+class DatabaseColumnManager:
+    """Utility class to handle database column existence and creation"""
+    
+    @staticmethod
+    def ensure_column_exists(column_name: str, column_definition: str) -> None:
+        """Ensure a column exists in the app_queries table"""
+        try:
+            alter_sql = f"ALTER TABLE app_queries ADD ({column_name} {column_definition})"
+            db_manager.execute_non_query(alter_sql)
+            logger.info(f"Added column {column_name} to app_queries table")
+        except Exception as e:
+            # Column might already exist, which is fine
+            if "ORA-00955" not in str(e):  # Column already exists error
+                logger.debug(f"Column {column_name} already exists or error: {e}")
+
+    @staticmethod
+    def handle_missing_columns_error(exc: Exception, retry_func, *args, **kwargs):
+        """Handle ORA-00904 (column doesn't exist) errors by creating missing columns"""
+        error_str = str(exc).upper()
+        
+        if "ORA-00904" not in error_str:
+            raise exc
+            
+        # Define required columns and their definitions
+        column_definitions = {
+            "ROLE": "VARCHAR2(255) DEFAULT 'user'",
+            "IS_KPI": "NUMBER(1) DEFAULT 0",
+            "IS_DEFAULT_DASHBOARD": "NUMBER(1) DEFAULT 0"
+        }
+        
+        # Check which columns are missing and create them
+        for column_name, definition in column_definitions.items():
+            if column_name in error_str:
+                DatabaseColumnManager.ensure_column_exists(column_name.lower(), definition)
+        
+        # Retry the original operation
+        return retry_func(*args, **kwargs)
+
+# Query management utilities
+class QueryUtils:
+    """Utility functions for query management"""
+    
+    @staticmethod
+    def is_default_dashboard(menu_item_id: Optional[int]) -> bool:
+        """Check if the menu_item_id represents the default dashboard"""
+        return menu_item_id == MenuConstants.DEFAULT_DASHBOARD_ID or menu_item_id is None
+    
+    @staticmethod
+    def get_menu_item_id_for_db(menu_item_id: Optional[int]) -> Optional[int]:
+        """Convert menu_item_id for database storage (None for default dashboard)"""
+        return None if QueryUtils.is_default_dashboard(menu_item_id) else menu_item_id
+    
+    @staticmethod
+    def get_default_dashboard_flag(menu_item_id: Optional[int]) -> int:
+        """Get the is_default_dashboard flag value"""
+        return DatabaseFlags.DEFAULT_DASHBOARD if QueryUtils.is_default_dashboard(menu_item_id) else DatabaseFlags.NON_DEFAULT_DASHBOARD
 
 
 @router.post("/user", response_model=APIResponse)
@@ -127,79 +203,92 @@ async def delete_user_admin(user_id: int, current_user: User = Depends(require_a
 
 @router.post("/query", response_model=APIResponse)
 async def create_query(request: QueryCreate, current_user: User = Depends(require_admin)):
+    """Create a new query with professional practices and proper error handling"""
     try:
-        try:
-            db_manager.execute_non_query(
-                "ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)"
-            )
-        except:
-            pass
-
-        insert_sql = """
-        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role, is_default_dashboard)
-        VALUES (:name, :description, :sql_query, :chart_type, :chart_config, :menu_item_id, :role, :is_default_dashboard)
-        """
-        try:
-            is_default_dashboard = 1 if request.menu_item_id == -1 else 0
-            db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
-            
-            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            db_manager.execute_non_query(
-                insert_sql,
-                {
-                    "name": request.name,
-                    "description": request.description,
-                    "sql_query": request.sql_query,
-                    "chart_type": request.chart_type,
-                    "chart_config": json.dumps(request.chart_config or {}),
-                    "menu_item_id": db_menu_item_id,
-                    "role": serialize_roles(request.role) or get_default_role(),
-                    "is_default_dashboard": is_default_dashboard,
-                },
-            )
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_DEFAULT_DASHBOARD" in str(exc).upper()):
-                try:
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                except:
-                    pass
-                try:
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)")
-                except:
-                    pass
-                
-                is_default_dashboard = 1 if request.menu_item_id == -1 else 0
-                db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
-                
-                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                db_manager.execute_non_query(
-                    insert_sql,
-                    {
-                        "name": request.name,
-                        "description": request.description,
-                        "sql_query": request.sql_query,
-                        "chart_type": request.chart_type,
-                        "chart_config": json.dumps(request.chart_config or {}),
-                        "menu_item_id": db_menu_item_id,
-                        "role": serialize_roles(request.role) or get_default_role(),
-                        "is_default_dashboard": is_default_dashboard,
-                    },
-                )
-            else:
-                logger.error(f"Error creating query: {exc}")
-                raise HTTPException(status_code=500, detail="Failed to create query")
+        # Prepare data using utility functions
+        db_menu_item_id = QueryUtils.get_menu_item_id_for_db(request.menu_item_id)
+        is_default_dashboard = QueryUtils.get_default_dashboard_flag(request.menu_item_id)
+        roles = serialize_roles(request.role) or get_default_role()
         
-        get_id_query = "SELECT id FROM app_queries WHERE name = :1 ORDER BY created_at DESC"
-        id_result = db_manager.execute_query(get_id_query, (request.name,))
+        # SQL query with named parameters for better readability
+        insert_sql = """
+        INSERT INTO app_queries (
+            name, description, sql_query, chart_type, chart_config, 
+            menu_item_id, role, is_default_dashboard
+        ) VALUES (
+            :name, :description, :sql_query, :chart_type, :chart_config,
+            :menu_item_id, :role, :is_default_dashboard
+        )
+        """
+        
+        # Parameters dictionary for better maintainability
+        params = {
+            "name": request.name,
+            "description": request.description,
+            "sql_query": request.sql_query,
+            "chart_type": request.chart_type,
+            "chart_config": json.dumps(request.chart_config or {}),
+            "menu_item_id": db_menu_item_id,
+            "role": roles,
+            "is_default_dashboard": is_default_dashboard
+        }
+        
+        try:
+            db_manager.execute_non_query(insert_sql, params)
+            logger.info(f"Successfully created query: {request.name}")
+            
+        except Exception as exc:
+            # Handle missing columns professionally
+            logger.warning(f"Retrying query creation after handling missing columns: {exc}")
+            
+            def retry_insert():
+                return db_manager.execute_non_query(insert_sql, params)
+            
+            DatabaseColumnManager.handle_missing_columns_error(exc, retry_insert)
+            logger.info(f"Successfully created query after column creation: {request.name}")
+        
+        # Get the newly created query ID
+        get_id_query = """
+        SELECT id FROM app_queries 
+        WHERE name = :name 
+        ORDER BY created_at DESC 
+        FETCH FIRST 1 ROWS ONLY
+        """
+        id_result = db_manager.execute_query(get_id_query, {"name": request.name})
         new_query_id = id_result[0]["ID"] if id_result else None
         
+        # Handle menu item associations if provided
         if request.menu_item_ids and new_query_id:
-            junction_sql = "INSERT INTO app_query_menu_items (query_id, menu_item_id) VALUES (:query_id, :menu_item_id)"
+            junction_sql = """
+            INSERT INTO app_query_menu_items (query_id, menu_item_id) 
+            VALUES (:query_id, :menu_item_id)
+            """
             for menu_id in request.menu_item_ids:
-                if menu_id != -1:
-                    db_manager.execute_non_query(junction_sql, {"query_id": new_query_id, "menu_item_id": menu_id})
+                if not QueryUtils.is_default_dashboard(menu_id):
+                    try:
+                        db_manager.execute_non_query(junction_sql, {
+                            "query_id": new_query_id, 
+                            "menu_item_id": menu_id
+                        })
+                    except Exception as e:
+                        logger.warning(f"Failed to associate query {new_query_id} with menu {menu_id}: {e}")
         
-        return APIResponse(success=True, message="Query created", data={"id": new_query_id})
+        if new_query_id:
+            logger.info(f"Query created successfully with ID: {new_query_id}")
+            return APIResponse(
+                success=True, 
+                message=f"Query '{request.name}' created successfully",
+                data={"query_id": new_query_id}
+            )
+        else:
+            logger.error("Failed to retrieve new query ID")
+            raise HTTPException(status_code=500, detail="Query created but failed to retrieve ID")
+            
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Unexpected error creating query '{request.name}': {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to create query: {str(exc)}")
     except HTTPException:
         raise
     except Exception as exc:
@@ -758,63 +847,81 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
 
 @router.post("/kpi", response_model=APIResponse)
 async def create_kpi(request: QueryCreate, current_user: User = Depends(require_admin)):
+    """Create a new KPI with proper error handling and professional practices"""
     try:
-        insert_sql = """
-        INSERT INTO app_queries (name, description, sql_query, chart_type, chart_config, menu_item_id, role, is_kpi)
-        VALUES (:1, :2, :3, :4, :5, :6, :7, 1)
-        """
-        try:
-            db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
-            
-            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            db_manager.execute_non_query(
-                insert_sql,
-                (
-                    request.name,
-                    request.description,
-                    request.sql_query,
-                    "kpi",
-                    json.dumps({}),
-                    db_menu_item_id,
-                    serialize_roles(request.role) or get_default_role(),
-                ),
-            )
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_KPI" in str(exc).upper()):
-                if "ROLE" in str(exc).upper():
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                if "IS_KPI" in str(exc).upper():
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
-                
-                db_menu_item_id = None if request.menu_item_id == -1 else request.menu_item_id
-                
-                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                db_manager.execute_non_query(
-                    insert_sql,
-                    (
-                        request.name,
-                        request.description,
-                        request.sql_query,
-                        "kpi",
-                        json.dumps({}),
-                        db_menu_item_id,
-                        serialize_roles(request.role) or get_default_role(),
-                    ),
-                )
-            else:
-                logger.error(f"Error creating KPI: {exc}")
-                raise HTTPException(status_code=500, detail="Failed to create KPI")
+        # Prepare data using utility functions
+        db_menu_item_id = QueryUtils.get_menu_item_id_for_db(request.menu_item_id)
+        is_default_dashboard = QueryUtils.get_default_dashboard_flag(request.menu_item_id)
+        roles = serialize_roles(request.role) or get_default_role()
         
-        get_id_query = "SELECT id FROM app_queries WHERE name = :1 AND is_kpi = 1 ORDER BY created_at DESC"
-        id_result = db_manager.execute_query(get_id_query, (request.name,))
+        # SQL query with named parameters for better readability
+        insert_sql = """
+        INSERT INTO app_queries (
+            name, description, sql_query, chart_type, chart_config, 
+            menu_item_id, role, is_kpi, is_default_dashboard
+        ) VALUES (
+            :name, :description, :sql_query, :chart_type, :chart_config,
+            :menu_item_id, :role, :is_kpi, :is_default_dashboard
+        )
+        """
+        
+        # Parameters dictionary for better maintainability
+        params = {
+            "name": request.name,
+            "description": request.description,
+            "sql_query": request.sql_query,
+            "chart_type": QueryType.KPI.value,
+            "chart_config": json.dumps({}),
+            "menu_item_id": db_menu_item_id,
+            "role": roles,
+            "is_kpi": DatabaseFlags.KPI,
+            "is_default_dashboard": is_default_dashboard
+        }
+        
+        try:
+            db_manager.execute_non_query(insert_sql, params)
+            logger.info(f"Successfully created KPI: {request.name}")
+            
+        except Exception as exc:
+            # Handle missing columns professionally
+            logger.warning(f"Retrying KPI creation after handling missing columns: {exc}")
+            
+            def retry_insert():
+                return db_manager.execute_non_query(insert_sql, params)
+            
+            DatabaseColumnManager.handle_missing_columns_error(exc, retry_insert)
+            logger.info(f"Successfully created KPI after column creation: {request.name}")
+        
+        # Get the newly created KPI ID
+        get_id_query = """
+        SELECT id FROM app_queries 
+        WHERE name = :name AND is_kpi = :is_kpi 
+        ORDER BY created_at DESC 
+        FETCH FIRST 1 ROWS ONLY
+        """
+        id_result = db_manager.execute_query(get_id_query, {
+            "name": request.name,
+            "is_kpi": DatabaseFlags.KPI
+        })
+        
         new_kpi_id = id_result[0]["ID"] if id_result else None
         
-        return APIResponse(success=True, message="KPI created", data={"id": new_kpi_id})
+        if new_kpi_id:
+            logger.info(f"KPI created successfully with ID: {new_kpi_id}")
+            return APIResponse(
+                success=True, 
+                message=f"KPI '{request.name}' created successfully",
+                data={"kpi_id": new_kpi_id}
+            )
+        else:
+            logger.error("Failed to retrieve new KPI ID")
+            raise HTTPException(status_code=500, detail="KPI created but failed to retrieve ID")
+            
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error(f"Error creating KPI: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to create KPI")
+        logger.error(f"Unexpected error creating KPI '{request.name}': {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to create KPI: {str(exc)}")
 
 
 @router.put("/kpi/{kpi_id}", response_model=APIResponse)

@@ -27,17 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 class DataService:
-    """Service for data processing and chart generation"""
 
     @staticmethod
     def execute_query_for_chart(
         query: str, chart_type: str = None, chart_config: Dict = None, timeout: int = 45
     ) -> QueryResult:
-        """Execute query and format data for charts with timeout handling"""
         start_time = time.time()
 
         try:
-            # Execute query with timeout
             df = db_manager.execute_query_pandas(query, timeout=timeout)
 
             if df.empty:
@@ -47,15 +44,12 @@ class DataService:
                     execution_time=time.time() - start_time,
                 )
 
-            # Special handling for KPI pseudo-chart: expect a single value
             if chart_type == "kpi":
                 try:
-                    # Use first cell as KPI value if present
                     first_val = None
                     if not df.empty:
                         first_row = df.iloc[0]
                         first_val = first_row.iloc[0] if len(first_row) > 0 else None
-                    # Coerce to number if possible
                     try:
                         num_val = float(first_val)
                     except (TypeError, ValueError):
@@ -64,7 +58,6 @@ class DataService:
                 except Exception:
                     chart_data = ChartData(labels=["KPI"], datasets=[{"data": [0]}])
             else:
-                # Format data based on chart type
                 chart_data = DataService._format_chart_data(df, chart_type)
 
             return QueryResult(
@@ -84,7 +77,6 @@ class DataService:
             )
         except Exception as e:
             logger.error(f"Query execution error: {e}")
-            # Don't expose internal database errors to users
             error_msg = "Query execution failed. Please check your SQL syntax and try again."
             if "ORA-00907" in str(e) or "ORA-00936" in str(e) or "missing right parenthesis" in str(e):
                 error_msg = "SQL syntax error: Please check your query syntax."
@@ -100,11 +92,9 @@ class DataService:
     def execute_query_for_table(
         query: str, limit: int = 1000, offset: int = 0, timeout: int = 45
     ) -> QueryResult:
-        """Execute query and format data for tables with timeout handling"""
         start_time = time.time()
 
         try:
-            # Add pagination to query
             paginated_query = f"""
             SELECT * FROM (
                 SELECT ROWNUM as rn, sub.* FROM (
@@ -115,14 +105,11 @@ class DataService:
             WHERE rn > {offset}
             """
 
-            # Execute query with timeout
             df = db_manager.execute_query_pandas(paginated_query, timeout=timeout)
 
-            # If we get an empty result, try to get column structure from the original query
             if df.empty:
                 logger.info("Query returned no data, attempting to get column structure")
                 try:
-                    # Get column structure by running the original query with WHERE 1=0
                     structure_query = f"SELECT * FROM ({query}) WHERE 1=0"
                     structure_df = db_manager.execute_query_pandas(structure_query, timeout=10)
                     if len(structure_df.columns) > 0:
@@ -130,18 +117,15 @@ class DataService:
                         logger.info(f"Got column structure: {list(df.columns)}")
                 except Exception as e:
                     logger.warning(f"Could not get column structure for empty result: {e}")
-                    # Keep the original empty df as fallback
 
-            # Get total count (without pagination) - with a shorter timeout for count queries
             count_query = f"SELECT COUNT(*) as total_count FROM ({query})"
             try:
                 count_result = db_manager.execute_query(count_query, timeout=min(timeout, 30))
                 total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
             except TimeoutError:
                 logger.warning("Count query timed out, using current page size as estimate")
-                total_count = len(df) + offset  # Estimate based on current page
+                total_count = len(df) + offset
 
-            # Format data for table
             table_data = TableData(
                 columns=df.columns.tolist(),
                 data=df.values.tolist(),
@@ -161,7 +145,6 @@ class DataService:
             )
         except Exception as e:
             logger.error(f"Table query execution error: {e}")
-            # Don't expose internal database errors to users
             error_msg = "Query execution failed. Please check your SQL syntax and try again."
             if "ORA-00907" in str(e) or "ORA-00936" in str(e) or "missing right parenthesis" in str(e):
                 error_msg = "SQL syntax error: Please check your query syntax."
@@ -175,45 +158,37 @@ class DataService:
 
     @staticmethod
     def execute_filtered_query(request: FilteredQueryRequest) -> QueryResult:
-        """Execute a filtered, sorted, and paginated query"""
         start_time = time.time()
 
         try:
-            # 1. Get base query
             base_query = ""
             if request.query_id:
                 query_obj = QueryService.get_query_by_id(request.query_id)
                 if not query_obj:
                     raise ValueError("Query not found")
-                # Strip trailing semicolons and validate – keeps pagination sub-queries happy
                 base_query = query_obj.sql_query.strip().rstrip(";")
-                from sql_utils import validate_sql  # local import to avoid circular dependency
+                from sql_utils import validate_sql
                 validate_sql(base_query)
             elif request.sql_query:
                 base_query = request.sql_query.strip().rstrip(";")
-                from sql_utils import validate_sql  # local import to avoid circular dependency
+                from sql_utils import validate_sql
                 validate_sql(base_query)
             else:
                 raise ValueError("Either query_id or sql_query must be provided")
 
-            # 2. Apply filters
             filtered_query = DataService.apply_filters(base_query, request.filters)
 
-            # 3. Get total count
             count_query = f"SELECT COUNT(*) as total_count FROM ({filtered_query})"
             count_result = db_manager.execute_query(count_query)
             total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
 
-            # 4. Apply sorting
             if request.sort_column:
                 direction = "DESC" if request.sort_direction and request.sort_direction.upper() == "DESC" else "ASC"
-                # Basic protection against injection by ensuring column is alphanumeric with underscores
                 safe_sort_column = "".join(c for c in request.sort_column if c.isalnum() or c == '_')
                 sorted_query = f"{filtered_query} ORDER BY {safe_sort_column} {direction}"
             else:
                 sorted_query = filtered_query
 
-            # 5. Apply pagination
             paginated_query = f"""
             SELECT * FROM (
                 SELECT ROWNUM as rn, sub.* FROM (
@@ -224,14 +199,11 @@ class DataService:
             WHERE rn > {request.offset}
             """
 
-            # 6. Execute query
             df = db_manager.execute_query_pandas(paginated_query)
 
-            # If we get an empty result, try to get column structure from the filtered query
             if df.empty:
                 logger.info("Filtered query returned no data, attempting to get column structure")
                 try:
-                    # Get column structure by running the filtered query with WHERE 1=0
                     structure_query = f"SELECT * FROM ({filtered_query}) WHERE 1=0"
                     structure_df = db_manager.execute_query_pandas(structure_query, timeout=10)
                     if len(structure_df.columns) > 0:
@@ -239,9 +211,7 @@ class DataService:
                         logger.info(f"Got column structure: {list(df.columns)}")
                 except Exception as e:
                     logger.warning(f"Could not get column structure for empty filtered result: {e}")
-                    # Keep the original empty df as fallback
 
-            # 7. Format data for table
             table_data = TableData(
                 columns=df.columns.tolist(),
                 data=df.values.tolist(),
@@ -260,10 +230,8 @@ class DataService:
 
     @staticmethod
     def _format_chart_data(df: pd.DataFrame, chart_type: str) -> ChartData:
-        """Format DataFrame for different chart types"""
 
         if chart_type in ["pie", "doughnut"]:
-            # For pie charts, use first column as labels, second as values
             if len(df.columns) >= 2:
                 labels = df.iloc[:, 0].astype(str).tolist()
                 values = (
@@ -291,7 +259,6 @@ class DataService:
                 ]
 
         elif chart_type in ["bar", "line"]:
-            # For bar/line charts, first column as labels, other columns as datasets
             labels = df.iloc[:, 0].astype(str).tolist()
             datasets = []
 
@@ -300,9 +267,6 @@ class DataService:
             for i, col in enumerate(df.columns[1:]):
                 values = pd.to_numeric(df[col], errors="coerce").fillna(0).tolist()
 
-                # Use a sensible default when column name is missing – Chart.js will display
-                # "undefined" if the label is an empty string or undefined.  We therefore
-                # substitute "Series <n>" when the column (alias) is not present or blank.
                 safe_label = str(col).strip() or f"Series {i+1}"
 
                 dataset = {
@@ -310,7 +274,7 @@ class DataService:
                     "data": values,
                     "borderColor": colors[i % len(colors)],
                     "backgroundColor": colors[i % len(colors)]
-                    + "80",  # Add transparency
+                    + "80",
                     "borderWidth": 2,
                 }
 
@@ -320,7 +284,6 @@ class DataService:
                 datasets.append(dataset)
 
         else:
-            # Default format
             labels = df.iloc[:, 0].astype(str).tolist()
             values = (
                 pd.to_numeric(df.iloc[:, 1], errors="coerce").fillna(0).tolist()
@@ -328,7 +291,6 @@ class DataService:
                 else []
             )
 
-            # Ensure a non-empty label so the legend doesn’t show "undefined".
             default_label = (
                 str(df.columns[1]).strip() if len(df.columns) > 1 and str(df.columns[1]).strip() else "Value"
             )
@@ -346,7 +308,6 @@ class DataService:
 
     @staticmethod
     def _generate_colors(count: int) -> List[str]:
-        """Generate color palette for charts"""
         base_colors = [
             "#FF6384",
             "#36A2EB",
@@ -368,7 +329,6 @@ class DataService:
 
     @staticmethod
     def apply_filters(base_query: str, filters: TableFilter) -> str:
-        """Apply filters to a base query"""
         if not filters or not filters.conditions:
             return base_query
 
@@ -378,10 +338,6 @@ class DataService:
             column = condition.column
             operator = condition.operator.lower()
             value = condition.value
-
-            # All literals are escaped via ``escape_literal`` which doubles single
-            # quotes thus making it safe for direct interpolation. Numeric values
-            # are passed through as-is.
 
             def _as_sql_literal(val):
                 return val if isinstance(val, (int, float)) else escape_literal(str(val))
@@ -399,7 +355,6 @@ class DataService:
             elif operator == "lte":
                 where_conditions.append(f"{column} <= {_as_sql_literal(value)}")
             elif operator == "like":
-                # LIKE needs wildcards around the escaped literal
                 where_conditions.append(f"{column} LIKE '%' || {_as_sql_literal(value)} || '%'")
             elif operator == "in" and isinstance(value, list):
                 in_values = ", ".join(_as_sql_literal(v) for v in value)
@@ -409,7 +364,6 @@ class DataService:
             logic_operator = f" {filters.logic} "
             where_clause = logic_operator.join(where_conditions)
 
-            # Check if query already has WHERE clause
             if "WHERE" in base_query.upper():
                 filtered_query = f"{base_query} AND ({where_clause})"
             else:
@@ -421,11 +375,9 @@ class DataService:
 
 
 class ExportService:
-    """Service for exporting data to various formats with optimizations for large datasets"""
 
     @staticmethod
     def export_to_excel(df: pd.DataFrame, filename: str = None) -> bytes:
-        """Export DataFrame to Excel bytes with memory optimization for large datasets"""
         if filename is None:
             filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
@@ -433,14 +385,10 @@ class ExportService:
         output = io.BytesIO()
 
         try:
-            # Handle empty DataFrame case - preserve column structure
             if df.empty:
                 logger.info("Creating empty Excel file with original headers for empty dataset")
-                # Keep the original columns but ensure it's truly empty (no dummy data)
                 if len(df.columns) == 0:
-                    # Fallback if somehow no columns exist
                     df = pd.DataFrame(columns=["No Data Available"])
-                # df is already empty with proper columns, just log it
                 logger.info(f"Empty Excel will have columns: {list(df.columns)}")
                 
             with pd.ExcelWriter(
@@ -448,27 +396,22 @@ class ExportService:
                 engine="xlsxwriter",
                 engine_kwargs={"options": {"remove_timezone": True}},
             ) as writer:
-                # Write in chunks for large datasets
-                chunk_size = 50000  # Process 50k rows at a time
+                chunk_size = 50000
                 if len(df) > chunk_size:
                     logger.info(f"Large dataset detected, processing in chunks of {chunk_size}")
                     for i in range(0, len(df), chunk_size):
                         chunk = df.iloc[i:i+chunk_size]
                         if i == 0:
-                            # First chunk includes headers
                             chunk.to_excel(writer, sheet_name="Data", index=False, startrow=0)
                         else:
-                            # Subsequent chunks without headers
                             chunk.to_excel(writer, sheet_name="Data", index=False, startrow=i, header=False)
                         logger.info(f"Processed chunk {i//chunk_size + 1}/{(len(df)//chunk_size) + 1}")
                 else:
                     df.to_excel(writer, sheet_name="Data", index=False)
 
-                # Get workbook and worksheet objects for formatting
                 workbook = writer.book
                 worksheet = writer.sheets["Data"]
 
-                # Add basic formatting for better readability
                 header_format = workbook.add_format({
                     "bold": True,
                     "text_wrap": True,
@@ -477,17 +420,14 @@ class ExportService:
                     "border": 1,
                 })
 
-                # Apply header formatting
                 for col_num, value in enumerate(df.columns.values):
                     worksheet.write(0, col_num, value, header_format)
 
-                # Auto-adjust column widths (limited to reasonable sizes)
                 for i, col in enumerate(df.columns):
                     max_length = max(
                         df[col].astype(str).map(len).max() if not df[col].empty else 0,
                         len(str(col))
                     )
-                    # Cap column width to reasonable size
                     adjusted_width = min(max_length + 2, 50)
                     worksheet.set_column(i, i, adjusted_width)
 
@@ -498,7 +438,6 @@ class ExportService:
 
         except Exception as e:
             logger.error(f"Error during Excel export: {e}")
-            # Create a fallback empty Excel file with error message
             try:
                 output = io.BytesIO()
                 fallback_df = pd.DataFrame({"Error": [f"Export failed: Please try again or contact support"]})
@@ -513,29 +452,20 @@ class ExportService:
 
     @staticmethod
     def export_to_csv(df: pd.DataFrame, filename: str = None) -> str:
-        """Export DataFrame to CSV string with memory optimization for large datasets"""
         if filename is None:
             filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
         logger.info(f"Starting CSV export for {len(df)} rows, {len(df.columns)} columns")
         
         try:
-            # Handle empty DataFrame case - preserve column structure
             if df.empty:
                 logger.info("Creating empty CSV file with original headers for empty dataset")
-                # Keep the original columns but ensure it's truly empty (no dummy data)
                 if len(df.columns) == 0:
-                    # Fallback if somehow no columns exist
                     df = pd.DataFrame(columns=["No Data Available"])
-                # df is already empty with proper columns, just log it
                 logger.info(f"Empty CSV will have columns: {list(df.columns)}")
             
-            # Use string buffer for better memory management
             output = io.StringIO()
             
-            # Export with optimized settings for large datasets
-            # Use pandas' correct keyword ``lineterminator`` (without underscore).
-            # ``line_terminator`` triggers a TypeError: unexpected keyword argument.
             df.to_csv(
                 output,
                 index=False,
@@ -550,7 +480,6 @@ class ExportService:
             
         except Exception as e:
             logger.error(f"Error during CSV export: {e}")
-            # Create a fallback empty CSV file with error message
             try:
                 return "Error\nExport failed: Please try again or contact support\n"
             except:
@@ -561,13 +490,10 @@ class ExportService:
 
 
 class MenuService:
-    """Service for managing dynamic menu items"""
 
     @staticmethod
     def get_menu_structure(user_role: str = None) -> List[MenuItem]:
-        """Get hierarchical menu structure, optionally filtered by user role"""
         try:
-            # Get all menu items
             query = """
             SELECT id, name, type, icon, parent_id, sort_order, is_active, role
             FROM app_menu_items
@@ -578,22 +504,18 @@ class MenuService:
             try:
                 result = db_manager.execute_query(query)
             except Exception as exc:
-                # If role column doesn't exist, add it and retry
                 if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
                     db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
                     result = db_manager.execute_query(query)
                 else:
                     raise exc
 
-            # Convert to MenuItem objects
             all_items = []
             for row in result:
                 menu_roles = row.get("ROLE")
                 if menu_roles:
-                    # Normalize to uppercase for consistent comparison
                     menu_roles = [r.strip().upper() for r in menu_roles.split(",") if r.strip()]
                 
-                # Role filtering: skip if user doesn't have required role (case-insensitive)
                 if user_role and menu_roles and str(user_role).strip().upper() not in menu_roles:
                     continue
                 
@@ -610,7 +532,6 @@ class MenuService:
                 )
                 all_items.append(item)
 
-            # Build hierarchy
             menu_dict = {item.id: item for item in all_items}
             root_items = []
 
@@ -628,13 +549,10 @@ class MenuService:
 
 
 class QueryService:
-    """Service for managing saved queries"""
 
     @staticmethod
     def get_queries_by_menu_item(menu_item_id: int) -> List[Query]:
-        """Get all queries for a menu item (direct assignment or via junction table)"""
         try:
-            # 1. Attempt to fetch queries directly assigned via menu_item_id column
             base_sql = """
             SELECT id, name, description, sql_query, chart_type, chart_config,
                    menu_item_id, role, is_active, created_at
@@ -642,8 +560,6 @@ class QueryService:
             WHERE is_active = 1 AND (menu_item_id = :menu_id)
             """
 
-            # 2. Also include queries linked through the many-to-many junction table
-            #    app_query_menu_items (query_id, menu_item_id)
             junction_sql = """
             SELECT q.id, q.name, q.description, q.sql_query, q.chart_type,
                    q.chart_config, q.menu_item_id, q.role, q.is_active, q.created_at
@@ -687,7 +603,6 @@ class QueryService:
 
     @staticmethod
     def get_query_by_id(query_id: int) -> Optional[Query]:
-        """Get query by ID"""
         try:
             query = """
             SELECT id, name, description, sql_query, chart_type, chart_config, 
@@ -728,20 +643,15 @@ class QueryService:
 
     @staticmethod
     def get_queries_by_menu(menu_item_id: int) -> List[Query]:
-        """Alias for get_queries_by_menu_item to maintain backward compatibility with routers."""
         return QueryService.get_queries_by_menu_item(menu_item_id)
 
 
 class DashboardService:
-    """Service for managing dashboard widgets"""
 
     @staticmethod
     def get_dashboard_layout(menu_id: int = None) -> List[DashboardWidget]:
-        """Get dashboard widget layout, optionally filtered by menu item"""
         try:
             if menu_id:
-                # Filter widgets by menu item - show widgets whose queries belong to this menu item
-                # Check both main menu_item_id and junction table for multiple assignments
                 query = """
                 SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y, 
                        w.width, w.height, w.is_active,
@@ -755,8 +665,6 @@ class DashboardService:
                 """
                 result = db_manager.execute_query(query, (menu_id, menu_id))
             else:
-                # Default dashboard - show widgets that belong to Default Dashboard
-                # Use is_default_dashboard flag instead of just checking NULL menu_item_id
                 query = """
                 SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y,
                        w.width, w.height, w.is_active,
@@ -771,14 +679,13 @@ class DashboardService:
 
             widgets = []
             for row in result:
-                # Create a minimal query object with available data
                 query_obj = Query(
                     id=row["QUERY_ID"],
                     name=row["QUERY_NAME"],
                     description="",
-                    sql_query="",  # Not needed for dashboard display
+                    sql_query="",
                     chart_type=row["CHART_TYPE"] or "bar",
-                    chart_config={},  # Default empty config
+                    chart_config={},
                     menu_item_id=row.get("MENU_ITEM_ID"),
                     is_active=True,
                     created_at=datetime.now(),
@@ -805,124 +712,170 @@ class DashboardService:
 
 
 class KPIService:
-    """Service for retrieving KPI metrics defined as special queries (is_kpi = 1)."""
+    """Service class for managing KPI operations with professional practices"""
+    
+    # Constants for better maintainability
+    class KPIQueries:
+        """SQL queries for KPI operations"""
+        
+        BY_MENU = """
+        SELECT id, name, sql_query, role 
+        FROM app_queries 
+        WHERE is_active = :is_active AND is_kpi = :is_kpi AND menu_item_id = :menu_id
+        ORDER BY created_at DESC
+        """
+        
+        DEFAULT_DASHBOARD = """
+        SELECT id, name, sql_query, role 
+        FROM app_queries 
+        WHERE is_active = :is_active AND is_kpi = :is_kpi AND COALESCE(is_default_dashboard, 0) = :is_default_dashboard
+        ORDER BY created_at DESC
+        """
 
     @staticmethod
-    def get_kpis(user_role: RoleType, menu_id: int = None) -> List[KPI]:
-        """Fetch KPI queries, execute them, and return their numeric value.
+    def _ensure_kpi_columns_exist() -> None:
+        """Ensure required KPI columns exist in the database"""
+        try:
+            # Check if is_kpi column exists by attempting to use it
+            test_query = "SELECT COUNT(*) FROM app_queries WHERE is_kpi = 0 AND ROWNUM = 1"
+            db_manager.execute_query(test_query)
+        except Exception as exc:
+            if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
+                logger.info("Adding is_kpi column to app_queries table")
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+            else:
+                logger.warning(f"Unexpected error checking KPI columns: {exc}")
 
-        A query is treated as a KPI when the table **app_queries** has the column
-        `is_kpi = 1`. The first column of the first row of the query result is
-        assumed to be the numeric KPI value.
+    @staticmethod
+    def _parse_user_roles(role_string: str) -> List[str]:
+        """Parse comma-separated role string into list of roles"""
+        if not role_string:
+            return []
+        return [role.strip() for role in str(role_string).split(",") if role.strip()]
+
+    @staticmethod
+    def _is_user_authorized(user_role: RoleType, allowed_roles: List[str]) -> bool:
+        """Check if user is authorized to access KPI based on roles"""
+        if not allowed_roles:
+            return True  # No role restriction
+        return user_role in allowed_roles
+
+    @staticmethod
+    def _execute_kpi_query(sql_query: str, kpi_id: int) -> float:
+        """Safely execute KPI SQL query and return numeric value"""
+        try:
+            # Sanitize SQL query
+            sanitized_sql = sql_query.rstrip().rstrip(";")
+            
+            # Execute query
+            value_rows = db_manager.execute_query(sanitized_sql)
+            
+            if not value_rows:
+                logger.warning(f"KPI query (id={kpi_id}) returned no results")
+                return 0.0
+            
+            # Get first value from first row
+            first_row = value_rows[0]
+            first_value = next(iter(first_row.values()))
+            
+            # Convert to numeric
+            try:
+                return float(first_value) if first_value is not None else 0.0
+            except (TypeError, ValueError) as e:
+                logger.warning(f"KPI query (id={kpi_id}) returned non-numeric value: {first_value}, error: {e}")
+                return 0.0
+                
+        except Exception as exc:
+            logger.error(f"KPI query (id={kpi_id}) execution error: {exc}")
+            return 0.0
+
+    @staticmethod
+    def get_kpis(user_role: RoleType, menu_id: Optional[int] = None) -> List[KPI]:
+        """
+        Get KPIs for a user, filtered by menu or default dashboard
         
         Args:
-            user_role: User's role for filtering
-            menu_id: Optional menu ID to filter KPIs by dashboard assignment
+            user_role: The role of the requesting user
+            menu_id: Optional menu ID to filter KPIs by specific menu, None for default dashboard
+            
+        Returns:
+            List of KPI objects accessible to the user
         """
         try:
-            # 1. Get all KPI queries, optionally filtered by menu
-            try:
-                if menu_id:
-                    sql = (
-                        "SELECT id, name, sql_query, role "
-                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND menu_item_id = :1"
-                    )
-                    rows = db_manager.execute_query(sql, (menu_id,))
-                else:
-                    sql = (
-                        "SELECT id, name, sql_query, role "
-                        "FROM app_queries WHERE is_active = 1 AND is_kpi = 1 AND COALESCE(is_default_dashboard, 0) = 1"
-                    )
-                    rows = db_manager.execute_query(sql)
-            except Exception as exc:
-                # If is_kpi column doesn't exist, add it and return empty list for now
-                if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
-                    logger.info("Adding is_kpi column to app_queries table")
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
-                    return []  # Return empty list until KPIs are created
-                else:
-                    raise exc
-
+            # Ensure required columns exist
+            KPIService._ensure_kpi_columns_exist()
+            
+            # Choose query and parameters based on menu_id
+            if menu_id is not None:
+                query = KPIService.KPIQueries.BY_MENU
+                params = {
+                    "is_active": 1,
+                    "is_kpi": 1,
+                    "menu_id": menu_id
+                }
+                logger.debug(f"Fetching KPIs for menu_id: {menu_id}")
+            else:
+                query = KPIService.KPIQueries.DEFAULT_DASHBOARD
+                params = {
+                    "is_active": 1,
+                    "is_kpi": 1,
+                    "is_default_dashboard": 1
+                }
+                logger.debug("Fetching KPIs for default dashboard")
+            
+            # Execute query to get KPI definitions
+            rows = db_manager.execute_query(query, params)
+            logger.info(f"Found {len(rows)} KPI definitions")
+            
             kpis: List[KPI] = []
+            
             for row in rows:
-                # 2. Role-based filter – allow when no role specified or matches user role
-                allowed_roles: list[str] = []
-                if row.get("ROLE"):
-                    # DB column could be a comma-separated list like "admin,CEO"
-                    allowed_roles = [r.strip() for r in str(row["ROLE"]).split(",") if r.strip()]
-                if allowed_roles and (user_role not in allowed_roles):
+                # Parse allowed roles
+                allowed_roles = KPIService._parse_user_roles(row.get("ROLE"))
+                
+                # Check authorization
+                if not KPIService._is_user_authorized(user_role, allowed_roles):
+                    logger.debug(f"User role '{user_role}' not authorized for KPI '{row['NAME']}'")
                     continue
-
-                # 3. Execute KPI SQL – take the first value of the first row
-                try:
-                    sanitized_sql = row["SQL_QUERY"].rstrip().rstrip(";")
-
-                    value_rows = db_manager.execute_query(sanitized_sql)
-                    if value_rows:
-                        first_val = next(iter(value_rows[0].values()))  # first column value
-                        # Cast to float for consistency, fallback to 0 when not numeric
-                        try:
-                            numeric_val: float | int = float(first_val)
-                        except (TypeError, ValueError):
-                            numeric_val = 0
-                    else:
-                        numeric_val = 0
-                except Exception as exc:
-                    logger.error(f"KPI query (id={row['ID']}) execution error: {exc}")
-                    numeric_val = 0
-
-                kpis.append(
-                    KPI(
-                        id=row["ID"],
-                        label=row["NAME"],
-                        value=numeric_val,
-                    )
+                
+                # Execute KPI query to get value
+                kpi_value = KPIService._execute_kpi_query(row["SQL_QUERY"], row["ID"])
+                
+                # Create KPI object
+                kpi = KPI(
+                    id=row["ID"],
+                    label=row["NAME"],
+                    value=kpi_value,
                 )
-
+                kpis.append(kpi)
+                
+                logger.debug(f"Added KPI: {kpi.label} = {kpi.value}")
+            
+            logger.info(f"Returning {len(kpis)} authorized KPIs for user role '{user_role}'")
             return kpis
+            
         except Exception as exc:
-            logger.error(f"Error getting KPIs: {exc}")
+            logger.error(f"Error getting KPIs for user role '{user_role}', menu_id={menu_id}: {exc}")
             return []
 
 
-# ---------------------------------------------------------------------------
-# ProcessService – manage standalone backend processes/scripts (Scenario 3)
-# ---------------------------------------------------------------------------
-
-
 class ProcessService:
-    """Service layer for CRUD operations and execution of Python processes stored
-    in the *app_processes* catalog.  A process is simply a Python script that is
-    executed in a separate subprocess with user-supplied parameters.
-
-    Security considerations:
-    • Only scripts inside the workspace (or whitelisted path) should be allowed.
-    • Execution occurs via ``subprocess`` to isolate namespace.
-    • Timeouts prevent runaway jobs.
-    • Environment variables are *not* propagated by default – override at call
-      site if needed.
-    """
 
     @staticmethod
     def _serialize_roles(role_field: RoleType | List[RoleType] | None) -> str:
-        """Serialize roles to uppercase, comma-separated string with de-duplication."""
         from roles_utils import serialize_roles
         return serialize_roles(role_field) or get_default_role()
 
-    # ---------------------- CRUD operations ----------------------
-
     @staticmethod
     def create_process(request: "ProcessCreate") -> int:
-        """Insert process metadata and parameter definitions. Returns new ID."""
 
         insert_sql = (
             "INSERT INTO app_processes (name, description, script_path, role) "
             "VALUES (:1, :2, :3, :4)"
         )
 
-        from models import ProcessCreate, ProcessParameter  # local to avoid circular
+        from models import ProcessCreate, ProcessParameter
 
-        # Insert row
         db_manager.execute_non_query(
             insert_sql,
             (
@@ -933,7 +886,6 @@ class ProcessService:
             ),
         )
 
-        # Retrieve new ID
         res = db_manager.execute_query(
             "SELECT id FROM app_processes WHERE name = :1 ORDER BY created_at DESC",
             (request.name,),
@@ -942,7 +894,6 @@ class ProcessService:
             raise ValueError("Failed to obtain ID for newly created process")
         proc_id = res[0]["ID"]
 
-        # Insert parameter definitions
         if request.parameters:
             param_sql = (
                 "INSERT INTO app_process_params (process_id, name, label, input_type, "
@@ -968,7 +919,6 @@ class ProcessService:
     def get_process(proc_id: int) -> Optional["Process"]:
         from models import Process, ProcessParameter, ParameterInputType
 
-        # 1) Fetch the main process row
         proc_sql = """
             SELECT id, name, description, script_path, role, is_active, created_at
             FROM app_processes
@@ -981,7 +931,6 @@ class ProcessService:
 
         proc_row = proc_rows[0]
 
-        # 2) Fetch parameter definitions separately to avoid CLOB concat issues
         param_sql = """
             SELECT name, label, input_type, default_value, dropdown_values
             FROM app_process_params
@@ -1025,16 +974,10 @@ class ProcessService:
         for row in rows:
             roles = row.get("ROLE")
             
-            # Role-based filtering:
-            # - Admin users see all processes
-            # - Non-admin users only see processes where their role is included in the process role list
-            # - If process has no role restriction (empty/null), only admin can see it
             if str(user_role).strip().lower() != get_admin_role():
                 if not roles or roles.strip() == "":
-                    # Process has no role restriction - only admin can see it
                     continue
                 if str(user_role).strip().upper() not in {r.strip().upper() for r in roles.split(",")}:
-                    # User's role not in the process's allowed roles
                     continue
 
             processes.append(
@@ -1043,7 +986,7 @@ class ProcessService:
                     name=row["NAME"],
                     description=row["DESCRIPTION"],
                     script_path=row["SCRIPT_PATH"],
-                    parameters=None,  # Parameters fetched lazily if required
+                    parameters=None,
                     is_active=bool(row["IS_ACTIVE"]),
                     role=roles,
                     created_at=row["CREATED_AT"],
@@ -1069,7 +1012,6 @@ class ProcessService:
             ),
         )
 
-        # Replace parameter definitions: delete then insert
         db_manager.execute_non_query("DELETE FROM app_process_params WHERE process_id = :1", (proc_id,))
         if request.parameters:
             param_sql = (
@@ -1094,14 +1036,8 @@ class ProcessService:
     def delete_process(proc_id: int) -> None:
         db_manager.execute_non_query("DELETE FROM app_processes WHERE id = :1", (proc_id,))
 
-    # ---------------------- Execution ----------------------
-
     @staticmethod
     def run_process(proc_id: int, args: dict[str, str], timeout: int = 600) -> str:
-        """Execute the given process with provided arguments.
-
-        Returns captured stdout text.  Raises RuntimeError on failure.
-        """
 
         import shlex
         import subprocess
@@ -1114,7 +1050,6 @@ class ProcessService:
 
         script_path = proc.script_path
         
-        # Handle relative paths - resolve relative to backend directory
         if not os.path.isabs(script_path):
             backend_dir = os.path.dirname(os.path.abspath(__file__))
             script_path = os.path.join(backend_dir, script_path)
@@ -1122,7 +1057,6 @@ class ProcessService:
         if not os.path.isfile(script_path):
             raise RuntimeError(f"Script not found: {script_path}")
 
-        # Build argument list: use same interpreter running this service to avoid PATH issues
         cmd = [sys.executable, script_path]
         for k, v in args.items():
             cmd.append(f"--{k}={shlex.quote(str(v))}")

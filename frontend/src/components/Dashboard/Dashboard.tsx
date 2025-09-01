@@ -893,24 +893,23 @@ const Dashboard: React.FC = () => {
 
         {/* Dashboard Content */}
         <main className="flex-1 p-4 lg:p-8 space-y-4 lg:space-y-8 overflow-x-hidden">
-          {/* KPI Cards */}
-          {selectedView === "overview" &&
-            Object.keys(widgetData).length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
-                {kpis
-                  .filter((kpi) => kpiPrefs[kpi.id] ?? true)
-                  .map((kpi, index) => (
-                    <KPICard
-                      key={index}
-                      title={kpi.title}
-                      value={kpi.value}
-                      change={kpi.change}
-                      icon={kpi.icon}
-                      color={kpi.color}
-                    />
-                  ))}
-              </div>
-            )}
+          {/* KPI Cards - Always show if we have KPIs */}
+          {selectedView === "overview" && kpis.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+              {kpis
+                .filter((kpi) => kpiPrefs[kpi.id] ?? true)
+                .map((kpi, index) => (
+                  <KPICard
+                    key={index}
+                    title={kpi.title}
+                    value={kpi.value}
+                    change={kpi.change}
+                    icon={kpi.icon}
+                    color={kpi.color}
+                  />
+                ))}
+            </div>
+          )}
 
           {/* Widgets Grid */}
           {widgets.length > 0 ? (
