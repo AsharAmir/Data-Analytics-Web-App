@@ -6,7 +6,7 @@ the application to log, monitor, and analyze failures.
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 import os
@@ -38,9 +38,10 @@ class FailureTracker:
         )
         failure_handler.setLevel(logging.ERROR)
         
-        # JSON formatter for failures
+        # JSON formatter for failures with localtime timestamp
         formatter = logging.Formatter(
-            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": %(message)s}'
+            '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": %(message)s}',
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         failure_handler.setFormatter(formatter)
         
@@ -67,7 +68,8 @@ class FailureTracker:
             "error_type": type(error).__name__,
             "error_message": str(error),
             "user_id": user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            # Use computer local time for the failure record
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
         }
         
         if additional_context:

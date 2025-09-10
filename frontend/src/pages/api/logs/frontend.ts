@@ -32,8 +32,14 @@ class ServerLogger {
   }
 
   private getLogFileName(): string {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    return path.join(this.logsDir, `frontend_${today}.log`);
+    // Use local date for file rotation (YYYY-MM-DD)
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const todayLocal = `${yyyy}-${mm}-${dd}`;
+    return path.join(this.logsDir, `frontend_${todayLocal}.log`);
   }
 
   writeLog(entry: LogEntry) {

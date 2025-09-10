@@ -44,6 +44,19 @@ class FrontendLogger {
     }
   }
 
+  // Format a local timestamp as YYYY-MM-DD HH:MM:SS
+  private localTimestamp(): string {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mi = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  }
+
   private generateSessionId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -61,7 +74,8 @@ class FrontendLogger {
 
   private createLogEntry(level: LogEntry["level"], message: string, context?: any): LogEntry {
     return {
-      timestamp: new Date().toISOString(),
+      // Use computer localtime instead of UTC
+      timestamp: this.localTimestamp(),
       level,
       message,
       context,
@@ -208,7 +222,13 @@ class FrontendLogger {
     
     const link = document.createElement('a');
     link.href = URL.createObjectURL(dataBlob);
-    link.download = `frontend_logs_${new Date().toISOString().split('T')[0]}.json`;
+    // Name exported file with local date
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    link.download = `frontend_logs_${yyyy}-${mm}-${dd}.json`;
     link.click();
     
     URL.revokeObjectURL(link.href);

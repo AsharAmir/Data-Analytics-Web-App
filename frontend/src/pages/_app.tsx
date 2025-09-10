@@ -116,7 +116,6 @@ export default function App({ Component, pageProps }: AppProps) {
       // Log navigation to file
       logger.navigation(router.asPath || 'unknown', url, {
         userAgent: typeof window !== 'undefined' ? navigator.userAgent : undefined,
-        timestamp: new Date().toISOString()
       });
       
       enhancedSecurityGuard(url);

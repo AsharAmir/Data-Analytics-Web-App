@@ -50,7 +50,9 @@ def setup_logging() -> None:
         "formatters": {
             "json": {
                 "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+                # Ensure localtime output in a consistent, readable format
                 "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "console": {
                 "format": "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",

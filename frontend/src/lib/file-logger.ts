@@ -41,8 +41,13 @@ class FileLogger {
   }
 
   private getLogFileName(): string {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    return path.join(this.logsDir, `frontend_${today}.log`);
+    // Use local date for file rotation (YYYY-MM-DD)
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const mm = pad(d.getMonth() + 1);
+    const dd = pad(d.getDate());
+    return path.join(this.logsDir, `frontend_${yyyy}-${mm}-${dd}.log`);
   }
 
   private getCurrentUser(): string | undefined {
@@ -53,7 +58,18 @@ class FileLogger {
 
   private createLogEntry(level: LogEntry["level"], message: string, context?: any): LogEntry {
     return {
-      timestamp: new Date().toISOString(),
+      // Use local timestamp instead of UTC
+      timestamp: (() => {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const mm = pad(d.getMonth() + 1);
+        const dd = pad(d.getDate());
+        const hh = pad(d.getHours());
+        const mi = pad(d.getMinutes());
+        const ss = pad(d.getSeconds());
+        return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+      })(),
       level,
       message,
       context,
