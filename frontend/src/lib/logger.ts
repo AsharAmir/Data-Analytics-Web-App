@@ -95,9 +95,9 @@ class FrontendLogger {
     this.logBuffer = [];
     this.lastFlush = Date.now();
 
-    // Send logs to backend (implement this endpoint if needed)
+    // Send logs to file-based backend
     try {
-      if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
+      if (typeof window !== "undefined") {
         await fetch("/api/logs/frontend", {
           method: "POST",
           headers: {
@@ -122,30 +122,50 @@ class FrontendLogger {
 
   debug(message: string, context?: any) {
     if (this.shouldLog("debug")) {
-      console.debug(`[DEBUG] ${new Date().toISOString()} - ${message}`, context);
       this.addToBuffer(this.createLogEntry("DEBUG", message, context));
     }
   }
 
   info(message: string, context?: any) {
     if (this.shouldLog("info")) {
-      console.info(`[INFO] ${new Date().toISOString()} - ${message}`, context);
       this.addToBuffer(this.createLogEntry("INFO", message, context));
     }
   }
 
   warn(message: string, context?: any) {
     if (this.shouldLog("warn")) {
-      console.warn(`[WARN] ${new Date().toISOString()} - ${message}`, context);
       this.addToBuffer(this.createLogEntry("WARN", message, context));
     }
   }
 
   error(message: string, context?: any) {
     if (this.shouldLog("error")) {
-      console.error(`[ERROR] ${new Date().toISOString()} - ${message}`, context);
       this.addToBuffer(this.createLogEntry("ERROR", message, context));
     }
+  }
+
+  // Enhanced logging methods for specific use cases
+  navigation(from: string, to: string, context?: any) {
+    this.info(`Navigation: ${from} → ${to}`, { from, to, ...context });
+  }
+
+  userAction(action: string, component: string, context?: any) {
+    this.info(`User Action: ${action} in ${component}`, { action, component, ...context });
+  }
+
+  apiRequest(method: string, url: string, context?: any) {
+    this.debug(`API Request: ${method.toUpperCase()} ${url}`, { method, url, ...context });
+  }
+
+  apiResponse(method: string, url: string, status: number, duration?: number, context?: any) {
+    const statusEmoji = status >= 400 ? '❌' : status >= 300 ? '⚠️' : '✅';
+    const durationText = duration ? ` (${duration}ms)` : '';
+    this.debug(`API Response: ${statusEmoji} ${method.toUpperCase()} ${url} ${status}${durationText}`, 
+      { method, url, status, duration, ...context });
+  }
+
+  performance(metric: string, value: number, context?: any) {
+    this.debug(`Performance: ${metric} = ${value}ms`, { metric, value, ...context });
   }
 
   private shouldLog(messageLevel: LogLevel): boolean {
@@ -154,10 +174,11 @@ class FrontendLogger {
   }
 
   private getCurrentLevel(): LogLevel {
+    // Set debug level in development, info in production
     if (typeof window !== "undefined") {
-      return (process.env.NEXT_PUBLIC_LOG_LEVEL as LogLevel) || "info";
+      return process.env.NODE_ENV === "development" ? "debug" : "info";
     }
-    return (process.env.LOG_LEVEL as LogLevel) || "info";
+    return process.env.NODE_ENV === "development" ? "debug" : "info";
   }
 
   // Method to get logs for debugging
@@ -243,8 +264,16 @@ const createLogger = () => {
       info: (message: string, context?: any) => console.info("[INFO]", message, context),
       warn: (message: string, context?: any) => console.warn("[WARN]", message, context),
       error: (message: string, context?: any) => console.error("[ERROR]", message, context),
+      navigation: (from: string, to: string, context?: any) => console.info("[NAVIGATION]", `${from} → ${to}`, context),
+      userAction: (action: string, component: string, context?: any) => console.info("[USER_ACTION]", `${action} in ${component}`, context),
+      apiRequest: (method: string, url: string, context?: any) => console.debug("[API_REQUEST]", `${method} ${url}`, context),
+      apiResponse: (method: string, url: string, status: number, duration?: number, context?: any) => console.debug("[API_RESPONSE]", `${method} ${url} ${status}`, context),
+      performance: (metric: string, value: number, context?: any) => console.debug("[PERFORMANCE]", `${metric} = ${value}ms`, context),
       getLogs: () => [],
       clearLogs: () => {},
+      exportLogs: () => {},
+      getRecentErrors: () => [],
+      printDebugInfo: () => {},
     };
   }
 
@@ -256,8 +285,18 @@ export const logger = createLogger();
 // Make logger globally available for debugging in development
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
   (window as any).logger = logger;
-  console.info("🔍 Frontend logger available globally as window.logger");
-  console.info("💡 Type logger.printDebugInfo() to see debug information");
+  
+  // Log performance metrics periodically in development
+  if ('performance' in window) {
+    setInterval(() => {
+      const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+      if (navigation) {
+        logger.performance('Page Load Time', navigation.loadEventEnd - navigation.fetchStart);
+        logger.performance('DOM Content Loaded', navigation.domContentLoadedEventEnd - navigation.fetchStart);
+        logger.performance('First Contentful Paint', navigation.loadEventEnd - navigation.fetchStart);
+      }
+    }, 60000); // Every minute
+  }
 }
 
 export default logger;

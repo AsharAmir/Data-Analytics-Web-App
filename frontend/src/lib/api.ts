@@ -65,13 +65,24 @@ class ApiClient {
           this.client.interceptors.request.use(
         (config) => {
           const token = this.getToken();
-          logger.debug(`API → ${config.method?.toUpperCase()} ${config.url}`);
+          const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Add timing information
+          (config as any).metadata = { startTime: Date.now(), requestId };
+          
+
+          // Log API request to file
+          logger.apiRequest(config.method || 'GET', config.url || '', {
+            requestId,
+            hasAuth: !!token,
+            timeout: config.timeout
+          });
           
           if (token) {
             config.headers.Authorization = `Bearer ${token}`;
           }
           
-          config.headers["X-Request-ID"] = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          config.headers["X-Request-ID"] = requestId;
           config.headers["X-Client-Version"] = "1.0.0";
           
           // Add timestamp for request freshness validation
@@ -80,7 +91,14 @@ class ApiClient {
           return config;
         },
       (error) => {
-        logger.error("Request interceptor error", error);
+        logger.error("Request interceptor error", { 
+          message: error.message,
+          stack: error.stack,
+          config: error.config ? {
+            method: error.config.method,
+            url: error.config.url
+          } : undefined
+        });
         return Promise.reject(error);
       },
     );
@@ -88,10 +106,43 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        logger.debug(`API ← ${response.config.method?.toUpperCase()} ${response.config.url} ${response.status}`);
+        const duration = (response.config as any).metadata?.startTime 
+          ? Date.now() - (response.config as any).metadata.startTime 
+          : undefined;
+        const requestId = (response.config as any).metadata?.requestId;
+        
+        // Log API response to file
+        logger.apiResponse(
+          response.config.method || 'GET', 
+          response.config.url || '', 
+          response.status, 
+          duration,
+          {
+            requestId,
+            responseSize: JSON.stringify(response.data).length,
+            contentType: response.headers['content-type']
+          }
+        );
         return response;
       },
       (error) => {
+        const duration = (error.config as any)?.metadata?.startTime 
+          ? Date.now() - (error.config as any).metadata.startTime 
+          : undefined;
+        const requestId = (error.config as any)?.metadata?.requestId;
+        
+        // Log API error to file
+        logger.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
+          requestId,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          duration,
+          responseData: error.response?.data,
+          errorMessage: error.message,
+          isNetworkError: !error.response,
+          isTimeoutError: error.code === 'ECONNABORTED'
+        });
+
         if (process.env.NODE_ENV !== "production") {
           console.debug("API Client interceptor - Full error:", error);
           console.debug(
