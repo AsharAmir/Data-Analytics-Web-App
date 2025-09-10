@@ -360,7 +360,7 @@ const DataExplorerPage: React.FC = () => {
         onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className={`flex-1 flex flex-col min-w-0 overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
         {/* Header */}
         <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden flex-shrink-0">
           <div className="absolute inset-0 bg-gradient-to-r from-green-50/30 via-transparent to-blue-50/30"></div>

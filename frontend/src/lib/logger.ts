@@ -51,7 +51,8 @@ class FrontendLogger {
   private getCurrentUser(): string | undefined {
     if (typeof window === "undefined") return undefined;
     try {
-      const user = localStorage.getItem("user");
+      // Prefer localStorage (shared across tabs), fallback to sessionStorage for backward compatibility
+      const user = localStorage.getItem("user") || sessionStorage.getItem("user");
       return user ? JSON.parse(user).id?.toString() : undefined;
     } catch {
       return undefined;

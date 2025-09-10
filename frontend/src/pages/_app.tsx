@@ -44,7 +44,21 @@ export default function App({ Component, pageProps }: AppProps) {
           return;
         }
 
-        if (!securityManager.isAuthenticated()) {
+        // Handle token-only sessions (e.g., SAML success page) by fetching user
+        const hasToken = apiClient.isAuthenticated();
+        let user = apiClient.getUser();
+        if (hasToken && !user) {
+          try {
+            user = await apiClient.getCurrentUser();
+            securityManager.setUser(user);
+          } catch (e) {
+            logger.warn("Token present but failed to load user; redirecting to login", { error: e });
+            router.replace("/login");
+            return;
+          }
+        }
+        
+        if (!hasToken || !user) {
           logger.warn("Unauthenticated access attempt", { 
             pathname, 
             query, 
@@ -54,12 +68,9 @@ export default function App({ Component, pageProps }: AppProps) {
           return;
         }
 
-        const user = apiClient.getUser();
-        if (user) {
-          securityManager.setUser(user);
-          // Update activity on user interaction
-          apiClient.updateActivity();
-        }
+        // Update in-memory user + activity
+        securityManager.setUser(user);
+        apiClient.updateActivity();
 
         // Force password change if required
         if (user?.must_change_password && pathname !== "/change-password") {

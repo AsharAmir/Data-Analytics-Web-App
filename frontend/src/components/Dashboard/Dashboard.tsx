@@ -638,7 +638,7 @@ const Dashboard: React.FC = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col lg:ml-0 min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
         {/* Enhanced Header */}
         <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden z-30">
           {/* Background decorative element */}

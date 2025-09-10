@@ -1,6 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 import { logger } from "./logger";
-import Cookies from "js-cookie";
 import { toast } from "react-hot-toast";
 import {
   User,
@@ -23,6 +22,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class ApiClient {
   private client: AxiosInstance;
+  private tabId: string | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
   private isRefreshing: boolean = false;
   /**
@@ -44,18 +44,23 @@ class ApiClient {
       timeout: 30000,
       headers: {
         "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest", 
-        "X-Frame-Options": "DENY",
-        "X-Content-Type-Options": "nosniff",
+        "X-Requested-With": "XMLHttpRequest",
       },
-      withCredentials: true,  // Include cookies in requests
     });
 
-    // Auto-refresh timer
+    // Auto-refresh timer based on JWT exp
     this.setupTokenRefresh();
-    
-    // Browser close detection for logout
-    this.setupBrowserCloseDetection();
+    // Track open tabs and clear auth on last tab close
+    this.setupCrossTabSession();
+
+    // Cross-tab logout sync: if another tab removes the token, redirect here too
+    if (typeof window !== "undefined") {
+      window.addEventListener("storage", (e) => {
+        if (e.key === "auth_token" && e.newValue === null) {
+          window.location.href = "/login";
+        }
+      });
+    }
 
           this.client.interceptors.request.use(
         (config) => {
@@ -110,8 +115,8 @@ class ApiClient {
           if (typeof window !== "undefined") {
             window.location.href = "/login";
           }
-          // Halt further error propagation for non-login 401s
-          return new Promise(() => {});
+          // Propagate error so callers can handle/cleanup
+          return Promise.reject(error);
         } else if (error.response?.status >= 500) {
           logger.error("Server error", error.response?.status);
           toast.error("Server error. Please try again later.", {
@@ -149,201 +154,62 @@ class ApiClient {
     if (typeof window === "undefined") {
       return null; // SSR safeguard
     }
-    
-    // Check localStorage first, then sessionStorage, then cookies
-    const token = localStorage.getItem("auth_token") || 
-                  sessionStorage.getItem("auth_token") || 
-                  Cookies.get("auth_token");
-    
-    if (!token) return null;
-    
-    // Validate token metadata for security
-    try {
-      const metadataStr = localStorage.getItem("token_metadata") || 
-                          sessionStorage.getItem("token_metadata");
-      if (metadataStr) {
-        const metadata = JSON.parse(metadataStr);
-        
-        // Check if token is from same user agent (prevent token theft)
-        if (metadata.userAgent !== navigator.userAgent) {
-          logger.warn("Token user agent mismatch - possible token theft");
-          this.removeToken();
-          return null;
-        }
-        
-        // Check if this is the same browser session
-        const currentSessionId = sessionStorage.getItem("browser_session_id");
-        if (metadata.browserSessionId && currentSessionId && metadata.browserSessionId !== currentSessionId) {
-          logger.info("New browser session detected, clearing old token");
-          this.removeToken();
-          return null;
-        }
-        
-        const tokenAge = Date.now() - metadata.issued;
-        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days (increased from 24 hours)
-        if (tokenAge > maxAge) {
-          logger.warn("Token expired due to age");
-          this.removeToken();
-          return null;
-        }
-      }
-    } catch (error) {
-      logger.warn("Error validating token metadata", error);
-      // Continue with token if metadata check fails (don't break functionality)
-    }
-    
-    return token;
+    // Single source of truth: localStorage (shared across tabs)
+    const token = localStorage.getItem("auth_token");
+    return token || null;
   }
 
   private setToken(token: string): void {
     if (typeof window === "undefined") return; // SSR safeguard
-    
-    const isSecure = window.location.protocol === "https:";
-    const domain = window.location.hostname;
-    
-    // Store in localStorage for persistence across tabs
+    // Store in localStorage so tabs share auth within the same browser session
     localStorage.setItem("auth_token", token);
-    
-    // Also store in sessionStorage as backup
-    sessionStorage.setItem("auth_token", token);
-    
-    // Long-lived cookie for browser restart persistence (but we'll clear on browser close)
-    Cookies.set("auth_token", token, {
-      expires: 7, // 7 days
-      secure: isSecure,
-      sameSite: "strict",
-      domain: domain === "localhost" ? undefined : domain,
-      path: "/",
-    });
-    
-    // Add token validation metadata
-    const tokenMetadata = {
-      issued: Date.now(),
-      userAgent: navigator.userAgent,
-      domain: domain,
-      browserSessionId: sessionStorage.getItem("browser_session_id"),
-    };
-    localStorage.setItem("token_metadata", JSON.stringify(tokenMetadata));
   }
 
   private removeToken(): void {
     if (typeof window === "undefined") return; // SSR safeguard
-    
-    Cookies.remove("auth_token");
-    Cookies.remove("auth_token", { path: "/" }); // Ensure removal with path
-    
-    sessionStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("token_metadata");
-    sessionStorage.removeItem("token_metadata");
+    // Remove stored auth artifacts we own
+    // Clear both storages for safety (handles older versions)
+    try { sessionStorage.removeItem("auth_token"); } catch {}
+    try { sessionStorage.removeItem("user"); } catch {}
+    try { localStorage.removeItem("auth_token"); } catch {}
+    try { localStorage.removeItem("user"); } catch {}
     
     this.clearRefreshTimer();
-    
-    // Clear any other sensitive data
-    try {
-      sessionStorage.clear();
-    } catch (error) {
-      logger.warn("Failed to clear sessionStorage", error);
-    }
   }
 
   private setupTokenRefresh(): void {
     if (typeof window === "undefined") return; // SSR safeguard
-    
+
     // Clear any existing timer first
     this.clearRefreshTimer();
-    
-    // Only set up refresh if we have a valid token
-    if (this.isAuthenticated() && this.getToken()) {
-      // Set up a timer to refresh token before it expires
-      // Refresh every 3 hours (180 minutes) - well before 4 hour expiration
-      this.refreshTimer = setTimeout(() => {
-        this.refreshToken();
-      }, 3 * 60 * 60 * 1000); // 3 hours
-    }
+
+    const token = this.getToken();
+    if (!token) return;
+
+    const expiryMs = this.getTokenExpiryMs(token);
+    if (!expiryMs) return;
+
+    const now = Date.now();
+    const leewayMs = 90_000; // refresh ~90s before expiry
+    const delay = Math.max(0, expiryMs - now - leewayMs);
+
+    this.refreshTimer = setTimeout(() => {
+      this.refreshToken();
+    }, delay);
   }
 
-  private setupBrowserCloseDetection(): void {
-    if (typeof window === "undefined") return; // SSR safeguard
-    
-    // Generate a unique session ID for this browser session
-    if (!sessionStorage.getItem("browser_session_id")) {
-      sessionStorage.setItem("browser_session_id", `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  private getTokenExpiryMs(token: string): number | null {
+    try {
+      const [, payload] = token.split(".");
+      if (!payload) return null;
+      const decoded = JSON.parse(atob(payload));
+      if (typeof decoded.exp === "number") {
+        return decoded.exp * 1000; // seconds -> ms
+      }
+      return null;
+    } catch {
+      return null;
     }
-    
-    // Track if user is navigating within the app vs closing browser
-    let isNavigating = false;
-    
-    // Handle page navigation (don't logout on navigation)
-    window.addEventListener("beforeunload", (e) => {
-      // If user is navigating to another page in the app, don't logout
-      if (isNavigating) {
-        return;
-      }
-      
-      // Set a flag that browser is closing
-      sessionStorage.setItem("browser_closing", "true");
-      
-      // Small delay to distinguish between navigation and browser close
-      setTimeout(() => {
-        // If we're still here after delay, it was navigation, not browser close
-        sessionStorage.removeItem("browser_closing");
-      }, 100);
-    });
-    
-    // Track navigation within the app
-    window.addEventListener("pagehide", () => {
-      isNavigating = true;
-    });
-    
-    // On page load, check if browser was closed
-    if (sessionStorage.getItem("browser_closing") === "true") {
-      logger.info("Browser was closed, clearing authentication");
-      this.removeToken();
-      sessionStorage.removeItem("browser_closing");
-    }
-    
-    // Enhanced detection: Use storage event to detect browser close across tabs
-    window.addEventListener("storage", (e) => {
-      if (e.key === "browser_session_check" && e.newValue === "ping") {
-        // Another tab is checking if any tabs are alive
-        localStorage.setItem("browser_session_check", "pong");
-        setTimeout(() => {
-          localStorage.removeItem("browser_session_check");
-        }, 100);
-      }
-    });
-    
-    // Periodically check if browser is still alive
-    setInterval(() => {
-      if (typeof window !== "undefined" && this.isAuthenticated()) {
-        this.checkBrowserAlive();
-      }
-    }, 30000); // Check every 30 seconds
-  }
-  
-  private checkBrowserAlive(): void {
-    if (typeof window === "undefined") return;
-    
-    // Ping other tabs to see if they respond
-    localStorage.setItem("browser_session_check", "ping");
-    
-    setTimeout(() => {
-      const response = localStorage.getItem("browser_session_check");
-      if (response !== "pong") {
-        // No other tabs responded, we might be the last tab
-        // Additional check: see if our session storage is intact
-        if (!sessionStorage.getItem("browser_session_id")) {
-          logger.info("Browser session ended, logging out");
-          this.removeToken();
-          if (typeof window !== "undefined") {
-            window.location.href = "/login";
-          }
-        }
-      }
-      localStorage.removeItem("browser_session_check");
-    }, 200);
   }
 
   private clearRefreshTimer(): void {
@@ -405,23 +271,65 @@ class ApiClient {
     return null;
   }
 
+  private setupCrossTabSession(): void {
+    if (typeof window === "undefined") return;
+    try {
+      this.tabId = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const OPEN_TABS_KEY = "open_tabs";
+      const LAST_CLOSE_KEY = "last_close_at";
+      const getTabs = (): string[] => {
+        try {
+          const raw = localStorage.getItem(OPEN_TABS_KEY);
+          const arr = raw ? JSON.parse(raw) : [];
+          return Array.isArray(arr) ? arr : [];
+        } catch {
+          return [];
+        }
+      };
+      const setTabs = (tabs: string[]) => {
+        try { localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(tabs)); } catch {}
+      };
+
+      // If the previous session indicated a last-tab close, and sufficient time
+      // has passed (not a quick reload), clear auth now.
+      try {
+        const lastCloseStr = localStorage.getItem(LAST_CLOSE_KEY);
+        if (lastCloseStr) {
+          const lastCloseAt = parseInt(lastCloseStr, 10) || 0;
+          if (Date.now() - lastCloseAt > 5000) {
+            this.removeToken();
+          }
+          localStorage.removeItem(LAST_CLOSE_KEY);
+        }
+      } catch {}
+
+      // Register this tab
+      const tabs = getTabs();
+      if (this.tabId && !tabs.includes(this.tabId)) {
+        setTabs([...tabs, this.tabId]);
+      }
+
+      // On tab close, remove this tab; if no tabs remain, clear auth
+      window.addEventListener("beforeunload", () => {
+        const current = getTabs();
+        const remaining = this.tabId ? current.filter((t) => t !== this.tabId) : current;
+        if (remaining.length === 0) {
+          // Mark time of last-tab close; token will be cleared on next load
+          try { localStorage.setItem(LAST_CLOSE_KEY, String(Date.now())); } catch {}
+        }
+        setTabs(remaining);
+      });
+    } catch {}
+  }
+
   async login(credentials: LoginRequest): Promise<AuthToken> {
     try {
       logger.info("Attempting login", { username: credentials.username });
-      
-      // Create a timeout promise to prevent hanging - shorter for better UX
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Login request timed out")), 6000);
-      });
-      
-      const loginPromise = this.client.post("/auth/login", credentials, {
-        timeout: 6000, // 6 second timeout for login specifically - should be fast
-      });
-      
-      const response: AxiosResponse<AuthToken> = await Promise.race([
-        loginPromise,
-        timeoutPromise
-      ]);
+      const response: AxiosResponse<AuthToken> = await this.client.post(
+        "/auth/login",
+        credentials,
+        { timeout: 6000 }
+      );
       
       const { access_token, user } = response.data;
 
@@ -868,39 +776,7 @@ class ApiClient {
 const apiClient = new ApiClient();
 export default apiClient;
 
-// Export individual methods for convenience
-export const {
-  login,
-  getCurrentUser,
-  getAuthMode,
-  logout,
-  healthCheck,
-  getMenuItems,
-  getDashboardLayout,
-  getWidgetData,
-  executeQuery,
-  executeFilteredQuery,
-  exportData,
-  getReportsByMenu,
-  isAuthenticated,
-  getUser,
-  updateActivity,
-  downloadFile,
-  getQueryDetail,
-  updateUser,
-  deleteUser,
-  deleteQuery,
-  changePassword,
-  listRoles,
-  createRole,
-  deleteRole,
-  listProcesses,
-  createProcess,
-  updateProcess,
-  deleteProcess,
-  runProcess,
-  listAvailableScripts,
-} = apiClient;
+// Prefer using the default export `apiClient` to avoid losing `this` context
 
 export async function createQuery(data: QueryFormData & { role?: string[] }) {
   const response = await apiClient.post<APIResponse<Query>>(

@@ -730,7 +730,7 @@ const AdminPage: React.FC = () => {
         onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
 
-      <div className="flex-1 flex flex-col relative">
+      <div className={`flex-1 flex flex-col relative transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
         {loading && (
           <div className="absolute inset-0 bg-white bg-opacity-60 flex items-center justify-center z-50">
             <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600"></div>

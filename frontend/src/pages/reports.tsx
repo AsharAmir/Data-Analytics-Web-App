@@ -221,7 +221,7 @@ const ReportsPage: React.FC = () => {
         onMobileToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
       />
 
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
         {/* Header */}
         <header className="bg-white shadow-lg border-b border-gray-100 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-blue-50/30 via-transparent to-indigo-50/30"></div>

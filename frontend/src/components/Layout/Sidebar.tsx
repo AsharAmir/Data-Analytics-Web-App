@@ -446,14 +446,21 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar */}
       <div
         className={`
-          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col shadow-xl overflow-hidden
-          lg:relative lg:translate-x-0 lg:transition-all lg:duration-300
+          ${sidebarWidth} bg-gradient-to-b from-gray-900 to-gray-800 text-white shadow-xl overflow-hidden
+          lg:fixed lg:inset-y-0 lg:left-0 lg:translate-x-0 lg:transition-all lg:duration-300
           fixed inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out
           ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
+        style={{ 
+          height: "100vh",
+          minHeight: "100vh",
+          position: "fixed",
+          top: 0,
+          bottom: 0
+        }}
       >
         {/* Header */}
-        <div className="p-4 border-b border-gray-700 overflow-hidden">
+        <div className="flex-shrink-0 p-4 border-b border-gray-700 overflow-hidden">
           <div className="flex items-center justify-between">
             {!collapsed && (
               <h2 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
@@ -490,108 +497,111 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 min-h-0 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-          {/* Fixed Navigation Items */}
-          {navigationItems.map((item) => {
-            // For dashboard, only highlight if we're on dashboard page with no menu parameter
-            const isActive =
-              item.path === "/dashboard"
-                ? currentPath === item.path && !router.query.menu
-                : currentPath === item.path;
-            const IconComponent = item.icon;
-            return (
-              <Link key={item.path} href={item.path}>
-                <div
-                  onClick={() => {
-                    // Close mobile menu after navigation
-                    if (onMobileToggle && mobileOpen) {
-                      onMobileToggle();
-                    }
-                  }}
-                  className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group touch-manipulation ${
-                    collapsed
-                      ? "justify-center px-3 py-3"
-                      : "space-x-3 px-3 py-3"
-                  } ${
-                    isActive
-                      ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
-                      : "hover:bg-gray-700"
-                  }`}
-                  title={collapsed ? item.name : undefined}
-                >
-                  <IconComponent />
-                  {!collapsed && (
-                    <span className="font-medium">{item.name}</span>
-                  )}
+        {/* Scrollable Navigation */}
+        <div className="flex-1 flex flex-col" style={{ height: "calc(100vh - 64px - 160px)" }}>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 hover:scrollbar-thumb-gray-500">
+            <nav className="p-4 space-y-2 pb-8">
+              {/* Fixed Navigation Items */}
+              {navigationItems.map((item) => {
+                // For dashboard, only highlight if we're on dashboard page with no menu parameter
+                const isActive =
+                  item.path === "/dashboard"
+                    ? currentPath === item.path && !router.query.menu
+                    : currentPath === item.path;
+                const IconComponent = item.icon;
+                return (
+                  <Link key={item.path} href={item.path}>
+                    <div
+                      onClick={() => {
+                        // Close mobile menu after navigation
+                        if (onMobileToggle && mobileOpen) {
+                          onMobileToggle();
+                        }
+                      }}
+                      className={`flex items-center rounded-lg transition-all duration-200 cursor-pointer relative group touch-manipulation ${
+                        collapsed
+                          ? "justify-center px-3 py-3"
+                          : "space-x-3 px-3 py-3"
+                      } ${
+                        isActive
+                          ? "bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg"
+                          : "hover:bg-gray-700"
+                      }`}
+                      title={collapsed ? item.name : undefined}
+                    >
+                      <IconComponent />
+                      {!collapsed && (
+                        <span className="font-medium">{item.name}</span>
+                      )}
 
-                  {/* Tooltip for collapsed state */}
-                  {collapsed && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
-                      {item.name}
-                      <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+                      {/* Tooltip for collapsed state */}
+                      {collapsed && (
+                        <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                          {item.name}
+                          <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+
+              {/* Reports Section */}
+              {activeMenuItems.length > 0 && (
+                <>
+                  {!collapsed && (
+                    <div className="pt-4 pb-2">
+                      <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
+                        Custom
+                      </h3>
                     </div>
                   )}
-                </div>
-              </Link>
-            );
-          })}
 
-          {/* Reports Section */}
-          {activeMenuItems.length > 0 && (
-            <>
-              {!collapsed && (
-                <div className="pt-4 pb-2">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-                    Custom
-                  </h3>
-                </div>
+                  {/* Dynamic Menu Items */}
+                  {activeMenuItems.map((item) => renderMenuItem(item))}
+                </>
               )}
+            </nav>
+          </div>
+        </div>
 
-              {/* Dynamic Menu Items */}
-              {activeMenuItems.map((item) => renderMenuItem(item))}
-            </>
+        {/* Logout Button - Fixed to bottom with absolute positioning */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-700 bg-gradient-to-b from-gray-900 to-gray-800">
+          {/* User info - only show if not collapsed and current user exists */}
+          {!collapsed && currentUser && (
+            <div className="mb-3 p-2 bg-gray-800 rounded-lg">
+              <p className="text-sm font-medium text-white truncate">
+                {currentUser.username}
+              </p>
+              <p className="text-xs text-gray-400 truncate">
+                {currentUser.email}
+              </p>
+            </div>
           )}
-        </nav>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-700">
-          {/* User info and logout */}
-          <div className="mb-4">
-            {!collapsed && currentUser && (
-              <div className="mb-3 p-2 bg-gray-800 rounded-lg">
-                <p className="text-sm font-medium text-white truncate">
-                  {currentUser.username}
-                </p>
-                <p className="text-xs text-gray-400 truncate">
-                  {currentUser.email}
-                </p>
+          {/* Logout Button */}
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 relative group ${
+              collapsed ? "justify-center" : "space-x-3"
+            }`}
+            title={collapsed ? "Logout" : undefined}
+          >
+            <LogoutIcon />
+            {!collapsed && <span>Logout</span>}
+
+            {/* Tooltip for collapsed state */}
+            {collapsed && (
+              <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
+                Logout
+                <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
               </div>
             )}
+          </button>
 
-            {/* Logout Button */}
-            <button
-              onClick={handleLogout}
-              className={`w-full flex items-center px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-200 relative group ${
-                collapsed ? "justify-center" : "space-x-3"
-              }`}
-              title={collapsed ? "Logout" : undefined}
-            >
-              <LogoutIcon />
-              {!collapsed && <span>Logout</span>}
-
-              {/* Tooltip for collapsed state */}
-              {collapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap z-50">
-                  Logout
-                  <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2 w-0 h-0 border-r-4 border-r-gray-900 border-t-2 border-b-2 border-t-transparent border-b-transparent"></div>
-                </div>
-              )}
-            </button>
-          </div>
-
+          {/* Version info - only if not collapsed */}
           {!collapsed && (
-            <div className="text-xs text-gray-400 text-center">
+            <div className="text-xs text-gray-400 text-center mt-3">
               <p>Analytics Platform v2.0</p>
               <p className="mt-1">© 2024 Financial Systems</p>
             </div>
