@@ -502,14 +502,7 @@ class MenuService:
             ORDER BY sort_order, name
             """
 
-            try:
-                result = db_manager.execute_query(query)
-            except Exception as exc:
-                if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                    db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
-                    result = db_manager.execute_query(query)
-                else:
-                    raise exc
+            result = db_manager.execute_query(query)
 
             all_items = []
             for row in result:
@@ -733,19 +726,6 @@ class KPIService:
         ORDER BY created_at DESC
         """
 
-    @staticmethod
-    def _ensure_kpi_columns_exist() -> None:
-        """Ensure required KPI columns exist in the database"""
-        try:
-            # Check if is_kpi column exists by attempting to use it
-            test_query = "SELECT COUNT(*) FROM app_queries WHERE is_kpi = 0 AND ROWNUM = 1"
-            db_manager.execute_query(test_query)
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "IS_KPI" in str(exc).upper():
-                logger.info("Adding is_kpi column to app_queries table")
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
-            else:
-                logger.warning(f"Unexpected error checking KPI columns: {exc}")
 
     @staticmethod
     def _parse_user_roles(role_string: str) -> List[str]:
@@ -802,10 +782,7 @@ class KPIService:
         Returns:
             List of KPI objects accessible to the user
         """
-        try:
-            # Ensure required columns exist
-            KPIService._ensure_kpi_columns_exist()
-            
+        try:  
             # Choose query and parameters based on menu_id
             if menu_id is not None:
                 query = KPIService.KPIQueries.BY_MENU

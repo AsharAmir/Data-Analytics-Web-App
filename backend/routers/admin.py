@@ -39,45 +39,6 @@ class DatabaseFlags:
 class MenuConstants:
     DEFAULT_DASHBOARD_ID = -1  # Special ID representing default dashboard
 
-# Database column management utilities
-class DatabaseColumnManager:
-    """Utility class to handle database column existence and creation"""
-    
-    @staticmethod
-    def ensure_column_exists(column_name: str, column_definition: str) -> None:
-        """Ensure a column exists in the app_queries table"""
-        try:
-            alter_sql = f"ALTER TABLE app_queries ADD ({column_name} {column_definition})"
-            db_manager.execute_non_query(alter_sql)
-            logger.info(f"Added column {column_name} to app_queries table")
-        except Exception as e:
-            # Column might already exist, which is fine
-            if "ORA-00955" not in str(e):  # Column already exists error
-                logger.debug(f"Column {column_name} already exists or error: {e}")
-
-    @staticmethod
-    def handle_missing_columns_error(exc: Exception, retry_func, *args, **kwargs):
-        """Handle ORA-00904 (column doesn't exist) errors by creating missing columns"""
-        error_str = str(exc).upper()
-        
-        if "ORA-00904" not in error_str:
-            raise exc
-            
-        # Define required columns and their definitions
-        column_definitions = {
-            "ROLE": "VARCHAR2(255) DEFAULT 'user'",
-            "IS_KPI": "NUMBER(1) DEFAULT 0",
-            "IS_DEFAULT_DASHBOARD": "NUMBER(1) DEFAULT 0"
-        }
-        
-        # Check which columns are missing and create them
-        for column_name, definition in column_definitions.items():
-            if column_name in error_str:
-                DatabaseColumnManager.ensure_column_exists(column_name.lower(), definition)
-        
-        # Retry the original operation
-        return retry_func(*args, **kwargs)
-
 # Query management utilities
 class QueryUtils:
     """Utility functions for query management"""
@@ -233,19 +194,8 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
             "is_default_dashboard": is_default_dashboard
         }
         
-        try:
-            db_manager.execute_non_query(insert_sql, params)
-            logger.info(f"Successfully created query: {request.name}")
-            
-        except Exception as exc:
-            # Handle missing columns professionally
-            logger.warning(f"Retrying query creation after handling missing columns: {exc}")
-            
-            def retry_insert():
-                return db_manager.execute_non_query(insert_sql, params)
-            
-            DatabaseColumnManager.handle_missing_columns_error(exc, retry_insert)
-            logger.info(f"Successfully created query after column creation: {request.name}")
+        db_manager.execute_non_query(insert_sql, params)
+        logger.info(f"Successfully created query: {request.name}")
         
         # Get the newly created query ID
         get_id_query = """
@@ -399,42 +349,8 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                     "query_id": query_id,
                 },
             )
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and ("ROLE" in str(exc).upper() or "IS_DEFAULT_DASHBOARD" in str(exc).upper()):
-                try:
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                except:
-                    pass
-                try:
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)")
-                except:
-                    pass
-                
-                is_default_dashboard = 1 if request.menu_item_id == -1 else 0
-                if request.menu_item_id == -1:
-                    db_menu_item_id = None
-                elif request.menu_item_id is None:
-                    db_menu_item_id = None
-                else:
-                    db_menu_item_id = request.menu_item_id
-                
-                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                db_manager.execute_non_query(
-                    update_sql,
-                    {
-                        "name": request.name,
-                        "description": request.description,
-                        "sql_query": request.sql_query,
-                        "chart_type": request.chart_type,
-                        "chart_config": json.dumps(request.chart_config or {}),
-                        "menu_item_id": db_menu_item_id,
-                        "role": serialize_roles(request.role) or get_default_role(),
-                        "is_default_dashboard": is_default_dashboard,
-                        "query_id": query_id,
-                    },
-                )
-            else:
-                raise exc
+        except Exception:
+            raise
         
         if request.menu_item_ids:
             db_manager.execute_non_query("DELETE FROM app_query_menu_items WHERE query_id = :1", (query_id,))
@@ -485,14 +401,7 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
         WHERE q.is_active = 1
         ORDER BY q.created_at DESC
         """
-        try:
-            result = db_manager.execute_query(query)
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                result = db_manager.execute_query(query)
-            else:
-                raise exc
+        result = db_manager.execute_query(query)
         queries: List[dict] = []
         for row in result:
             menu_names = []
@@ -679,36 +588,18 @@ async def create_menu_item(request: MenuItemCreate, current_user: User = Depends
         INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, role, is_active)
         VALUES (:1, :2, :3, :4, :5, :6, 1)
         """
-        try:
-            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            db_manager.execute_non_query(
-                sql,
-                (
-                    request.name,
-                    request.type,
-                    request.icon,
-                    request.parent_id,
-                    request.sort_order,
-                    serialize_roles(request.role),
-                ),
-            )
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
-                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                db_manager.execute_non_query(
-                    sql,
-                    (
-                        request.name,
-                        request.type,
-                        request.icon,
-                        request.parent_id,
-                        request.sort_order,
-                        serialize_roles(request.role),
-                    ),
-                )
-            else:
-                raise exc
+        roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+        db_manager.execute_non_query(
+            sql,
+            (
+                request.name,
+                request.type,
+                request.icon,
+                request.parent_id,
+                request.sort_order,
+                serialize_roles(request.role),
+            ),
+        )
         return APIResponse(success=True, message="Menu item created successfully")
     except Exception as exc:
         logger.error(f"Error creating menu item: {exc}")
@@ -736,38 +627,19 @@ async def update_menu_item(
         update_sql = """
         UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5, role=:6 WHERE id=:7
         """
-        try:
-            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-            db_manager.execute_non_query(
-                update_sql,
-                (
-                    request.name,
-                    request.type,
-                    request.icon,
-                    request.parent_id,
-                    request.sort_order,
-                    serialize_roles(request.role),
-                    menu_id,
-                ),
-            )
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper() and "ROLE" in str(exc).upper():
-                db_manager.execute_non_query("ALTER TABLE app_menu_items ADD (role VARCHAR2(255))")
-                roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-                db_manager.execute_non_query(
-                    update_sql,
-                    (
-                        request.name,
-                        request.type,
-                        request.icon,
-                        request.parent_id,
-                        request.sort_order,
-                        serialize_roles(request.role),
-                        menu_id,
-                    ),
-                )
-            else:
-                raise exc
+        roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
+        db_manager.execute_non_query(
+            update_sql,
+            (
+                request.name,
+                request.type,
+                request.icon,
+                request.parent_id,
+                request.sort_order,
+                serialize_roles(request.role),
+                menu_id,
+            ),
+        )
         return APIResponse(success=True, message="Menu item updated")
     except Exception as exc:
         logger.error(f"Error updating menu item: {exc}")
@@ -812,17 +684,7 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
         WHERE q.is_active = 1 AND q.is_kpi = 1
         ORDER BY q.created_at DESC
         """
-        try:
-            result = db_manager.execute_query(query)
-        except Exception as exc:
-            if "ORA-00904" in str(exc).upper():
-                if "IS_KPI" in str(exc).upper():
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
-                if "ROLE" in str(exc).upper():
-                    db_manager.execute_non_query("ALTER TABLE app_queries ADD (role VARCHAR2(255) DEFAULT 'user')")
-                result = db_manager.execute_query(query)
-            else:
-                raise exc
+        result = db_manager.execute_query(query)
 
         kpis: List[dict] = []
         for row in result:
@@ -878,19 +740,8 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
             "is_default_dashboard": is_default_dashboard
         }
         
-        try:
-            db_manager.execute_non_query(insert_sql, params)
-            logger.info(f"Successfully created KPI: {request.name}")
-            
-        except Exception as exc:
-            # Handle missing columns professionally
-            logger.warning(f"Retrying KPI creation after handling missing columns: {exc}")
-            
-            def retry_insert():
-                return db_manager.execute_non_query(insert_sql, params)
-            
-            DatabaseColumnManager.handle_missing_columns_error(exc, retry_insert)
-            logger.info(f"Successfully created KPI after column creation: {request.name}")
+        db_manager.execute_non_query(insert_sql, params)
+        logger.info(f"Successfully created KPI: {request.name}")
         
         # Get the newly created KPI ID
         get_id_query = """

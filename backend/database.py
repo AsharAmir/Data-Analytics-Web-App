@@ -259,6 +259,9 @@ def init_database():
         menu_item_id NUMBER,
         -- Allow multiple comma-separated roles
         role VARCHAR2(255) DEFAULT 'USER',
+        -- KPI support and default dashboard flag
+        is_kpi NUMBER(1) DEFAULT 0,
+        is_default_dashboard NUMBER(1) DEFAULT 0,
         is_active NUMBER(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -453,6 +456,36 @@ def init_database():
                 logger.info("Role column already exists in app_queries table")
         except Exception as e:
             logger.warning(f"Error updating app_queries table schema: {e}")
+
+        # Ensure IS_KPI column exists in APP_QUERIES
+        try:
+            check_is_kpi_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_QUERIES' AND column_name = 'IS_KPI'
+            """
+            is_kpi_result = db_manager.execute_query(check_is_kpi_query)
+            if is_kpi_result[0]["COUNT(*)"] == 0:
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_kpi NUMBER(1) DEFAULT 0)")
+                logger.info("Added is_kpi column to app_queries table")
+            else:
+                logger.info("is_kpi column already exists in app_queries table")
+        except Exception as e:
+            logger.warning(f"Error updating is_kpi schema on app_queries: {e}")
+
+        # Ensure IS_DEFAULT_DASHBOARD column exists in APP_QUERIES
+        try:
+            check_default_dash_query = """
+                SELECT COUNT(*) FROM user_tab_columns 
+                WHERE table_name = 'APP_QUERIES' AND column_name = 'IS_DEFAULT_DASHBOARD'
+            """
+            default_dash_result = db_manager.execute_query(check_default_dash_query)
+            if default_dash_result[0]["COUNT(*)"] == 0:
+                db_manager.execute_non_query("ALTER TABLE app_queries ADD (is_default_dashboard NUMBER(1) DEFAULT 0)")
+                logger.info("Added is_default_dashboard column to app_queries table")
+            else:
+                logger.info("is_default_dashboard column already exists in app_queries table")
+        except Exception as e:
+            logger.warning(f"Error updating is_default_dashboard schema on app_queries: {e}")
 
         # Insert default data
         insert_default_data()

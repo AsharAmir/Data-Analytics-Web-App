@@ -240,36 +240,11 @@ def create_user(user_create: UserCreate, role: Any = get_default_role()) -> Opti
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Username or email already exists",
                 )
-
-            # Handle cases where ROLE column is missing (e.g. legacy DB) – add it then retry
-            if "ORA-00904" in str(e).upper() and "ROLE" in str(e).upper():
-                try:
-                    logger.warning("ROLE column missing – adding column to app_users table on the fly")
-                    db_manager.execute_non_query(
-                        "ALTER TABLE app_users ADD (role VARCHAR2(20) DEFAULT 'user' NOT NULL)"
-                    )
-                    # Retry insert
-                    user_id = db_manager.execute_non_query(
-                        insert_sql,
-                        (
-                            user_create.username,
-                            user_create.email,
-                            hashed_password,
-                            role,
-                        ),
-                    )
-                except Exception as inner_exc:
-                    logger.error(f"Error adding ROLE column or retrying insert: {inner_exc}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to create user (database schema update error)",
-                    )
-            else:
-                logger.error(f"Error inserting user: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to create user",
-                )
+            logger.error(f"Error inserting user: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user",
+            )
 
         # Get created user
         return get_user_by_username(user_create.username)
