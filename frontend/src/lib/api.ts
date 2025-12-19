@@ -18,7 +18,47 @@ import {
 } from "../types";
 import { Role } from "../types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Determine API base URL with support for reverse proxies (HTTP→HTTPS).
+// Priority:
+//   1. Explicit NEXT_PUBLIC_API_URL if provided
+//   2. If that URL points to the same host but with a different scheme than the
+//      current page, prefer the current page's origin to avoid mixed‑content
+//      errors when running behind an HTTPS reverse proxy.
+//   3. Fallback to the current browser origin (if available), otherwise a
+//      sensible local default.
+let resolvedBase = process.env.NEXT_PUBLIC_API_URL || "";
+
+if (typeof window !== "undefined" && resolvedBase) {
+  try {
+    const envUrl = new URL(resolvedBase, window.location.href);
+    const pageUrl = new URL(window.location.href);
+
+    const sameHost =
+      envUrl.hostname === pageUrl.hostname &&
+      (envUrl.port || "") === (pageUrl.port || "");
+
+    const schemeMismatch = envUrl.protocol !== pageUrl.protocol;
+
+    if (sameHost && schemeMismatch) {
+      // Use the page's origin (e.g. https://localhost) so API calls go
+      // through the same reverse proxy and avoid mixed‑content issues.
+      resolvedBase = pageUrl.origin;
+    }
+  } catch {
+    // If URL parsing fails, fall back to using the raw env value.
+  }
+}
+
+if (!resolvedBase) {
+  if (typeof window !== "undefined") {
+    resolvedBase = window.location.origin;
+  } else {
+    // Server‑side fallback for local development
+    resolvedBase = "http://localhost:8000";
+  }
+}
+
+const API_BASE_URL = resolvedBase;
 
 class ApiClient {
   private client: AxiosInstance;
@@ -62,36 +102,36 @@ class ApiClient {
       });
     }
 
-          this.client.interceptors.request.use(
-        (config) => {
-          const token = this.getToken();
-          const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          
-          // Add timing information
-          (config as any).metadata = { startTime: Date.now(), requestId };
-          
+    this.client.interceptors.request.use(
+      (config) => {
+        const token = this.getToken();
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-          // Log API request to file
-          logger.apiRequest(config.method || 'GET', config.url || '', {
-            requestId,
-            hasAuth: !!token,
-            timeout: config.timeout
-          });
-          
-          if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-          }
-          
-          config.headers["X-Request-ID"] = requestId;
-          config.headers["X-Client-Version"] = "1.0.0";
-          
-          // Add timestamp for request freshness validation
-          config.headers["X-Timestamp"] = new Date().toISOString();
-          
-          return config;
-        },
+        // Add timing information
+        (config as any).metadata = { startTime: Date.now(), requestId };
+
+
+        // Log API request to file
+        logger.apiRequest(config.method || 'GET', config.url || '', {
+          requestId,
+          hasAuth: !!token,
+          timeout: config.timeout
+        });
+
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+
+        config.headers["X-Request-ID"] = requestId;
+        config.headers["X-Client-Version"] = "1.0.0";
+
+        // Add timestamp for request freshness validation
+        config.headers["X-Timestamp"] = new Date().toISOString();
+
+        return config;
+      },
       (error) => {
-        logger.error("Request interceptor error", { 
+        logger.error("Request interceptor error", {
           message: error.message,
           stack: error.stack,
           config: error.config ? {
@@ -106,16 +146,16 @@ class ApiClient {
     // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
-        const duration = (response.config as any).metadata?.startTime 
-          ? Date.now() - (response.config as any).metadata.startTime 
+        const duration = (response.config as any).metadata?.startTime
+          ? Date.now() - (response.config as any).metadata.startTime
           : undefined;
         const requestId = (response.config as any).metadata?.requestId;
-        
+
         // Log API response to file
         logger.apiResponse(
-          response.config.method || 'GET', 
-          response.config.url || '', 
-          response.status, 
+          response.config.method || 'GET',
+          response.config.url || '',
+          response.status,
           duration,
           {
             requestId,
@@ -126,11 +166,11 @@ class ApiClient {
         return response;
       },
       (error) => {
-        const duration = (error.config as any)?.metadata?.startTime 
-          ? Date.now() - (error.config as any).metadata.startTime 
+        const duration = (error.config as any)?.metadata?.startTime
+          ? Date.now() - (error.config as any).metadata.startTime
           : undefined;
         const requestId = (error.config as any)?.metadata?.requestId;
-        
+
         // Log API error to file
         logger.error(`API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
           requestId,
@@ -220,11 +260,11 @@ class ApiClient {
     if (typeof window === "undefined") return; // SSR safeguard
     // Remove stored auth artifacts we own
     // Clear both storages for safety (handles older versions)
-    try { sessionStorage.removeItem("auth_token"); } catch {}
-    try { sessionStorage.removeItem("user"); } catch {}
-    try { localStorage.removeItem("auth_token"); } catch {}
-    try { localStorage.removeItem("user"); } catch {}
-    
+    try { sessionStorage.removeItem("auth_token"); } catch { }
+    try { sessionStorage.removeItem("user"); } catch { }
+    try { localStorage.removeItem("auth_token"); } catch { }
+    try { localStorage.removeItem("user"); } catch { }
+
     this.clearRefreshTimer();
   }
 
@@ -275,20 +315,20 @@ class ApiClient {
       logger.debug("Token refresh already in progress, skipping");
       return;
     }
-    
+
     this.isRefreshing = true;
-    
+
     try {
       logger.info("Refreshing token automatically");
       const response = await this.client.post<AuthToken>("/auth/refresh");
       const { access_token, user } = response.data;
-      
+
       this.setToken(access_token);
       this.setUser(user);
-      
+
       // Set up next refresh
       this.setupTokenRefresh();
-      
+
       logger.info("Token refreshed successfully");
     } catch (error) {
       logger.warn("Token refresh failed, redirecting to login", { error });
@@ -338,7 +378,7 @@ class ApiClient {
         }
       };
       const setTabs = (tabs: string[]) => {
-        try { localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(tabs)); } catch {}
+        try { localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(tabs)); } catch { }
       };
 
       // If the previous session indicated a last-tab close, and sufficient time
@@ -352,7 +392,7 @@ class ApiClient {
           }
           localStorage.removeItem(LAST_CLOSE_KEY);
         }
-      } catch {}
+      } catch { }
 
       // Register this tab
       const tabs = getTabs();
@@ -366,11 +406,11 @@ class ApiClient {
         const remaining = this.tabId ? current.filter((t) => t !== this.tabId) : current;
         if (remaining.length === 0) {
           // Mark time of last-tab close; token will be cleared on next load
-          try { localStorage.setItem(LAST_CLOSE_KEY, String(Date.now())); } catch {}
+          try { localStorage.setItem(LAST_CLOSE_KEY, String(Date.now())); } catch { }
         }
         setTabs(remaining);
       });
-    } catch {}
+    } catch { }
   }
 
   async login(credentials: LoginRequest): Promise<AuthToken> {
@@ -379,16 +419,16 @@ class ApiClient {
       const response: AxiosResponse<AuthToken> = await this.client.post(
         "/auth/login",
         credentials,
-        { timeout: 6000 }
+        { timeout: 15000 }
       );
-      
+
       const { access_token, user } = response.data;
 
       this.setToken(access_token);
       this.setUser(user);
-      
+
       logger.info("Login successful", { username: user.username, role: user.role });
-      
+
       // Set up token refresh
       this.setupTokenRefresh();
 
@@ -401,8 +441,8 @@ class ApiClient {
 
       return response.data;
     } catch (error: unknown) {
-      logger.error("Login failed", { 
-        error, 
+      logger.error("Login failed", {
+        error,
         username: credentials.username,
         errorMessage: error instanceof Error ? error.message : String(error)
       });
@@ -438,7 +478,7 @@ class ApiClient {
   async changePassword(currentPassword: string, newPassword: string): Promise<APIResponse> {
     try {
       logger.info("Attempting password change");
-      
+
       const user = this.getUser();
       if (!user) {
         throw new Error("User not authenticated");
@@ -452,7 +492,7 @@ class ApiClient {
           new_password: newPassword,
         }
       );
-      
+
       logger.info("Password changed successfully");
       return response.data;
     } catch (error: unknown) {

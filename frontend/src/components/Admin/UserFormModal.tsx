@@ -17,6 +17,8 @@ interface UserForm {
   email: string;
   password: string;
   role: string; // allow dynamic roles
+  // Per-user feature visibility flags (codes: dashboard, data_explorer, excel_compare, processes)
+  hidden_features: string[];
 }
 
 interface ValidationErrors {
@@ -63,6 +65,7 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
       setUserForm((prev) => ({
         ...prev,
         role: normalizeRoleCode(prev.role || 'USER'),
+        hidden_features: prev.hidden_features || [],
       }));
     }
   }, [visible, setUserForm]);
@@ -359,45 +362,138 @@ const UserFormModal: React.FC<UserFormModalProps> = ({
             </div>
           )}
 
-          {/* Permissions Tab */}
-          {currentTab === "permissions" && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
-                  <ShieldCheckIcon className="h-4 w-4 mr-2" />
-                  User Role
-                </label>
-                <select
-                  value={userForm.role}
-                  onChange={(e)=>setUserForm({...userForm, role: normalizeRoleCode(e.target.value)})}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {availableRoles.map((r) => (
-                    <option key={r} value={r}>
-                      {formatRoleLabel(r)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* Permissions Tab */}
+        {currentTab === "permissions" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Role selection */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <ShieldCheckIcon className="h-5 w-5 mr-2 text-blue-600" />
+                  Role & Access
+                </h4>
+                <p className="text-sm text-gray-600">
+                  Assign the appropriate role to control what this user can
+                  see and do within the platform.
+                </p>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex">
-                  <InformationCircleIcon className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
-                  <div>
-                    <h5 className="text-sm font-medium text-blue-800 mb-1">
-                      Role Permissions
-                    </h5>
-                    <div className="text-sm text-blue-700">
-                      <p className="mb-2">
-                        <strong>Current selection: {formatRoleLabel(userForm.role)}</strong>
-                      </p>
-                      <p>{describeRole(userForm.role)}</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    User Role
+                  </label>
+                  <select
+                    value={userForm.role}
+                    onChange={(e) =>
+                      setUserForm({
+                        ...userForm,
+                        role: normalizeRoleCode(e.target.value),
+                      })
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {availableRoles.map((r) => (
+                      <option key={r} value={r}>
+                        {formatRoleLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                  <div className="flex">
+                    <InformationCircleIcon className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
+                    <div>
+                      <h5 className="text-sm font-medium text-blue-800 mb-1">
+                        Role Permissions
+                      </h5>
+                      <div className="text-sm text-blue-700">
+                        <p className="mb-2">
+                          <strong>
+                            Current selection: {formatRoleLabel(userForm.role)}
+                          </strong>
+                        </p>
+                        <p>{describeRole(userForm.role)}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Feature visibility toggles */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <InformationCircleIcon className="h-5 w-5 mr-2 text-blue-600" />
+                  Feature Visibility
+                </h4>
+                <p className="text-sm text-gray-600">
+                  Use these switches to hide or show key navigation items for
+                  this specific user. Hidden features will not appear in their
+                  left-hand menu.
+                </p>
+
+                <div className="mt-4 space-y-3">
+                  {[
+                    { code: "dashboard", label: "Dashboard" },
+                    { code: "data_explorer", label: "Data Explorer" },
+                    { code: "excel_compare", label: "Excel Compare" },
+                    { code: "processes", label: "Processes" },
+                  ].map((feature) => {
+                    const isHidden = (userForm.hidden_features || []).some(
+                      (f) => f.toLowerCase() === feature.code.toLowerCase(),
+                    );
+                    return (
+                      <label
+                        key={feature.code}
+                        className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:border-blue-300 transition-colors"
+                      >
+                        <div>
+                          <span className="font-medium text-gray-900">
+                            {feature.label}
+                          </span>
+                          <p className="text-xs text-gray-500">
+                            {isHidden
+                              ? "Currently hidden for this user."
+                              : "Visible in the main navigation for this user."}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUserForm((prev) => {
+                              const current = new Set(
+                                (prev.hidden_features || []).map((f) =>
+                                  f.toLowerCase(),
+                                ),
+                              );
+                              if (current.has(feature.code)) {
+                                current.delete(feature.code);
+                              } else {
+                                current.add(feature.code);
+                              }
+                              return {
+                                ...prev,
+                                hidden_features: Array.from(current),
+                              };
+                            })
+                          }
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            isHidden ? "bg-red-500" : "bg-green-500"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                              isHidden ? "translate-x-1" : "translate-x-6"
+                            }`}
+                          />
+                        </button>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+        )}
         </div>
 
         {/* Footer */}

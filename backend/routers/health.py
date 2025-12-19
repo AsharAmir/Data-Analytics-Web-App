@@ -18,4 +18,4 @@ async def health_check():
         db_manager.execute_query("SELECT 1 FROM DUAL")
         return APIResponse(success=True, message="System healthy", data={"database": "connected"})
     except Exception as exc:
-        return APIResponse(success=False, error=f"Database connection failed: {exc}") 
+        return APIResponse(success=False, error=f"Database connection failed: {exc}")

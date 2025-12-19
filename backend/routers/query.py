@@ -253,12 +253,10 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
             try:
                 # Extract the SELECT part and add LIMIT 0 to get just column structure
                 sql_for_headers = sql.strip()
-                if sql_for_headers.upper().find('LIMIT') == -1 and sql_for_headers.upper().find('ROWNUM') == -1:
-                    # Add LIMIT 0 for most databases, or use WHERE 1=0 for broader compatibility
-                    sql_for_headers = f"SELECT * FROM ({sql_for_headers}) WHERE 1=0"
-                else:
-                    # If query already has LIMIT/ROWNUM, just execute as-is since it's already empty
-                    sql_for_headers = sql_for_headers
+                if 'LIMIT' not in sql_for_headers.upper() and 'ROWNUM' not in sql_for_headers.upper():
+                    # Add WHERE 1=0 to get only column metadata in Oracle
+                    # Remove AS keyword for alias compatibility
+                    sql_for_headers = f"SELECT * FROM ({sql_for_headers}) sub WHERE 1=0"
                 
                 headers_df = await loop.run_in_executor(
                     None,
@@ -320,4 +318,4 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
             error_msg = "No data available to export."
         elif "timeout" in str(exc).lower():
             error_msg = "Export timed out. Try filtering your data to reduce the result set."
-        raise HTTPException(status_code=500, detail=error_msg) 
+        raise HTTPException(status_code=500, detail=error_msg)

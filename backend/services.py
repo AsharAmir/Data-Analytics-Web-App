@@ -95,22 +95,28 @@ class DataService:
         start_time = time.time()
 
         try:
-            # Apply limit and offset for pagination
+            # Oracle 11g ROWNUM pagination
+            # Note: Oracle does not support 'AS' for table aliases
             paginated_query = f"""
             SELECT * FROM (
-                SELECT ROWNUM as rn, sub.* FROM (
+                SELECT a.*, ROWNUM rnum FROM (
                     {query}
-                ) sub
-                WHERE ROWNUM <= {offset + limit}
-            )
-            WHERE rn > {offset}
+                ) a WHERE ROWNUM <= {limit + offset}
+            ) WHERE rnum > {offset}
             """
 
             df = db_manager.execute_query_pandas(paginated_query, timeout=timeout)
 
+            # Drop the rnum column if it exists in the dataframe
+            if not df.empty and "RNUM" in df.columns:
+                 df.drop(columns=["RNUM"], inplace=True)
+            elif not df.empty and "rnum" in df.columns:
+                 df.drop(columns=["rnum"], inplace=True)
+
             if df.empty:
                 logger.info("Query returned no data, attempting to get column structure")
                 try:
+                    # Oracle-compatible structure fetch
                     structure_query = f"SELECT * FROM ({query}) WHERE 1=0"
                     structure_df = db_manager.execute_query_pandas(structure_query, timeout=10)
                     if len(structure_df.columns) > 0:
@@ -119,13 +125,20 @@ class DataService:
                 except Exception as e:
                     logger.warning(f"Could not get column structure for empty result: {e}")
 
-            count_query = f"SELECT COUNT(*) as total_count FROM ({query})"
+            # Oracle count query (no AS alias)
+            count_query = f"SELECT COUNT(*) as total_count FROM ({query}) sub"
             try:
                 count_result = db_manager.execute_query(count_query, timeout=min(timeout, 30))
-                total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
+                total_count = count_result[0]["total_count"] if count_result else 0
             except TimeoutError:
                 logger.warning("Count query timed out, using current page size as estimate")
                 total_count = len(df) + offset
+            except Exception:
+                 # Fallback if case sensitivity fails (Oracle usually returns uppercase cols)
+                total_count = 0
+                if count_result and "TOTAL_COUNT" in count_result[0]:
+                    total_count = count_result[0]["TOTAL_COUNT"]
+
 
             table_data = TableData(
                 columns=df.columns.tolist(),
@@ -179,9 +192,14 @@ class DataService:
 
             filtered_query = DataService.apply_filters(base_query, request.filters)
 
-            count_query = f"SELECT COUNT(*) as total_count FROM ({filtered_query})"
+            # Oracle count (no AS alias)
+            count_query = f"SELECT COUNT(*) as total_count FROM ({filtered_query}) sub"
             count_result = db_manager.execute_query(count_query)
-            total_count = count_result[0]["TOTAL_COUNT"] if count_result else 0
+            
+            # Handle Oracle case sensitivity for keys
+            total_count = 0
+            if count_result:
+                total_count = count_result[0].get("total_count") or count_result[0].get("TOTAL_COUNT") or 0
 
             if request.sort_column:
                 direction = "DESC" if request.sort_direction and request.sort_direction.upper() == "DESC" else "ASC"
@@ -190,17 +208,22 @@ class DataService:
             else:
                 sorted_query = filtered_query
 
+            # Oracle 11g Paging
             paginated_query = f"""
             SELECT * FROM (
-                SELECT ROWNUM as rn, sub.* FROM (
+                SELECT a.*, ROWNUM rnum FROM (
                     {sorted_query}
-                ) sub
-                WHERE ROWNUM <= {request.offset + request.limit}
-            )
-            WHERE rn > {request.offset}
+                ) a WHERE ROWNUM <= {request.limit + request.offset}
+            ) WHERE rnum > {request.offset}
             """
 
             df = db_manager.execute_query_pandas(paginated_query)
+
+            # Remove RNUM/rnum
+            if not df.empty and "RNUM" in df.columns:
+                 df.drop(columns=["RNUM"], inplace=True)
+            elif not df.empty and "rnum" in df.columns:
+                 df.drop(columns=["rnum"], inplace=True)
 
             if df.empty:
                 logger.info("Filtered query returned no data, attempting to get column structure")
@@ -493,10 +516,12 @@ class ExportService:
 class MenuService:
 
     @staticmethod
-    def get_menu_structure(user_role: str = None) -> List[MenuItem]:
+    def get_menu_structure(user_role: str = None, hidden_features: List[str] = None) -> List[MenuItem]:
         try:
             query = """
-            SELECT id, name, type, icon, parent_id, sort_order, is_active, role
+            SELECT id, name, type, icon, parent_id, sort_order, is_active, role,
+                   COALESCE(is_interactive_dashboard, 0) AS is_interactive_dashboard,
+                   interactive_template
             FROM app_menu_items
             WHERE is_active = 1
             ORDER BY sort_order, name
@@ -504,24 +529,53 @@ class MenuService:
 
             result = db_manager.execute_query(query)
 
+            # Normalize hidden features
+            hidden = set()
+            if hidden_features:
+                hidden = {h.strip().lower() for h in hidden_features if h.strip()}
+
             all_items = []
             for row in result:
-                menu_roles = row.get("ROLE")
+                menu_roles = row.get("role")
                 if menu_roles:
                     menu_roles = [r.strip().upper() for r in menu_roles.split(",") if r.strip()]
                 
+                # 1. Role Check
                 if user_role and menu_roles and str(user_role).strip().upper() not in menu_roles:
+                    continue
+
+                # 2. Hidden Feature Check
+                # Map feature entries to menu types/names
+                item_type = str(row["type"]).lower()
+                item_name = str(row["name"]).lower()
+
+                should_hide = False
+                
+                if "dashboard" in hidden and item_type == "dashboard":
+                    should_hide = True
+                elif "data_explorer" in hidden and (item_type == "report" or item_name in ["reports", "data explorer"]):
+                    should_hide = True
+                elif "excel_compare" in hidden and item_type == "excel-compare":
+                    should_hide = True
+                elif "processes" in hidden and item_type == "process":
+                    should_hide = True
+                
+                if should_hide:
                     continue
                 
                 item = MenuItem(
-                    id=row["ID"],
-                    name=row["NAME"],
-                    type=row["TYPE"],
-                    icon=row["ICON"],
-                    parent_id=row["PARENT_ID"],
-                    sort_order=row["SORT_ORDER"],
-                    is_active=bool(row["IS_ACTIVE"]),
+                    id=row["id"],
+                    name=row["name"],
+                    type=row["type"],
+                    icon=row["icon"],
+                    parent_id=row["parent_id"],
+                    sort_order=row["sort_order"],
+                    is_active=bool(row["is_active"]),
                     role=menu_roles,
+                    is_interactive_dashboard=bool(
+                        row.get("is_interactive_dashboard", 0)
+                    ),
+                    interactive_template=row.get("interactive_template"),
                     children=[],
                 )
                 all_items.append(item)
@@ -533,6 +587,18 @@ class MenuService:
                 if item.parent_id and item.parent_id in menu_dict:
                     menu_dict[item.parent_id].children.append(item)
                 else:
+                    # Only add root items if they haven't been filtered out (parent check isn't enough if parent is root)
+                    # But here we iterate over 'all_items' which are already filtered.
+                    # If parent was filtered out, 'item.parent_id in menu_dict' will be false,
+                    # so it will be added as root? No, we should probably handle orphaned children or just let them be roots?
+                    # Typically if you hide a parent, children should be hidden too.
+                    # But proper UI usually handles getting valid tree.
+                    # For now, if parent is hidden, child becomes root (or we could hide it).
+                    # Let's assume broad filtering covers usually top-level items.
+                    if item.parent_id and item.parent_id not in menu_dict:
+                        # Parent was hidden, so hide child too? Or show as root?
+                        # Let's validly hide it to be safe.
+                        continue 
                     root_items.append(item)
 
             return root_items
@@ -549,7 +615,8 @@ class QueryService:
         try:
             base_sql = """
             SELECT id, name, description, sql_query, chart_type, chart_config,
-                   menu_item_id, role, is_active, created_at
+                   menu_item_id, role, is_kpi, is_default_dashboard, is_form_report,
+                   form_template, is_active, created_at
             FROM app_queries
             WHERE is_active = 1 AND (menu_item_id = :menu_id)
             """
@@ -569,23 +636,25 @@ class QueryService:
             queries = []
             for row in result:
                 chart_config = {}
-                if row["CHART_CONFIG"]:
+                if row["chart_config"]:
                     try:
-                        chart_config = json.loads(row["CHART_CONFIG"])
+                        chart_config = json.loads(row["chart_config"])
                     except:
                         chart_config = {}
 
                 query_obj = Query(
-                    id=row["ID"],
-                    name=row["NAME"],
-                    description=row["DESCRIPTION"],
-                    sql_query=row["SQL_QUERY"],
-                    chart_type=row["CHART_TYPE"],
+                    id=row["id"],
+                    name=row["name"],
+                    description=row["description"],
+                    sql_query=row["sql_query"],
+                    chart_type=row["chart_type"],
                     chart_config=chart_config,
-                    menu_item_id=row["MENU_ITEM_ID"],
-                    role=row["ROLE"],
-                    is_active=bool(row["IS_ACTIVE"]),
-                    created_at=row["CREATED_AT"],
+                    menu_item_id=row["menu_item_id"],
+                    role=row["role"],
+                    is_active=bool(row["is_active"]),
+                    created_at=row["created_at"],
+                    is_form_report=bool(row.get("is_form_report", 0)),
+                    form_template=row.get("form_template"),
                 )
                 queries.append(query_obj)
 
@@ -600,7 +669,8 @@ class QueryService:
         try:
             query = """
             SELECT id, name, description, sql_query, chart_type, chart_config, 
-                   menu_item_id, role, is_active, created_at
+                   menu_item_id, role, is_kpi, is_default_dashboard, is_form_report,
+                   form_template, is_active, created_at
             FROM app_queries
             WHERE id = :1 AND is_active = 1
             """
@@ -610,23 +680,25 @@ class QueryService:
             if result:
                 row = result[0]
                 chart_config = {}
-                if row["CHART_CONFIG"]:
+                if row["chart_config"]:
                     try:
-                        chart_config = json.loads(row["CHART_CONFIG"])
+                        chart_config = json.loads(row["chart_config"])
                     except:
                         chart_config = {}
 
                 return Query(
-                    id=row["ID"],
-                    name=row["NAME"],
-                    description=row["DESCRIPTION"],
-                    sql_query=row["SQL_QUERY"],
-                    chart_type=row["CHART_TYPE"],
+                    id=row["id"],
+                    name=row["name"],
+                    description=row["description"],
+                    sql_query=row["sql_query"],
+                    chart_type=row["chart_type"],
                     chart_config=chart_config,
-                    menu_item_id=row["MENU_ITEM_ID"],
-                    role=row["ROLE"],
-                    is_active=bool(row["IS_ACTIVE"]),
-                    created_at=row["CREATED_AT"],
+                    menu_item_id=row["menu_item_id"],
+                    role=row["role"],
+                    is_active=bool(row["is_active"]),
+                    created_at=row["created_at"],
+                    is_form_report=bool(row.get("is_form_report", 0)),
+                    form_template=row.get("form_template"),
                 )
 
             return None
@@ -649,7 +721,7 @@ class DashboardService:
                 query = """
                 SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y, 
                        w.width, w.height, w.is_active,
-                       q.name as query_name, q.chart_type, q.menu_item_id
+                       q.name as query_name, q.chart_type, q.menu_item_id, q.role, q.chart_config
                 FROM app_dashboard_widgets w
                 JOIN app_queries q ON w.query_id = q.id
                 LEFT JOIN app_query_menu_items qmi ON q.id = qmi.query_id
@@ -662,7 +734,7 @@ class DashboardService:
                 query = """
                 SELECT DISTINCT w.id, w.title, w.query_id, w.position_x, w.position_y,
                        w.width, w.height, w.is_active,
-                       q.name as query_name, q.chart_type, q.menu_item_id
+                       q.name as query_name, q.chart_type, q.menu_item_id, q.role, q.chart_config
                 FROM app_dashboard_widgets w
                 JOIN app_queries q ON w.query_id = q.id
                 WHERE w.is_active = 1 AND q.is_active = 1 
@@ -673,27 +745,35 @@ class DashboardService:
 
             widgets = []
             for row in result:
+                chart_config = {}
+                if row.get("chart_config"):
+                    try:
+                        chart_config = json.loads(row["chart_config"])
+                    except:
+                        chart_config = {}
+
                 query_obj = Query(
-                    id=row["QUERY_ID"],
-                    name=row["QUERY_NAME"],
+                    id=row["query_id"],
+                    name=row["query_name"],
                     description="",
                     sql_query="",
-                    chart_type=row["CHART_TYPE"] or "bar",
-                    chart_config={},
-                    menu_item_id=row.get("MENU_ITEM_ID"),
+                    chart_type=row["chart_type"] or "bar",
+                    chart_config=chart_config,
+                    menu_item_id=row.get("menu_item_id"),
+                    role=row.get("role"),
                     is_active=True,
                     created_at=datetime.now(),
                 )
 
                 widget = DashboardWidget(
-                    id=row["ID"],
-                    title=row["TITLE"],
-                    query_id=row["QUERY_ID"],
-                    position_x=row["POSITION_X"],
-                    position_y=row["POSITION_Y"],
-                    width=row["WIDTH"],
-                    height=row["HEIGHT"],
-                    is_active=bool(row["IS_ACTIVE"]),
+                    id=row["id"],
+                    title=row["title"],
+                    query_id=row["query_id"],
+                    position_x=row["position_x"],
+                    position_y=row["position_y"],
+                    width=row["width"],
+                    height=row["height"],
+                    is_active=bool(row["is_active"]),
                     query=query_obj,
                 )
                 widgets.append(widget)
@@ -737,6 +817,10 @@ class KPIService:
     @staticmethod
     def _is_user_authorized(user_role: RoleType, allowed_roles: List[str]) -> bool:
         """Check if user is authorized to access KPI based on roles"""
+        # Admin sees everything
+        if str(user_role).upper() == "ADMIN":
+            return True
+            
         if not allowed_roles:
             return True  # No role restriction
         return user_role in allowed_roles
@@ -809,20 +893,20 @@ class KPIService:
             
             for row in rows:
                 # Parse allowed roles
-                allowed_roles = KPIService._parse_user_roles(row.get("ROLE"))
+                allowed_roles = KPIService._parse_user_roles(row.get("role"))
                 
                 # Check authorization
                 if not KPIService._is_user_authorized(user_role, allowed_roles):
-                    logger.debug(f"User role '{user_role}' not authorized for KPI '{row['NAME']}'")
+                    logger.debug(f"User role '{user_role}' not authorized for KPI '{row['name']}'")
                     continue
                 
                 # Execute KPI query to get value
-                kpi_value = KPIService._execute_kpi_query(row["SQL_QUERY"], row["ID"])
+                kpi_value = KPIService._execute_kpi_query(row["sql_query"], row["id"])
                 
                 # Create KPI object
                 kpi = KPI(
-                    id=row["ID"],
-                    label=row["NAME"],
+                    id=row["id"],
+                    label=row["name"],
                     value=kpi_value,
                 )
                 kpis.append(kpi)
@@ -870,7 +954,7 @@ class ProcessService:
         )
         if not res:
             raise ValueError("Failed to obtain ID for newly created process")
-        proc_id = res[0]["ID"]
+        proc_id = res[0]["id"]
 
         if request.parameters:
             param_sql = (
@@ -922,23 +1006,23 @@ class ProcessService:
         for pr in param_rows:
             params.append(
                 ProcessParameter(
-                    name=pr["NAME"],
-                    label=pr["LABEL"],
-                    input_type=ParameterInputType(pr["INPUT_TYPE"]),
-                    default_value=pr["DEFAULT_VALUE"],
-                    dropdown_values=pr["DROPDOWN_VALUES"].split(",") if pr.get("DROPDOWN_VALUES") else None,
+                    name=pr["name"],
+                    label=pr["label"],
+                    input_type=ParameterInputType(pr["input_type"]),
+                    default_value=pr["default_value"],
+                    dropdown_values=pr["dropdown_values"].split(",") if pr.get("dropdown_values") else None,
                 )
             )
 
         return Process(
-            id=proc_row["ID"],
-            name=proc_row["NAME"],
-            description=proc_row["DESCRIPTION"],
-            script_path=proc_row["SCRIPT_PATH"],
+            id=proc_row["id"],
+            name=proc_row["name"],
+            description=proc_row["description"],
+            script_path=proc_row["script_path"],
             parameters=params,
-            is_active=bool(proc_row["IS_ACTIVE"]),
-            role=proc_row.get("ROLE"),
-            created_at=proc_row["CREATED_AT"],
+            is_active=bool(proc_row["is_active"]),
+            role=proc_row.get("role"),
+            created_at=proc_row["created_at"],
         )
 
     @staticmethod
@@ -950,9 +1034,9 @@ class ProcessService:
 
         processes: list[Process] = []
         for row in rows:
-            roles = row.get("ROLE")
+            roles = row.get("role")
             
-            if str(user_role).strip().lower() != get_admin_role():
+            if str(user_role).strip().upper() != get_admin_role():
                 if not roles or roles.strip() == "":
                     continue
                 if str(user_role).strip().upper() not in {r.strip().upper() for r in roles.split(",")}:
@@ -960,14 +1044,14 @@ class ProcessService:
 
             processes.append(
                 Process(
-                    id=row["ID"],
-                    name=row["NAME"],
-                    description=row["DESCRIPTION"],
-                    script_path=row["SCRIPT_PATH"],
+                    id=row["id"],
+                    name=row["name"],
+                    description=row["description"],
+                    script_path=row["script_path"],
                     parameters=None,
-                    is_active=bool(row["IS_ACTIVE"]),
+                    is_active=bool(row["is_active"]),
                     role=roles,
-                    created_at=row["CREATED_AT"],
+                    created_at=row["created_at"],
                 )
             )
 
@@ -1017,14 +1101,16 @@ class ProcessService:
     @staticmethod
     def run_process(proc_id: int, args: dict[str, str], timeout: int = 600) -> str:
 
-        import shlex
         import subprocess
         import os
         import sys
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         proc = ProcessService.get_process(proc_id)
         if not proc:
-            raise ValueError("Process not found")
+            raise RuntimeError(f"Process not found for id={proc_id}")
 
         script_path = proc.script_path
         
@@ -1033,13 +1119,29 @@ class ProcessService:
             script_path = os.path.join(backend_dir, script_path)
             
         if not os.path.isfile(script_path):
-            raise RuntimeError(f"Script not found: {script_path}")
+            # Log a clear error so admins can fix the process configuration
+            logger.error("Configured process script does not exist", extra={
+                "process_id": proc_id,
+                "process_name": getattr(proc, "name", None),
+                "configured_path": proc.script_path,
+                "resolved_path": script_path,
+            })
+            raise RuntimeError(f"Configured script not found on server: {script_path}")
 
         cmd = [sys.executable, script_path]
         for k, v in args.items():
-            cmd.append(f"--{k}={shlex.quote(str(v))}")
+            cmd.append(f"--{k}={str(v)}")
 
         try:
+            logger.info(
+                "Starting external process",
+                extra={
+                    "process_id": proc_id,
+                    "process_name": getattr(proc, "name", None),
+                    "script_path": script_path,
+                    "args": args,
+                },
+            )
             completed = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -1047,8 +1149,33 @@ class ProcessService:
                 timeout=timeout,
                 check=True,
             )
+            logger.info(
+                "External process completed successfully",
+                extra={
+                    "process_id": proc_id,
+                    "process_name": getattr(proc, "name", None),
+                    "returncode": completed.returncode,
+                },
+            )
             return completed.stdout
         except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"Process exited with code {exc.returncode}: {exc.stderr}")
+            logger.error(
+                "External process failed",
+                extra={
+                    "process_id": proc_id,
+                    "process_name": getattr(proc, "name", None),
+                    "returncode": exc.returncode,
+                    "stderr": exc.stderr,
+                },
+            )
+            raise RuntimeError(f"Process failed with exit code {exc.returncode}: {exc.stderr}")
         except subprocess.TimeoutExpired:
-            raise RuntimeError("Process execution timed out")
+            logger.error(
+                "External process timed out",
+                extra={
+                    "process_id": proc_id,
+                    "process_name": getattr(proc, "name", None),
+                    "timeout_seconds": timeout,
+                },
+            )
+            raise RuntimeError(f"Process execution timed out after {timeout} seconds")

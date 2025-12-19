@@ -98,6 +98,8 @@ const AdminPage: React.FC = () => {
     menu_item_id: null as number | null,
     menu_item_ids: [] as number[],
     role: [] as string[],
+    is_form_report: false,
+    form_template: "",
   });
   const [widgetForm, setWidgetForm] = useState({
     title: "",
@@ -113,11 +115,12 @@ const AdminPage: React.FC = () => {
     menu_item_id: null as number | null,
   });
 
-  const [userForm, setUserForm] = useState<{username:string;email:string;password:string;role:string}>({
+  const [userForm, setUserForm] = useState<{ username: string; email: string; password: string; role: string; hidden_features: string[] }>({
     username: "",
     email: "",
     password: "",
     role: "user",
+    hidden_features: [] as string[],
   });
   const [kpiForm, setKpiForm] = useState({
     name: "",
@@ -135,6 +138,8 @@ const AdminPage: React.FC = () => {
     parent_id: null as number | null,
     sort_order: 0,
     role: [] as string[],
+    is_interactive_dashboard: false,
+    interactive_template: "",
   });
   const [processForm, setProcessForm] = useState({
     name: "",
@@ -156,9 +161,9 @@ const AdminPage: React.FC = () => {
   const enumRoleNames = SYSTEM_ROLE_CODES.filter(
     (er) => !backendRoleNames.some((br) => br.toLowerCase() === er.toLowerCase()),
   );
-  
+
   // Extract roles from existing queries to include custom roles
-  const queryRoles = queries.flatMap(query => 
+  const queryRoles = queries.flatMap(query =>
     query.role ? query.role.split(',').map(r => {
       const trimmed = r.trim();
       // Normalize known roles to standard case
@@ -167,7 +172,7 @@ const AdminPage: React.FC = () => {
       return trimmed;
     }) : []
   );
-  
+
   // Combine all roles and remove duplicates (case-insensitive)
   const combinedRoles = [...backendRoleNames, ...enumRoleNames, ...queryRoles];
   // Canonicalize roles to uppercase for consistent UX and de-duplication
@@ -246,24 +251,24 @@ const AdminPage: React.FC = () => {
       // Endpoints return different shapes; normalize here
       setQueries(
         (queriesRes as { data?: Query[] }).data ??
-          (queriesRes as Query[]) ??
-          [],
+        (queriesRes as Query[]) ??
+        [],
       );
       setProcesses(processesRes ?? []);
       setWidgets(
         (widgetsRes as { data?: Widget[] }).data ??
-          (widgetsRes as Widget[]) ??
-          [],
+        (widgetsRes as Widget[]) ??
+        [],
       );
       setMenuItems(
         (menuRes as { data?: MenuItem[] }).data ??
-          (menuRes as MenuItem[]) ??
-          [],
+        (menuRes as MenuItem[]) ??
+        [],
       );
       setUsers(
         (usersRes as { data?: AdminUser[] }).data ??
-          (usersRes as AdminUser[]) ??
-          [],
+        (usersRes as AdminUser[]) ??
+        [],
       );
       setKpis((kpisRes as { data?: KPI[] }).data ?? (kpisRes as KPI[]) ?? []);
       setRoles((rolesRes as any)?.data ?? rolesRes ?? []);
@@ -285,6 +290,9 @@ const AdminPage: React.FC = () => {
       const normalizedQueryForm = {
         ...payload,
         role: payload.role.map((role) => normalizeRoleCode(role)),
+        // Ensure boolean & template are always present
+        is_form_report: !!payload.is_form_report,
+        form_template: payload.form_template || undefined,
       };
 
       if (editingQueryId) {
@@ -342,6 +350,8 @@ const AdminPage: React.FC = () => {
         menu_item_id: null,
         menu_item_ids: [],
         role: [],
+        is_form_report: false,
+        form_template: "",
       });
       loadData();
     } catch (error: unknown) {
@@ -552,6 +562,8 @@ const AdminPage: React.FC = () => {
       const payload = {
         ...menuForm,
         role: (menuForm.role || []).map((r) => normalizeRoleCode(r)),
+        is_interactive_dashboard: !!menuForm.is_interactive_dashboard,
+        interactive_template: menuForm.interactive_template || undefined,
       };
       if (editingMenuId) {
         await apiClient.put(`/api/admin/menu/${editingMenuId}`, payload);
@@ -569,6 +581,8 @@ const AdminPage: React.FC = () => {
         parent_id: null,
         sort_order: 0,
         role: [],
+        is_interactive_dashboard: false,
+        interactive_template: "",
       });
       loadData();
     } catch (error: unknown) {
@@ -625,7 +639,7 @@ const AdminPage: React.FC = () => {
       const errorMessage =
         error instanceof Error && "response" in error
           ? (error as { response?: { data?: { detail?: string } } }).response
-              ?.data?.detail
+            ?.data?.detail
           : "Failed to delete menu";
       toast.error(errorMessage || "Failed to delete menu");
     }
@@ -788,71 +802,65 @@ const AdminPage: React.FC = () => {
               <nav className="-mb-px flex space-x-8">
                 <button
                   onClick={() => setActiveTab("widgets")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "widgets"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "widgets"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <ChartBarIcon className="h-5 w-5 inline mr-2" />
                   Dashboard Widgets ({widgets.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("queries")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "queries"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "queries"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <DocumentTextIcon className="h-5 w-5 inline mr-2" />
                   Queries ({queries.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("processes")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "processes"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "processes"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <Cog6ToothIcon className="h-5 w-5 inline mr-2" />
                   Processes ({processes.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("users")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "users"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "users"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <EyeIcon className="h-5 w-5 inline mr-2" />
                   Users ({users.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("kpis")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "kpis"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "kpis"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <span className="text-lg inline mr-2">📊</span>
                   Stats/KPIs ({kpis.length})
                 </button>
                 <button
                   onClick={() => setActiveTab("menus")}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === "menus"
-                      ? "border-blue-500 text-blue-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                  }`}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "menus"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
                 >
                   <Cog6ToothIcon className="h-5 w-5 inline mr-2" />
                   Menus ({allMenuItems.length})
                 </button>
-                <button onClick={()=>setActiveTab("roles")} className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "roles"?"border-blue-500 text-blue-600":"border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>Roles ({roles.length})</button>
+                <button onClick={() => setActiveTab("roles")} className={`py-2 px-1 border-b-2 font-medium text-sm ${activeTab === "roles" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>Roles ({roles.length})</button>
               </nav>
             </div>
           </div>
@@ -943,6 +951,8 @@ const AdminPage: React.FC = () => {
                       parent_id: null,
                       sort_order: 0,
                       role: [],
+                      is_interactive_dashboard: false,
+                      interactive_template: "",
                     });
                     setShowMenuForm(true);
                   }}
@@ -975,11 +985,10 @@ const AdminPage: React.FC = () => {
                       {hierarchicalMenuItems.map((menu) => (
                         <tr
                           key={menu.id}
-                          className={`hover:bg-gray-50 transition-colors ${
-                            menu.level > 0
-                              ? "bg-gray-25 border-l-4 border-l-blue-100"
-                              : ""
-                          }`}
+                          className={`hover:bg-gray-50 transition-colors ${menu.level > 0
+                            ? "bg-gray-25 border-l-4 border-l-blue-100"
+                            : ""
+                            }`}
                         >
                           <td className="px-6 py-4">
                             <div
@@ -1072,6 +1081,8 @@ const AdminPage: React.FC = () => {
                                         sort_order:
                                           (menu.children?.length || 0) + 1, // Auto-increment sort order
                                         role: [],
+                                        is_interactive_dashboard: false,
+                                        interactive_template: "",
                                       });
                                       setShowMenuForm(true);
                                     }}
@@ -1095,6 +1106,8 @@ const AdminPage: React.FC = () => {
                                         ? menu.role
                                         : [menu.role]
                                       : [],
+                                    is_interactive_dashboard: !!menu.is_interactive_dashboard,
+                                    interactive_template: menu.interactive_template || "",
                                   });
                                   setShowMenuForm(true);
                                 }}
@@ -1137,6 +1150,8 @@ const AdminPage: React.FC = () => {
                       parent_id: null,
                       sort_order: 0,
                       role: [],
+                      is_interactive_dashboard: false,
+                      interactive_template: "",
                     });
                   }}
                   availableRoles={allRolesList}

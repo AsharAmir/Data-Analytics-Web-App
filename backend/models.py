@@ -21,6 +21,9 @@ class UserCreate(BaseModel):
     password: str
     role: RoleType = UserRole.USER
     must_change_password: bool = True  # always true on creation
+    # Optional list of feature codes to hide for this user (e.g. "dashboard",
+    # "data_explorer", "excel_compare", "processes")
+    hidden_features: Optional[List[str]] = None
 
 # Payload for partial user updates
 class UserUpdate(BaseModel):
@@ -29,6 +32,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     role: Optional[RoleType] = None  # Now supports dynamic roles as well
     is_active: Optional[bool] = None
+    hidden_features: Optional[List[str]] = None
 
 
 class UserLogin(BaseModel):
@@ -44,6 +48,7 @@ class User(BaseModel):
     is_active: bool
     created_at: datetime
     must_change_password: bool = True
+    hidden_features: Optional[List[str]] = None
 
 
 class Token(BaseModel):
@@ -63,6 +68,11 @@ class MenuItem(BaseModel):
     is_active: bool = True
     role: Optional[Union[RoleType, List[RoleType]]] = None
     children: Optional[List["MenuItem"]] = []
+    # When true, this menu represents an interactive dashboard whose layout is
+    # defined by the ``interactive_template`` field.
+    is_interactive_dashboard: Optional[bool] = False
+    # Optional HTML template used to render an interactive dashboard layout.
+    interactive_template: Optional[str] = None
 
 
 class MenuItemCreate(BaseModel):
@@ -72,6 +82,8 @@ class MenuItemCreate(BaseModel):
     parent_id: Optional[int] = None
     sort_order: int = 0
     role: Optional[Union[RoleType, List[RoleType]]] = None
+    is_interactive_dashboard: Optional[bool] = False
+    interactive_template: Optional[str] = None
 
 
 # Query Models
@@ -84,6 +96,14 @@ class QueryCreate(BaseModel):
     menu_item_id: Optional[int] = None  # Keep for backward compatibility
     menu_item_ids: Optional[List[int]] = None  # New field for multiple assignments
     role: Optional[Union[RoleType, List[RoleType]]] = UserRole.USER
+    # When true, this query represents a form-based report. The SQL is still a
+    # read-only SELECT, but execution is typically driven by user-submitted
+    # filters from a custom HTML layout.
+    is_form_report: Optional[bool] = False
+    # Optional HTML template used to render the form layout on the frontend.
+    # Admins can design the form here; inputs can include data-* attributes to
+    # map fields to query columns.
+    form_template: Optional[str] = None
 
 
 class Query(BaseModel):
@@ -99,6 +119,8 @@ class Query(BaseModel):
     is_active: bool = True
     created_at: datetime
     role: Optional[RoleType] = UserRole.USER
+    is_form_report: Optional[bool] = False
+    form_template: Optional[str] = None
 
 
 class QueryExecute(BaseModel):

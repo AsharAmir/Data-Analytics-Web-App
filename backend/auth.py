@@ -35,6 +35,23 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
+def _parse_hidden_features(raw: Optional[str]) -> List[str]:
+    """Parse comma-separated hidden feature codes from the DB into a normalized list."""
+    if not raw:
+        return []
+    return [part.strip().lower() for part in str(raw).split(",") if part and str(part).strip()]
+
+
+def _serialize_hidden_features(values: Optional[Union[str, List[str]]]) -> Optional[str]:
+    """Serialize feature codes to a comma-separated, lower-case string."""
+    if not values:
+        return None
+    if isinstance(values, str):
+        return values.strip().lower() or None
+    cleaned = {str(v).strip().lower() for v in values if str(v).strip()}
+    return ",".join(sorted(cleaned)) if cleaned else None
+
+
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
@@ -126,19 +143,21 @@ def get_user_by_username(username: str) -> Optional[User]:
     """Get user by username from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, role, is_active, must_change_password, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, role, is_active, must_change_password, created_at, hidden_features "
+            "FROM app_users WHERE username = :1",
             (username,),
         )
         if result:
             user_data = result[0]
             return User(
-                id=user_data["ID"],
-                username=user_data["USERNAME"],
-                email=user_data["EMAIL"],
-                role=normalize_role(user_data.get("ROLE", get_default_role())),
-                is_active=bool(user_data["IS_ACTIVE"]),
-                must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
-                created_at=user_data["CREATED_AT"],
+                id=user_data["id"],
+                username=user_data["username"],
+                email=user_data["email"],
+                role=normalize_role(user_data.get("role", get_default_role())),
+                is_active=bool(user_data["is_active"]),
+                must_change_password=bool(user_data.get("must_change_password", 1)),
+                created_at=user_data["created_at"],
+                hidden_features=_parse_hidden_features(user_data.get("hidden_features")),
             )
         return None
     except Exception as e:
@@ -150,19 +169,21 @@ def get_user_by_email(email: str) -> Optional[User]:
     """Get user by email from database"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, role, is_active, must_change_password, created_at FROM app_users WHERE email = :1",
+            "SELECT id, username, email, role, is_active, must_change_password, created_at, hidden_features "
+            "FROM app_users WHERE email = :1",
             (email,),
         )
         if result:
             user_data = result[0]
             return User(
-                id=user_data["ID"],
-                username=user_data["USERNAME"],
-                email=user_data["EMAIL"],
-                role=normalize_role(user_data.get("ROLE", get_default_role())),
-                is_active=bool(user_data["IS_ACTIVE"]),
-                must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
-                created_at=user_data["CREATED_AT"],
+                id=user_data["id"],
+                username=user_data["username"],
+                email=user_data["email"],
+                role=normalize_role(user_data.get("role", get_default_role())),
+                is_active=bool(user_data["is_active"]),
+                must_change_password=bool(user_data.get("must_change_password", 1)),
+                created_at=user_data["created_at"],
+                hidden_features=_parse_hidden_features(user_data.get("hidden_features")),
             )
         return None
     except Exception as e:
@@ -174,27 +195,29 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
     """Authenticate user with username and password"""
     try:
         result = db_manager.execute_query(
-            "SELECT id, username, email, password_hash, role, is_active, must_change_password, created_at FROM app_users WHERE username = :1",
+            "SELECT id, username, email, password_hash, role, is_active, must_change_password, created_at, hidden_features "
+            "FROM app_users WHERE username = :1",
             (username,),
         )
         if not result:
             return None
 
         user_data = result[0]
-        if not verify_password(password, user_data["PASSWORD_HASH"]):
+        if not verify_password(password, user_data["password_hash"]):
             return None
 
-        if not user_data["IS_ACTIVE"]:
+        if not user_data["is_active"]:
             return None
 
         return User(
-            id=user_data["ID"],
-            username=user_data["USERNAME"],
-            email=user_data["EMAIL"],
-            role=normalize_role(user_data.get("ROLE", get_default_role())),
-            is_active=bool(user_data["IS_ACTIVE"]),
-            must_change_password=bool(user_data.get("MUST_CHANGE_PASSWORD", 1)),
-            created_at=user_data["CREATED_AT"],
+            id=user_data["id"],
+            username=user_data["username"],
+            email=user_data["email"],
+            role=normalize_role(user_data.get("role", get_default_role())),
+            is_active=bool(user_data["is_active"]),
+            must_change_password=bool(user_data.get("must_change_password", 1)),
+            created_at=user_data["created_at"],
+            hidden_features=_parse_hidden_features(user_data.get("hidden_features")),
         )
     except Exception as e:
         logger.error(f"Error authenticating user: {e}")
@@ -223,15 +246,20 @@ def create_user(user_create: UserCreate, role: Any = get_default_role()) -> Opti
         # Hash password
         hashed_password = get_password_hash(user_create.password)
 
-        # Insert user with role, auto-creating column if necessary
+        # Insert user with role and optional hidden feature flags
         insert_sql = (
-            "INSERT INTO app_users (username, email, password_hash, role, must_change_password) VALUES (:1, :2, :3, :4, 1)"
+            "INSERT INTO app_users (username, email, password_hash, role, must_change_password, hidden_features) "
+            "VALUES (:1, :2, :3, :4, 1, :5)"
+        )
+
+        hidden_serialized = _serialize_hidden_features(
+            getattr(user_create, "hidden_features", None)
         )
 
         try:
             user_id = db_manager.execute_non_query(
                 insert_sql,
-                (user_create.username, user_create.email, hashed_password, role),
+                (user_create.username, user_create.email, hashed_password, role, hidden_serialized),
             )
         except Exception as e:
             # Handle Oracle unique constraint violation (username/email already exists)

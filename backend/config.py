@@ -1,5 +1,8 @@
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Settings:
@@ -22,7 +25,22 @@ class Settings:
     # Application Configuration
     AUTH_MODE: str = os.getenv("AUTH_MODE", "form")  # form or saml
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
-    CORS_ORIGINS: list = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    # Allow overriding CORS origins via comma‑separated env var, e.g.
+    # CORS_ORIGINS="http://localhost:3000,https://localhost"
+    _cors_env = os.getenv("CORS_ORIGINS")
+    if _cors_env:
+        # Handle JSON-style list string or simple comma-separated
+        cleaned_cors = _cors_env.replace("[", "").replace("]", "").replace('"', "").replace("'", "")
+        CORS_ORIGINS = [origin.strip() for origin in cleaned_cors.split(",") if origin.strip()]
+    else:
+        # sensible defaults for local dev (http) and common https reverse‑proxy on localhost
+        CORS_ORIGINS = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://localhost",
+            "https://127.0.0.1",
+        ]
 
     # SAML Configuration (if using SAML)
     SAML_ENTITY_ID: Optional[str] = os.getenv("SAML_ENTITY_ID")
@@ -33,7 +51,7 @@ class Settings:
 
     @property
     def database_url(self) -> str:
-        return f"oracle+pyodbc://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_SERVICE_NAME}?driver=Oracle+in+OraClient21Home1"
+        return f"oracle+oracledb://{self.DB_USERNAME}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/?service_name={self.DB_SERVICE_NAME}"
 
 
 settings = Settings()

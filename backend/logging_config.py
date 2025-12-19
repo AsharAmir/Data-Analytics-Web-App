@@ -61,14 +61,11 @@ def setup_logging() -> None:
         },
         "handlers": {
             "file": {
-                "class": "logging.handlers.TimedRotatingFileHandler",
+                "class": "logging.handlers.RotatingFileHandler",
                 "formatter": "json",
                 "filename": str(log_file),
-                "when": "midnight",
-                "interval": 1,
-                "backupCount": 30,  # Keep 30 days of logs
-                # Rotate at local midnight by default; can be toggled with LOG_USE_UTC=true
-                "utc": use_utc,
+                "maxBytes": 5 * 1024 * 1024,  # 5 MB
+                "backupCount": 1,  # Keep only 1 backup file
                 "encoding": "utf-8",
             },
             "console": {
@@ -87,5 +84,5 @@ def setup_logging() -> None:
 
     # Reduce verbosity of noisy third-party libraries in production.
     if log_level not in ("DEBUG", "NOTSET"):
-        for noisy in ("sqlalchemy", "uvicorn.access"):
+        for noisy in ("sqlalchemy", "uvicorn.access", "oracledb"):
             logging.getLogger(noisy).setLevel("WARNING") 

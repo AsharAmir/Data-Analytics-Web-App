@@ -276,6 +276,19 @@ const Sidebar: React.FC<SidebarProps> = ({
     return ReportsIcon; // Default fallback
   };
 
+  // Helper: check if a high-level feature is hidden for the current user
+  const isFeatureHidden = (code: string): boolean => {
+    if (!currentUser || !Array.isArray((currentUser as any).hidden_features)) {
+      return false;
+    }
+    const hidden = new Set(
+      ((currentUser as any).hidden_features as string[]).map((f) =>
+        f.toLowerCase(),
+      ),
+    );
+    return hidden.has(code.toLowerCase());
+  };
+
   // Handle logout
   const handleLogout = () => {
     apiClient.logout();
@@ -283,22 +296,24 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // Fixed navigation items
   const navigationItems = [
-    {
+    !isFeatureHidden("dashboard") && {
       name: "Dashboard",
       path: "/dashboard",
       icon: DashboardIcon,
     },
-    {
+    !isFeatureHidden("data_explorer") && {
       name: "Data Explorer",
       path: "/data-explorer",
       icon: ExplorerIcon,
     },
-    {
+    !isFeatureHidden("excel_compare") && {
       name: "Excel Compare",
       path: "/excel-compare",
       icon: ExcelCompareIcon,
     },
-    ...(currentUser && (isAdmin || roleUc === "IT_USER" || roleUc === "TECH_USER")
+    ...(currentUser &&
+    (isAdmin || roleUc === "IT_USER" || roleUc === "TECH_USER") &&
+    !isFeatureHidden("processes")
       ? [
           {
             name: "Processes",
@@ -316,7 +331,11 @@ const Sidebar: React.FC<SidebarProps> = ({
           },
         ]
       : []),
-  ];
+  ].filter(Boolean) as {
+    name: string;
+    path: string;
+    icon: React.FC;
+  }[];
 
   const toggleExpanded = (itemId: number) => {
     const newExpanded = new Set(expandedItems);

@@ -155,7 +155,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             "update set", "create table", "alter table", "grant ", "revoke ",
             "exec ", "execute ", "sp_", "xp_", "'; ", "' or ", "' and ",
             "' union", "' drop", "' delete", "' insert", "' update",
-            "char(", "ascii(", "substring(", "declare @"
+            "char(", "ascii(", "substring(", "declare @",
+            # Oracle Specific
+            "dbms_", "utl_", "ctx_", "ora_", "xmltype"
         ]
         
         return any(pattern in value_lower for pattern in sql_patterns)
@@ -231,7 +233,7 @@ class ContentSecurityPolicyMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https:; "
-            "connect-src 'self' http://localhost:8000 https://api.example.com; "
+            "connect-src 'self' http://localhost:8000 http://localhost:8005 http://localhost:3000 https://api.example.com; "
             "frame-ancestors 'none'; "
             "form-action 'self'; "
             "base-uri 'self'"

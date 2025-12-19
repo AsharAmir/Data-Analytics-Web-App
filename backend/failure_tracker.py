@@ -75,11 +75,26 @@ class FailureTracker:
         if additional_context:
             failure_data["context"] = additional_context
         
+        # Oracle Error Extraction
+        ora_code = self._extract_oracle_error_code(error)
+        if ora_code:
+            failure_data["oracle_error_code"] = ora_code
+            if "context" not in failure_data:
+                failure_data["context"] = {}
+            failure_data["context"]["oracle_error_code"] = ora_code
+
         # Log to dedicated failure log
         self.failure_logger.error(json.dumps(failure_data))
         
         # Also log to main application log
         logger.error(f"FAILURE_TRACKED: {operation} failed for user {user_id}: {error}")
+
+    def _extract_oracle_error_code(self, error: Exception) -> Optional[str]:
+        """Extract ORA-XXXXX code from exception if present."""
+        import re
+        msg = str(error)
+        match = re.search(r'(ORA-\d{5})', msg)
+        return match.group(1) if match else None
     
     def track_auth_failure(
         self,

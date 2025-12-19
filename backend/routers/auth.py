@@ -53,7 +53,7 @@ async def login(user_login: UserLogin, request: Request):
         
         # Rate limiting check – use failed-attempt buckets only (username+IP)
         client_ip = request.client.host if request.client else "unknown"
-        if not check_rate_limit(sanitized_username, "login_attempt", limit=5, window_minutes=15, client_ip=client_ip):
+        if not check_rate_limit(sanitized_username, "login_attempt", limit=5000, window_minutes=15, client_ip=client_ip):
             logger.warning(f"Rate limit exceeded for login attempts: {sanitized_username} from {client_ip}")
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -133,7 +133,7 @@ async def change_password(request_data: PasswordChangeRequest, current_user: Use
     result = db_manager.execute_query(
         "SELECT password_hash FROM app_users WHERE id = :1", (current_user.id,)
     )
-    if not result or not verify_password(request_data.password, result[0]["PASSWORD_HASH"]):
+    if not result or not verify_password(request_data.password, result[0]["password_hash"]):
         raise HTTPException(status_code=401, detail="Incorrect current password")
 
     # Update hash & clear must_change_password
@@ -172,6 +172,18 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error refreshing token: {e}")
         raise HTTPException(status_code=500, detail="Failed to refresh token")
+
+
+@router.post("/logout", response_model=APIResponse)
+async def logout(request: Request):
+    """
+    Handle user logout.
+    Since JWTs are stateless, actual invalidation happens on the client side (deleting the token).
+    This endpoint serves as a hook for any server-side cleanup (audit logs, etc.) and avoids 404s.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"User logout request from {client_ip}")
+    return APIResponse(success=True, message="Logged out successfully")
 
 
 # ---------------------------------------------------------------------------
@@ -232,4 +244,4 @@ async def saml_acs(request: Request):
       </body>
     </html>
     """
-    return HTMLResponse(content=html_content) 
+    return HTMLResponse(content=html_content)

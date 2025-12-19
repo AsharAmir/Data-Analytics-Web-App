@@ -8,6 +8,10 @@ interface MenuForm {
   parent_id: number | null;
   sort_order: number;
   role: string[];
+  // When true, this menu represents an interactive dashboard and uses the
+  // HTML template below to render a custom layout.
+  is_interactive_dashboard?: boolean;
+  interactive_template?: string;
 }
 
 interface MenuFormModalProps {
@@ -272,6 +276,77 @@ const MenuFormModal: React.FC<MenuFormModalProps> = ({
                 &ldquo;dashboard&rdquo;, &ldquo;chart&rdquo;)
               </p>
             </div>
+
+            {/* Interactive dashboard toggle (only for top-level dashboards) */}
+            {menuForm.type === "dashboard" && !menuForm.parent_id && (
+              <div className="space-y-2">
+                <label className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    checked={!!menuForm.is_interactive_dashboard}
+                    onChange={(e) =>
+                      handleInputChange("is_interactive_dashboard", e.target.checked)
+                    }
+                    disabled={loading}
+                  />
+                  <span className="text-sm text-gray-700">
+                    <span className="font-medium">Interactive dashboard</span>
+                    <span className="block text-xs text-gray-500">
+                      When enabled, this menu will render a custom interactive
+                      dashboard layout defined by the template below. Use query
+                      IDs and data attributes (e.g.{" "}
+                      <code>data-query-id</code>, <code>data-column</code>,
+                      <code>data-operator</code>) to bind filters and widgets.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* Interactive layout template */}
+            {menuForm.type === "dashboard" && menuForm.is_interactive_dashboard && (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Interactive Layout Template (HTML)
+                </label>
+                <textarea
+                  value={menuForm.interactive_template || ""}
+                  onChange={(e) =>
+                    handleInputChange("interactive_template", e.target.value)
+                  }
+                  rows={10}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder={`<div class="grid grid-cols-2 gap-4">
+  <div data-query-id="101" data-widget-type="chart" data-chart-type="bar"></div>
+  <div data-query-id="102" data-widget-type="chart" data-chart-type="line"></div>
+  <div>
+    <label>Status</label>
+    <select data-filter data-query-id="101" data-column="STATUS" data-operator="eq">
+      <option value="">All</option>
+      <option value="OPEN">Open</option>
+      <option value="CLOSED">Closed</option>
+    </select>
+  </div>
+</div>`}
+                  disabled={loading}
+                />
+                <p className="text-xs text-gray-500">
+                  Use{" "}
+                  <code className="bg-gray-100 px-1 rounded">
+                    data-query-id
+                  </code>{" "}
+                  on container elements to bind them to existing queries
+                  (created in the Queries tab). Use{" "}
+                  <code className="bg-gray-100 px-1 rounded">data-filter</code>,{" "}
+                  <code className="bg-gray-100 px-1 rounded">data-column</code>,{" "}
+                  and{" "}
+                  <code className="bg-gray-100 px-1 rounded">data-operator</code>{" "}
+                  on inputs to create interactive controls that drive those
+                  queries.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Role Access */}

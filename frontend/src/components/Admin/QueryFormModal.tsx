@@ -19,6 +19,9 @@ interface QueryForm {
   menu_item_id: number | null;
   menu_item_ids: number[];
   role: string[];
+  // New: form-based report support
+  is_form_report?: boolean;
+  form_template?: string;
 }
 
 interface MenuItemOption {
@@ -65,7 +68,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
   availableRoles,
 }) => {
   const [currentTab, setCurrentTab] = useState<
-    "basic" | "sql" | "visualization" | "permissions"
+    "basic" | "sql" | "visualization" | "form" | "permissions"
   >("basic");
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
     {},
@@ -157,6 +160,7 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
     { id: "basic", label: "Basic Info", icon: "ℹ️" },
     { id: "sql", label: "SQL Query", icon: "💾" },
     { id: "visualization", label: "Chart", icon: "📊" },
+    { id: "form", label: "Form Layout", icon: "📝" },
     { id: "permissions", label: "Access", icon: "🔐" },
   ];
 
@@ -259,6 +263,35 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       rows={4}
                     />
+                  </div>
+
+                  <div className="flex items-center space-x-3 mt-2">
+                    <input
+                      id="is_form_report"
+                      type="checkbox"
+                      checked={!!queryForm.is_form_report}
+                      onChange={(e) =>
+                        setQueryForm((prev) => ({
+                          ...prev,
+                          is_form_report: e.target.checked,
+                          // For form-based reports we default chart_type to 'table'
+                          chart_type: e.target.checked
+                            ? "table"
+                            : prev.chart_type,
+                        }))
+                      }
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    />
+                    <label
+                      htmlFor="is_form_report"
+                      className="text-sm text-gray-700"
+                    >
+                      <span className="font-medium">Form-based report</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        When enabled, this query will render a custom input form
+                        instead of a chart/table view.
+                      </span>
+                    </label>
                   </div>
                 </div>
 
@@ -390,6 +423,65 @@ const QueryFormModal: React.FC<QueryFormModalProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Form Layout Tab */}
+          {currentTab === "form" && (
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900 flex items-center">
+                <span className="mr-2">📝</span>
+                Form Layout (HTML Template)
+              </h4>
+              <p className="text-sm text-gray-600">
+                Define the HTML layout for your form-based report. You can use
+                standard HTML form controls. To bind inputs to query filters,
+                add{" "}
+                <code className="bg-gray-100 px-1 rounded text-xs">
+                  data-column
+                </code>{" "}
+                and{" "}
+                <code className="bg-gray-100 px-1 rounded text-xs">
+                  data-operator
+                </code>{" "}
+                attributes (e.g.{" "}
+                <code className="bg-gray-100 px-1 rounded text-xs">
+                  data-column="ORDER_DATE" data-operator="gte"
+                </code>
+                ). The runtime will use these to build secure filters for the
+                underlying query.
+              </p>
+
+              <textarea
+                className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={16}
+                placeholder={`<form>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <label>Date from</label>
+      <input type="date" name="date_from" data-column="TXN_DATE" data-operator="gte" />
+    </div>
+    <div>
+      <label>Date to</label>
+      <input type="date" name="date_to" data-column="TXN_DATE" data-operator="lte" />
+    </div>
+    <div>
+      <label>Customer Name</label>
+      <input type="text" name="customer" data-column="CUSTOMER_NAME" data-operator="like" />
+    </div>
+  </div>
+  <button type="submit">Run report</button>
+</form>`}
+                value={queryForm.form_template || ""}
+                onChange={(e) =>
+                  setQueryForm((prev) => ({
+                    ...prev,
+                    form_template: e.target.value,
+                    is_form_report:
+                      prev.is_form_report || e.target.value.trim().length > 0,
+                  }))
+                }
+              />
             </div>
           )}
 

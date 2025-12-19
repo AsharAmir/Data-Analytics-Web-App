@@ -16,6 +16,7 @@ from models import (
     User,
     UserCreate,
     UserUpdate,
+    DashboardWidgetUpdate
 )
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ async def create_user_admin(request: UserCreate, current_user: User = Depends(re
 async def list_users(current_user: User = Depends(require_admin)):
     try:
         query = """
-        SELECT id, username, email, role, is_active, created_at
+        SELECT id, username, email, role, is_active, created_at, hidden_features
         FROM app_users
         ORDER BY created_at DESC
         """
@@ -94,19 +95,26 @@ async def list_users(current_user: User = Depends(require_admin)):
         users: List[dict] = []
         for row in result:
             from auth import normalize_role
-            raw_role = row.get("ROLE") or get_default_role()
+            raw_role = row.get("role") or get_default_role()
             raw_role = normalize_role(raw_role)
             is_admin = raw_role == "ADMIN"
+            hidden_raw = row.get("hidden_features")
+            hidden_features = (
+                [h.strip().lower() for h in str(hidden_raw).split(",") if h and str(h).strip()]
+                if hidden_raw
+                else []
+            )
 
             users.append(
                 {
-                    "id": row["ID"],
-                    "username": row["USERNAME"],
-                    "email": row["EMAIL"],
+                    "id": row["id"],
+                    "username": row["username"],
+                    "email": row["email"],
                     "role": raw_role,
-                    "is_active": bool(row["IS_ACTIVE"]),
-                    "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+                    "is_active": bool(row["is_active"]),
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     "is_admin": is_admin,
+                    "hidden_features": hidden_features,
                 }
             )
         return APIResponse(success=True, message=f"Found {len(users)} users", data=users)
@@ -137,6 +145,11 @@ async def update_user_admin(user_id: int, request: UserUpdate, current_user: Use
         if request.is_active is not None:
             fields.append("is_active = :?")
             params.append(1 if request.is_active else 0)
+        if request.hidden_features is not None:
+            from auth import _serialize_hidden_features
+
+            fields.append("hidden_features = :?")
+            params.append(_serialize_hidden_features(request.hidden_features))
         if not fields:
             raise HTTPException(status_code=400, detail="No fields provided for update")
         set_clause = ", ".join(field.replace(":?", f":{i+1}") for i, field in enumerate(fields))
@@ -167,18 +180,25 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
     """Create a new query with professional practices and proper error handling"""
     try:
         # Prepare data using utility functions
-        db_menu_item_id = QueryUtils.get_menu_item_id_for_db(request.menu_item_id)
-        is_default_dashboard = QueryUtils.get_default_dashboard_flag(request.menu_item_id)
+        # Respect both singular and plural fields for default dashboard flag (-1)
+        menu_item_ids = request.menu_item_ids or []
+        is_default_dashboard = 1 if (request.menu_item_id == -1 or (-1 in menu_item_ids)) else QueryUtils.get_default_dashboard_flag(request.menu_item_id)
+
+        # For DB storage, default dashboard uses NULL; otherwise store the single menu_item_id
+        if request.menu_item_id == -1:
+            db_menu_item_id = None
+        else:
+            db_menu_item_id = QueryUtils.get_menu_item_id_for_db(request.menu_item_id)
         roles = serialize_roles(request.role) or get_default_role()
         
         # SQL query with named parameters for better readability
         insert_sql = """
         INSERT INTO app_queries (
             name, description, sql_query, chart_type, chart_config, 
-            menu_item_id, role, is_default_dashboard
+            menu_item_id, role, is_default_dashboard, is_form_report, form_template
         ) VALUES (
             :name, :description, :sql_query, :chart_type, :chart_config,
-            :menu_item_id, :role, :is_default_dashboard
+            :menu_item_id, :role, :is_default_dashboard, :is_form_report, :form_template
         )
         """
         
@@ -191,21 +211,24 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
             "chart_config": json.dumps(request.chart_config or {}),
             "menu_item_id": db_menu_item_id,
             "role": roles,
-            "is_default_dashboard": is_default_dashboard
+            "is_default_dashboard": is_default_dashboard,
+            "is_form_report": 1 if getattr(request, "is_form_report", False) else 0,
+            "form_template": getattr(request, "form_template", None),
         }
         
         db_manager.execute_non_query(insert_sql, params)
         logger.info(f"Successfully created query: {request.name}")
         
-        # Get the newly created query ID
+        # Get the newly created query ID (Oracle compatible)
         get_id_query = """
-        SELECT id FROM app_queries 
-        WHERE name = :name 
-        ORDER BY created_at DESC 
-        FETCH FIRST 1 ROWS ONLY
+        SELECT id FROM (
+            SELECT id FROM app_queries 
+            WHERE name = :name 
+            ORDER BY created_at DESC 
+        ) WHERE ROWNUM <= 1
         """
         id_result = db_manager.execute_query(get_id_query, {"name": request.name})
-        new_query_id = id_result[0]["ID"] if id_result else None
+        new_query_id = id_result[0]["ID"] if id_result else None # Oracle returns uppercase keys usually
         
         # Handle menu item associations if provided
         if request.menu_item_ids and new_query_id:
@@ -239,11 +262,6 @@ async def create_query(request: QueryCreate, current_user: User = Depends(requir
     except Exception as exc:
         logger.error(f"Unexpected error creating query '{request.name}': {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to create query: {str(exc)}")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error creating query: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to create query")
 
 
 @router.get("/query/{query_id}", response_model=APIResponse)
@@ -251,7 +269,9 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
     try:
         query = """
         SELECT id, name, description, sql_query, chart_type, chart_config, menu_item_id, role, created_at, 
-               COALESCE(is_default_dashboard, 0) as is_default_dashboard
+               COALESCE(is_default_dashboard, 0) as is_default_dashboard,
+               COALESCE(is_form_report, 0) as is_form_report,
+               form_template
         FROM app_queries
         WHERE id = :1 AND is_active = 1
         """
@@ -261,7 +281,7 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
         
         row = result[0]
         chart_config = {}
-        if row["CHART_CONFIG"]:
+        if row["chart_config"]:
             try:
                 chart_config = json.loads(row["CHART_CONFIG"])
             except:
@@ -277,32 +297,34 @@ async def get_query_admin(query_id: int, current_user: User = Depends(require_ad
             WHERE qm.query_id = :1
             """
             menu_result = db_manager.execute_query(menu_query, (query_id,))
-            menu_ids = [r["ID"] for r in menu_result]
-            menu_names = [r["NAME"] for r in menu_result]
+            menu_ids = [r["id"] for r in menu_result]
+            menu_names = [r["name"] for r in menu_result]
         except Exception as exc:
             logger.warning(f"Could not get menu assignments: {exc}")
-            if row["MENU_ITEM_ID"]:
-                menu_ids = [row["MENU_ITEM_ID"]]
+            if row["menu_item_id"]:
+                menu_ids = [row["menu_item_id"]]
         
-        if row["IS_DEFAULT_DASHBOARD"] == 1:
+        if row["is_default_dashboard"] == 1:
             frontend_menu_item_id = -1
-        elif row["MENU_ITEM_ID"] is None and not menu_ids:
+        elif row["menu_item_id"] is None and not menu_ids:
             frontend_menu_item_id = None
         else:
-            frontend_menu_item_id = row["MENU_ITEM_ID"]
+            frontend_menu_item_id = row["menu_item_id"]
         
         query_data = {
-            "id": row["ID"],
-            "name": row["NAME"],
-            "description": row["DESCRIPTION"],
-            "sql_query": row["SQL_QUERY"],
-            "chart_type": row["CHART_TYPE"],
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "sql_query": row["sql_query"],
+            "chart_type": row["chart_type"],
             "chart_config": chart_config,
             "menu_item_id": frontend_menu_item_id,
             "menu_item_ids": menu_ids,
             "menu_names": menu_names,
-            "role": row.get("ROLE", get_default_role()),
-            "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+            "role": row.get("role", get_default_role()),
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "is_form_report": bool(row.get("is_form_report", 0)),
+            "form_template": row.get("form_template"),
         }
         return APIResponse(success=True, data=query_data)
     except HTTPException:
@@ -322,11 +344,20 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
         update_sql = """
         UPDATE app_queries 
         SET name=:name, description=:description, sql_query=:sql_query, chart_type=:chart_type, 
-            chart_config=:chart_config, menu_item_id=:menu_item_id, role=:role, is_default_dashboard=:is_default_dashboard
+            chart_config=:chart_config, menu_item_id=:menu_item_id, role=:role, 
+            is_default_dashboard=:is_default_dashboard, is_form_report=:is_form_report, 
+            form_template=:form_template
         WHERE id=:query_id
         """
+        
         try:
-            is_default_dashboard = 1 if request.menu_item_id == -1 else 0
+            # Check both singular and plural fields for Default Dashboard flag (-1)
+            is_default_dashboard = 0
+            if request.menu_item_id == -1:
+                is_default_dashboard = 1
+            if request.menu_item_ids and -1 in request.menu_item_ids:
+                is_default_dashboard = 1
+
             if request.menu_item_id == -1:
                 db_menu_item_id = None
             elif request.menu_item_id is None:
@@ -334,7 +365,6 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
             else:
                 db_menu_item_id = request.menu_item_id
             
-            roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
             db_manager.execute_non_query(
                 update_sql,
                 {
@@ -346,6 +376,8 @@ async def update_query_admin(query_id: int, request: QueryCreate, current_user: 
                     "menu_item_id": db_menu_item_id,
                     "role": serialize_roles(request.role) or get_default_role(),
                     "is_default_dashboard": is_default_dashboard,
+                    "is_form_report": 1 if getattr(request, "is_form_report", False) else 0,
+                    "form_template": getattr(request, "form_template", None),
                     "query_id": query_id,
                 },
             )
@@ -376,7 +408,7 @@ async def delete_query_admin(query_id: int, current_user: User = Depends(require
 
         count_query = "SELECT COUNT(*) as cnt FROM app_dashboard_widgets WHERE query_id = :1"
         result = db_manager.execute_query(count_query, (query_id,))
-        widget_count = result[0]["CNT"] if result else 0
+        widget_count = result[0]["cnt"] if result else 0
         if widget_count > 0:
             raise HTTPException(
                 status_code=400,
@@ -413,32 +445,32 @@ async def list_all_queries(current_user: User = Depends(get_current_user)):
                 WHERE qm.query_id = :1
                 ORDER BY m.name
                 """
-                menu_result = db_manager.execute_query(menu_query, (row["ID"],))
-                menu_names = [r["NAME"] for r in menu_result]
+                menu_result = db_manager.execute_query(menu_query, (row["id"],))
+                menu_names = [r["name"] for r in menu_result]
             except Exception as exc:
-                logger.warning(f"Could not get menu assignments for query {row['ID']}: {exc}")
-                if row["MENU_ITEM_ID"]:
+                logger.warning(f"Could not get menu assignments for query {row['id']}: {exc}")
+                if row["menu_item_id"]:
                     legacy_menu_query = "SELECT name FROM app_menu_items WHERE id = :1"
-                    legacy_result = db_manager.execute_query(legacy_menu_query, (row["MENU_ITEM_ID"],))
+                    legacy_result = db_manager.execute_query(legacy_menu_query, (row["menu_item_id"],))
                     if legacy_result:
-                        menu_names = [legacy_result[0]["NAME"]]
+                        menu_names = [legacy_result[0]["name"]]
             
             if not menu_names:
-                if row["MENU_ITEM_ID"] is None:
+                if row["menu_item_id"] is None:
                     menu_names = ["Default Dashboard"]
-                elif row["MENU_ITEM_ID"] == -999:
+                elif row["menu_item_id"] == -999:
                     menu_names = []
             
             queries.append(
                 {
-                    "id": row["ID"],
-                    "name": row["NAME"],
-                    "description": row["DESCRIPTION"],
-                    "chart_type": row["CHART_TYPE"],
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "chart_type": row["chart_type"],
                     "menu_name": ", ".join(menu_names) if menu_names else None,
                     "menu_names": menu_names,
-                    "role": row.get("ROLE", get_default_role()),
-                    "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+                    "role": row.get("role", get_default_role()),
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                 }
             )
         return APIResponse(success=True, message=f"Found {len(queries)} queries", data=queries)
@@ -472,7 +504,7 @@ async def create_dashboard_widget(request: DashboardWidgetCreate, current_user: 
             "SELECT id FROM app_dashboard_widgets WHERE title = :1 ORDER BY created_at DESC",
             (request.title,),
         )
-        new_id = result[0]["ID"] if result else None
+        new_id = result[0]["id"] if result else None
         return APIResponse(success=True, message="Dashboard widget created", data={"widget_id": new_id})
     except HTTPException:
         raise
@@ -494,9 +526,6 @@ async def delete_dashboard_widget(widget_id: int, current_user: User = Depends(g
     except Exception as exc:
         logger.error(f"Error deleting widget: {exc}")
         raise HTTPException(status_code=500, detail="Failed to delete widget")
-
-
-from models import DashboardWidgetUpdate
 
 
 @router.put("/dashboard/widget/{widget_id}", response_model=APIResponse)
@@ -553,124 +582,21 @@ async def list_dashboard_widgets(current_user: User = Depends(get_current_user))
         for row in result:
             widgets.append(
                 {
-                    "id": row["ID"],
-                    "title": row["TITLE"],
-                    "position_x": row["POSITION_X"],
-                    "position_y": row["POSITION_Y"],
-                    "width": row["WIDTH"],
-                    "height": row["HEIGHT"],
-                    "query_name": row["QUERY_NAME"],
-                    "chart_type": row["CHART_TYPE"],
-                    "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+                    "id": row["id"],
+                    "title": row["title"],
+                    "position_x": row["position_x"],
+                    "position_y": row["position_y"],
+                    "width": row["width"],
+                    "height": row["height"],
+                    "query_name": row["query_name"],
+                    "chart_type": row["chart_type"],
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                 }
             )
         return APIResponse(success=True, message=f"Found {len(widgets)} dashboard widgets", data=widgets)
     except Exception as exc:
         logger.error(f"Error listing dashboard widgets: {exc}")
         raise HTTPException(status_code=500, detail="Failed to list widgets")
-
-
-@router.post("/menu", response_model=APIResponse)
-async def create_menu_item(request: MenuItemCreate, current_user: User = Depends(require_admin)):
-    try:
-        if request.parent_id is not None:
-            parent_type_result = db_manager.execute_query(
-                "SELECT type FROM app_menu_items WHERE id = :1",
-                (request.parent_id,),
-            )
-
-            if parent_type_result and str(parent_type_result[0]["TYPE"]).lower() == "dashboard":
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot create submenu for dashboard menu items.",
-                )
-        sql = """
-        INSERT INTO app_menu_items (name, type, icon, parent_id, sort_order, role, is_active)
-        VALUES (:1, :2, :3, :4, :5, :6, 1)
-        """
-        roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-        db_manager.execute_non_query(
-            sql,
-            (
-                request.name,
-                request.type,
-                request.icon,
-                request.parent_id,
-                request.sort_order,
-                serialize_roles(request.role),
-            ),
-        )
-        return APIResponse(success=True, message="Menu item created successfully")
-    except Exception as exc:
-        logger.error(f"Error creating menu item: {exc}")
-        raise HTTPException(
-            status_code=500, detail="Failed to create menu item"
-        )
-
-
-@router.put("/menu/{menu_id}", response_model=APIResponse)
-async def update_menu_item(
-    menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)
-):
-    try:
-        if request.parent_id is not None:
-            parent_type_result = db_manager.execute_query(
-                "SELECT type FROM app_menu_items WHERE id = :1",
-                (request.parent_id,),
-            )
-
-            if parent_type_result and str(parent_type_result[0]["TYPE"]).lower() == "dashboard":
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot assign a dashboard menu as parent for another menu item.",
-                )
-        update_sql = """
-        UPDATE app_menu_items SET name=:1, type=:2, icon=:3, parent_id=:4, sort_order=:5, role=:6 WHERE id=:7
-        """
-        roles_list = request.role if isinstance(request.role, list) else ([request.role] if request.role else [])
-        db_manager.execute_non_query(
-            update_sql,
-            (
-                request.name,
-                request.type,
-                request.icon,
-                request.parent_id,
-                request.sort_order,
-                serialize_roles(request.role),
-                menu_id,
-            ),
-        )
-        return APIResponse(success=True, message="Menu item updated")
-    except Exception as exc:
-        logger.error(f"Error updating menu item: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to update menu item")
-
-
-@router.delete("/menu/{menu_id}", response_model=APIResponse)
-async def delete_menu_item(menu_id: int, current_user: User = Depends(require_admin)):
-    try:
-        children = db_manager.execute_query(
-            "SELECT id FROM app_menu_items WHERE parent_id = :1", (menu_id,)
-        )
-
-        db_manager.execute_non_query(
-            "UPDATE app_queries SET menu_item_id = NULL WHERE menu_item_id = :1",
-            (menu_id,),
-        )
-
-        for child in children:
-            child_id = child["ID"]
-            await delete_menu_item(child_id, current_user)
-
-        db_manager.execute_non_query("DELETE FROM app_menu_items WHERE id = :1", (menu_id,))
-
-        return APIResponse(success=True, message=f"Menu item {menu_id} deleted")
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Error deleting menu item {menu_id}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to delete menu item")
 
 
 @router.get("/kpis", response_model=APIResponse)
@@ -688,17 +614,17 @@ async def list_kpis(current_user: User = Depends(get_current_user)):
 
         kpis: List[dict] = []
         for row in result:
-            menu_name = row["MENU_NAME"] if row["MENU_NAME"] else "Default Dashboard"
+            menu_name = row["menu_name"] if row["menu_name"] else "Default Dashboard"
             
             kpis.append(
                 {
-                    "id": row["ID"],
-                    "name": row["NAME"],
-                    "description": row["DESCRIPTION"],
-                    "sql_query": row["SQL_QUERY"],
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "sql_query": row["sql_query"],
                     "menu_name": menu_name,
-                    "role": row.get("ROLE", get_default_role()),
-                    "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+                    "role": row.get("role", get_default_role()),
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                 }
             )
         return APIResponse(success=True, message=f"Found {len(kpis)} KPIs", data=kpis)
@@ -744,18 +670,20 @@ async def create_kpi(request: QueryCreate, current_user: User = Depends(require_
         logger.info(f"Successfully created KPI: {request.name}")
         
         # Get the newly created KPI ID
+        # Get the newly created KPI ID
         get_id_query = """
-        SELECT id FROM app_queries 
-        WHERE name = :name AND is_kpi = :is_kpi 
-        ORDER BY created_at DESC 
-        FETCH FIRST 1 ROWS ONLY
+        SELECT id FROM (
+            SELECT id FROM app_queries 
+            WHERE name = :name AND is_kpi = :is_kpi 
+            ORDER BY created_at DESC 
+        ) WHERE ROWNUM <= 1
         """
         id_result = db_manager.execute_query(get_id_query, {
             "name": request.name,
             "is_kpi": DatabaseFlags.KPI
         })
         
-        new_kpi_id = id_result[0]["ID"] if id_result else None
+        new_kpi_id = id_result[0]["id"] if id_result else None
         
         if new_kpi_id:
             logger.info(f"KPI created successfully with ID: {new_kpi_id}")
@@ -838,20 +766,126 @@ async def get_kpi_admin(kpi_id: int, current_user: User = Depends(require_admin)
             raise HTTPException(status_code=404, detail="KPI not found")
         
         row = result[0]
-        frontend_menu_item_id = -1 if row["MENU_ITEM_ID"] is None else row["MENU_ITEM_ID"]
+        frontend_menu_item_id = -1 if row["menu_item_id"] is None else row["menu_item_id"]
         
         kpi_data = {
-            "id": row["ID"],
-            "name": row["NAME"],
-            "description": row["DESCRIPTION"],
-            "sql_query": row["SQL_QUERY"],
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "sql_query": row["sql_query"],
             "menu_item_id": frontend_menu_item_id,
-            "role": row.get("ROLE", get_default_role()),
-            "created_at": row["CREATED_AT"].isoformat() if row["CREATED_AT"] else None,
+            "role": row.get("role", get_default_role()),
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
         return APIResponse(success=True, data=kpi_data)
     except HTTPException:
         raise
     except Exception as exc:
         logger.error(f"Error getting KPI: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to get KPI")
+        raise HTTPException(status_code=500, detail="Failed to retrieve KPI")
+
+
+# ------------------ Menu Management ------------------
+
+@router.post("/menu", response_model=APIResponse)
+async def create_menu_item(request: MenuItemCreate, current_user: User = Depends(require_admin)):
+    """Create a new menu item, supporting interactive dashboards."""
+    try:
+        roles = serialize_roles(request.role)
+        
+        insert_sql = """
+        INSERT INTO app_menu_items (
+            name, type, icon, parent_id, sort_order, role, 
+            is_interactive_dashboard, interactive_template, is_active
+        ) VALUES (
+            :name, :type, :icon, :parent_id, :sort_order, :role,
+            :is_interactive_dashboard, :interactive_template, 1
+        )
+        """
+        
+        params = {
+            "name": request.name,
+            "type": request.type,
+            "icon": request.icon,
+            "parent_id": request.parent_id,
+            "sort_order": request.sort_order,
+            "role": roles,
+            "is_interactive_dashboard": 1 if request.is_interactive_dashboard else 0,
+            "interactive_template": request.interactive_template,
+        }
+        
+        affected, new_id = db_manager.execute_insert(insert_sql, params)
+        logger.info(f"Created menu item: {request.name}, ID: {new_id}, Affected: {affected}")
+        
+        response_data = {"menu_id": new_id}
+        
+        return APIResponse(
+            success=True,
+            message="Menu item created successfully",
+            data=response_data
+        )
+    except Exception as exc:
+        logger.error(f"Error creating menu item: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to create menu item: {str(exc)}")
+
+
+@router.put("/menu/{menu_id}", response_model=APIResponse)
+async def update_menu_item(menu_id: int, request: MenuItemCreate, current_user: User = Depends(require_admin)):
+    """Update an existing menu item."""
+    try:
+        check = db_manager.execute_query("SELECT id FROM app_menu_items WHERE id = :1", (menu_id,))
+        if not check:
+            raise HTTPException(status_code=404, detail="Menu item not found")
+            
+        update_sql = """
+        UPDATE app_menu_items
+        SET name = :name, type = :type, icon = :icon, parent_id = :parent_id,
+            sort_order = :sort_order, role = :role,
+            is_interactive_dashboard = :is_interactive_dashboard,
+            interactive_template = :interactive_template
+        WHERE id = :menu_id
+        """
+        
+        params = {
+            "name": request.name,
+            "type": request.type,
+            "icon": request.icon,
+            "parent_id": request.parent_id,
+            "sort_order": request.sort_order,
+            "role": serialize_roles(request.role),
+            "is_interactive_dashboard": 1 if request.is_interactive_dashboard else 0,
+            "interactive_template": request.interactive_template,
+            "menu_id": menu_id
+        }
+        
+        db_manager.execute_non_query(update_sql, params)
+        logger.info(f"Updated menu item: {menu_id}")
+        
+        return APIResponse(success=True, message="Menu item updated successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error updating menu item: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to update menu item: {str(exc)}")
+
+
+@router.delete("/menu/{menu_id}", response_model=APIResponse)
+async def delete_menu_item(menu_id: int, current_user: User = Depends(require_admin)):
+    """Delete a menu item."""
+    try:
+        check = db_manager.execute_query("SELECT id FROM app_menu_items WHERE id = :1", (menu_id,))
+        if not check:
+            raise HTTPException(status_code=404, detail="Menu item not found")
+            
+        # Check for children
+        children = db_manager.execute_query("SELECT count(*) as cnt FROM app_menu_items WHERE parent_id = :1", (menu_id,))
+        if children and children[0]["cnt"] > 0:
+             raise HTTPException(status_code=400, detail="Cannot delete menu item with children")
+
+        db_manager.execute_non_query("DELETE FROM app_menu_items WHERE id = :1", (menu_id,))
+        return APIResponse(success=True, message="Menu item deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error deleting menu item: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to delete menu item")

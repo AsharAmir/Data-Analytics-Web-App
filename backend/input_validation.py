@@ -20,6 +20,12 @@ class InputValidator:
         r"(\bAND\b\s+\d+\s*=\s*\d+)",
         r"(';\s*(SELECT|INSERT|UPDATE|DELETE))",
         r"(\bxp_\w+|\bsp_\w+)",
+        r"(\bDBMS_\w+)",          # Oracle DBMS packages
+        r"(\bUTL_\w+)",           # Oracle UTL packages
+        r"(\bCTX_\w+)",           # Oracle CTX packages
+        r"(\bORA_\w+)",           # Oracle ORA system users/roles
+        r"(\bXMLTYPE\b)",         # Oracle XMLType
+
         r"('\s*OR\s*'\d+'\s*=\s*'\d+')",  # '1'='1' patterns
         r"('\s*OR\s*'\w+'\s*=\s*'\w+')",  # 'a'='a' patterns  
         r"('\s*OR\s+1\s*=\s*1)",         # ' OR 1=1 patterns

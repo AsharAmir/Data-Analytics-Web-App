@@ -75,6 +75,8 @@ app.add_middleware(
 )
 
 app.add_middleware(ContentSecurityPolicyMiddleware) 
+app.add_middleware(RequestValidationMiddleware)
+app.add_middleware(SecurityMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
 # --- Register routers ---
@@ -95,4 +97,4 @@ for r in (
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)
+    uvicorn.run("main:app", host="0.0.0.0", port=8005, reload=settings.DEBUG, proxy_headers=True, forwarded_allow_ips="*")

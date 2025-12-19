@@ -92,4 +92,3 @@ def validate_role(role: str) -> bool:
 def get_all_roles() -> List[str]:
     """Get all available system roles"""
     return SYSTEM_ROLE_CODES.copy()
-

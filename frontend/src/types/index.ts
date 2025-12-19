@@ -15,6 +15,15 @@ export interface User {
   is_active: boolean;
   must_change_password?: boolean;
   created_at: string;
+  /**
+   * Optional list of feature codes that should be hidden for this user.
+   * Supported values (case-insensitive):
+   *  - "dashboard"
+   *  - "data_explorer"
+   *  - "excel_compare"
+   *  - "processes"
+   */
+  hidden_features?: string[];
 }
 
 export interface LoginRequest {
@@ -39,6 +48,9 @@ export interface MenuItem {
   is_active: boolean;
   role?: UserRole | UserRole[];
   children: MenuItem[];
+  // Interactive dashboard support (template stored on the menu item)
+  is_interactive_dashboard?: boolean;
+  interactive_template?: string | null;
 }
 
 // ---------------------------------------------
@@ -63,6 +75,11 @@ export interface Query {
   menu_names?: string[]; // Menu names for display
   is_active: boolean;
   created_at: string;
+  // Role constraint string from backend (comma-separated)
+  role?: string;
+  // Form-based report support
+  is_form_report?: boolean;
+  form_template?: string | null;
 }
 
 export interface QueryExecuteRequest {
@@ -220,6 +237,8 @@ export interface QueryFormData {
   chart_config?: Record<string, unknown>;
   menu_item_id?: number; // Keep for backward compatibility
   menu_item_ids?: number[]; // Multiple menu assignments
+  is_form_report?: boolean;
+  form_template?: string;
 }
 
 // Grid Layout Types (for dashboard)

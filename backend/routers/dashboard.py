@@ -23,7 +23,7 @@ async def get_dashboard(menu_id: int = None, current_user: User = Depends(get_cu
             w
             for w in widgets
             if (not w.query) or (w.query.role in (None, "", current_user.role)) or 
-               (w.query.role and current_user.role in w.query.role.split(','))
+               (w.query.role and current_user.role.upper() in [r.strip().upper() for r in w.query.role.split(',')])
         ]
     return widgets
 
@@ -44,14 +44,14 @@ async def get_widget_data(widget_id: int, timeout: int = 45, current_user: User 
 
         widget_data = result[0]
         chart_config = {}
-        if widget_data["CHART_CONFIG"]:
+        if widget_data["chart_config"]:
             try:
-                chart_config = json.loads(widget_data["CHART_CONFIG"])
+                chart_config = json.loads(widget_data["chart_config"])
             except Exception:
                 chart_config = {}
 
         return DataService.execute_query_for_chart(
-            widget_data["SQL_QUERY"], widget_data["CHART_TYPE"], chart_config, timeout=timeout
+            widget_data["sql_query"], widget_data["chart_type"], chart_config, timeout=timeout
         )
     except Exception as exc:
         logger.error(f"Error getting widget data: {exc}")

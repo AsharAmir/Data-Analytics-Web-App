@@ -3,9 +3,9 @@ echo Setting up Oracle Database with Docker...
 
 echo.
 echo Step 1: Checking if Docker is running...
-docker --version >nul 2>&1
+docker info >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERROR: Docker is not installed or running!
+    echo ERROR: Docker Daemon is not running! Please start Docker Desktop.
     echo Please install Docker Desktop from: https://www.docker.com/products/docker-desktop/
     pause
     exit /b 1
@@ -37,6 +37,11 @@ docker exec -i oracle-analytics-db sqlplus system/admin123@XE < SAMPLE_DATA.sql
 echo.
 echo Step 5: Creating application tables...
 cd backend
+echo Creating virtual environment...
+python -m venv venv
+call venv\Scripts\activate
+echo Installing dependencies...
+pip install -r requirements.txt
 python database.py
 
 echo.
@@ -53,6 +58,7 @@ echo ==============================================
 echo.
 echo You can now start the backend server with:
 echo cd backend
+echo call venv\Scripts\activate
 echo python main.py
 echo.
 pause 

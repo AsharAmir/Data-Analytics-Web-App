@@ -21,6 +21,11 @@ const ReportDetailPage: React.FC = () => {
   const [error, setError] = useState<string>("");
   const [showImport, setShowImport] = useState(false);
 
+  // Form-based report state
+  const [formValues, setFormValues] = useState<Record<string, any>>({});
+  const [filters, setFilters] = useState<any[]>([]);
+  const formRef = React.useRef<HTMLFormElement>(null);
+
   const loadReportData = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -41,7 +46,15 @@ const ReportDetailPage: React.FC = () => {
 
       setReport(reportResponse.data);
 
-      // Load both chart and table data
+      // Check if this is a form-based report
+      if (reportResponse.data.is_form_report) {
+        // Prepare initial view
+        setViewMode("table"); // Default to table for reports unless configured otherwise
+        setLoading(false); // Stop loading, wait for user input
+        return;
+      }
+
+      // Load both chart and table data (for standard reports)
       await Promise.all([loadChartData(reportId), loadTableData(reportId)]);
 
       // Set initial view mode based on report configuration
@@ -56,7 +69,7 @@ const ReportDetailPage: React.FC = () => {
       }
     } catch (err: any) {
       logger.error("Error loading report", { error: err, reportId: id, url: window.location.href });
-      
+
       if (err?.response?.status === 401) {
         logger.warn("Authentication expired while loading report", { reportId: id });
         setError("Your session has expired. Please log in again.");
@@ -119,18 +132,80 @@ const ReportDetailPage: React.FC = () => {
     }
   };
 
-  const loadTableData = async (reportId: number) => {
+  const loadTableData = async (reportId: number, currentFilters: any[] = []) => {
     try {
       // Execute the query using filtered endpoint to get table data
       const response = await apiClient.executeFilteredQuery({
         query_id: reportId,
         limit: 1000,
         offset: 0,
+        filters: currentFilters.length > 0 ? { logic: "AND", conditions: currentFilters } : undefined
       });
       setTableData(response);
     } catch (err: any) {
       logger.error("Error loading table data", { error: err, reportId });
       // Don't show toast here - security guard in _app.tsx handles access denied messages
+    }
+  };
+
+  /**
+   * Handle form submission for Form-Based Reports
+   */
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!report) return;
+
+    setLoading(true);
+
+    // Collect filters from the form inputs
+    const newFilters: any[] = [];
+    if (formRef.current) {
+      const inputs = formRef.current.querySelectorAll("input, select, textarea");
+      inputs.forEach((input: any) => {
+        const column = input.getAttribute("data-column");
+        const operator = input.getAttribute("data-operator") || "eq";
+        const value = input.value;
+
+        if (column && value !== "") {
+          newFilters.push({
+            column,
+            operator,
+            value
+          });
+        }
+      });
+    }
+
+    setFilters(newFilters);
+
+    try {
+      if (viewMode === "chart") {
+        // For charts with filters, we actually need to use executeFilteredQuery too 
+        // to apply the WHERE clause properly, then transform.
+        // But if the backend executes filters on executeQuery, that works too.
+        // Assuming executeFilteredQuery is the valid path for dynamic filtering:
+        const response = await apiClient.executeFilteredQuery({
+          query_id: report.id,
+          limit: 1000,
+          filters: { logic: "AND", conditions: newFilters }
+        });
+
+        // We have table data, must transform to chart data if needed
+        // Or if backend supports filters in executeQuery (it might not support the structured filter object)
+        // Let's use table loading for data and handle view switching
+        setTableData(response);
+        setChartData({
+          success: response.success,
+          data: response.success && response.data ? (response.data as TableData) : undefined
+        }); // Propagate to chart logic to transform
+      } else {
+        await loadTableData(report.id, newFilters);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to run report");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,9 +226,8 @@ const ReportDetailPage: React.FC = () => {
         {
           query_id: report.id,
           format,
-          filename: `${report.name.replace(/\s+/g, "_")}_${
-            new Date().toISOString().split("T")[0]
-          }`,
+          filename: `${report.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]
+            }`,
         },
         0,
       ) // Unlimited timeout for exports
@@ -363,11 +437,10 @@ const ReportDetailPage: React.FC = () => {
                   <button
                     key={key}
                     onClick={() => setViewMode(key as "table" | "chart")}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                      viewMode === key
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${viewMode === key
                         ? "bg-white text-blue-600 shadow-sm"
                         : "text-gray-600 hover:text-gray-900"
-                    }`}
+                      }`}
                   >
                     {label}
                   </button>
@@ -418,13 +491,41 @@ const ReportDetailPage: React.FC = () => {
 
       {/* Content */}
       <main className="p-8">
+        {/* Form Section for Form-Based Reports */}
+        {report?.is_form_report && (
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Report Criteria</h2>
+            <form
+              ref={formRef}
+              onSubmit={handleFormSubmit}
+              className="space-y-4"
+            >
+              {report.form_template ? (
+                <div dangerouslySetInnerHTML={{ __html: report.form_template }} />
+              ) : (
+                <p className="text-gray-500 italic">No form template configured.</p>
+              )}
+
+              <div className="pt-4 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? "Running..." : "Run Report"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         <div className="space-y-6">
           {viewMode === "table" ? (
             // Table View
             tableData &&
-            tableData.success &&
-            tableData.data &&
-            "columns" in tableData.data ? (
+              tableData.success &&
+              tableData.data &&
+              "columns" in tableData.data ? (
               <DataTable
                 data={tableData.data as TableData}
                 maxHeight="70vh"
@@ -442,53 +543,50 @@ const ReportDetailPage: React.FC = () => {
               </div>
             )
           ) : // Chart View
-          chartData && chartData.success && chartData.data ? (
-            "labels" in chartData.data ? (
-              // If chart data is already in chart format
-              <ChartComponent
-                data={chartData.data as ChartData}
-                type={chartType}
-                title={`${report?.name} - ${
-                  chartType.charAt(0).toUpperCase() + chartType.slice(1)
-                } Chart`}
-                description={`Visualization of data from ${report?.name}`}
-                height={500}
-                onExport={(format) => {
-                  console.log("Chart export:", format);
-                }}
-              />
-            ) : // If chart data is in table format, transform it
-            tableData &&
-              tableData.success &&
-              tableData.data &&
-              "columns" in tableData.data ? (
-              <ChartComponent
-                data={transformDataForChart(tableData.data as TableData)}
-                type={chartType}
-                title={`${report?.name} - ${
-                  chartType.charAt(0).toUpperCase() + chartType.slice(1)
-                } Chart`}
-                description={`Visualization of ${
-                  (tableData.data as TableData).data.length
-                } records`}
-                height={500}
-                onExport={(format) => {
-                  console.log("Chart export:", format);
-                }}
-              />
+            chartData && chartData.success && chartData.data ? (
+              "labels" in chartData.data ? (
+                // If chart data is already in chart format
+                <ChartComponent
+                  data={chartData.data as ChartData}
+                  type={chartType}
+                  title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)
+                    } Chart`}
+                  description={`Visualization of data from ${report?.name}`}
+                  height={500}
+                  onExport={(format) => {
+                    console.log("Chart export:", format);
+                  }}
+                />
+              ) : // If chart data is in table format, transform it
+                tableData &&
+                  tableData.success &&
+                  tableData.data &&
+                  "columns" in tableData.data ? (
+                  <ChartComponent
+                    data={transformDataForChart(tableData.data as TableData)}
+                    type={chartType}
+                    title={`${report?.name} - ${chartType.charAt(0).toUpperCase() + chartType.slice(1)
+                      } Chart`}
+                    description={`Visualization of ${(tableData.data as TableData).data.length
+                      } records`}
+                    height={500}
+                    onExport={(format) => {
+                      console.log("Chart export:", format);
+                    }}
+                  />
+                ) : (
+                  <div className="bg-white rounded-lg shadow p-6 text-center">
+                    <p className="text-gray-500">No chart data available</p>
+                  </div>
+                )
             ) : (
               <div className="bg-white rounded-lg shadow p-6 text-center">
                 <p className="text-gray-500">No chart data available</p>
+                {chartData && !chartData.success && (
+                  <p className="text-red-500 mt-2">{chartData.error}</p>
+                )}
               </div>
-            )
-          ) : (
-            <div className="bg-white rounded-lg shadow p-6 text-center">
-              <p className="text-gray-500">No chart data available</p>
-              {chartData && !chartData.success && (
-                <p className="text-red-500 mt-2">{chartData.error}</p>
-              )}
-            </div>
-          )}
+            )}
         </div>
       </main>
 

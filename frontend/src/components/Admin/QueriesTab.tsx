@@ -28,6 +28,8 @@ interface QueryFormState {
   menu_item_id: number | null;
   menu_item_ids: number[];
   role: string[];
+  is_form_report?: boolean;
+  form_template?: string;
 }
 
 interface QueriesTabProps {
@@ -116,12 +118,12 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                   <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
                     {query.role && typeof query.role === "string"
                       ? query.role
-                          .split(",")
-                          .map((r) => formatRoleLabel(r.trim()))
-                          .filter((role, index, array) =>
-                            array.findIndex((rr) => rr.toLowerCase() === role.toLowerCase()) === index,
-                          )
-                          .join(", ")
+                        .split(",")
+                        .map((r) => formatRoleLabel(r.trim()))
+                        .filter((role, index, array) =>
+                          array.findIndex((rr) => rr.toLowerCase() === role.toLowerCase()) === index,
+                        )
+                        .join(", ")
                       : "User"}
                   </span>
                 </td>
@@ -135,14 +137,14 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                         const queryDetails = (await apiClient.get(`/api/admin/query/${query.id}`)) as any;
                         const queryData = queryDetails.data || queryDetails;
                         setEditingQueryId(query.id);
-                        
+
                         // Parse current roles
                         const currentRoles = queryData.role
                           ? typeof queryData.role === "string"
                             ? queryData.role.split(",").map((r: string) => normalizeRoleCode(r))
                             : queryData.role
                           : [];
-                        
+
                         setQueryForm({
                           name: queryData.name,
                           description: queryData.description || "",
@@ -152,6 +154,8 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                           menu_item_id: queryData.menu_item_id,
                           menu_item_ids: queryData.menu_item_ids || [],
                           role: currentRoles,
+                          is_form_report: !!queryData.is_form_report,
+                          form_template: queryData.form_template || "",
                         });
                         setShowQueryForm(true);
                       } catch (error) {
@@ -167,7 +171,7 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
                   <button
                     onClick={async () => {
                       if (!confirm("Delete this query?")) return;
-                      
+
                       const result = await apiClient.deleteQuery(query.id);
 
                       if (result.success) {
@@ -207,6 +211,8 @@ const QueriesTab: React.FC<QueriesTabProps> = ({
               menu_item_id: null,
               menu_item_ids: [],
               role: [],
+              is_form_report: false,
+              form_template: "",
             });
           }}
           onCreate={createOrUpdateQuery}

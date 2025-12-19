@@ -23,9 +23,9 @@ def _role_exists(role_name: str) -> bool:
     """Return True when the provided role name exists in the roles table."""
     try:
         res = db_manager.execute_query(
-            "SELECT COUNT(*) FROM app_roles WHERE UPPER(name) = UPPER(:1)", (role_name,)
+            "SELECT COUNT(*) as count FROM app_roles WHERE UPPER(name) = UPPER(:1)", (role_name,)
         )
-        return res[0]["COUNT(*)"] > 0
+        return res[0]["count"] > 0
     except Exception as exc:
         logger.error(f"Error checking role existence: {exc}")
         return False
@@ -50,7 +50,7 @@ def _update_comma_roles(table: str, id_col: str, role_col: str, old_role: str, n
 
     updated = 0
     for row in rows:
-        role_val = row.get("ROLE")
+        role_val = row.get("role")
         if not role_val:
             continue
         parts = [p.strip().upper() for p in str(role_val).split(",") if p.strip()]
@@ -66,7 +66,7 @@ def _update_comma_roles(table: str, id_col: str, role_col: str, old_role: str, n
         # Write back (NULL if empty)
         db_manager.execute_non_query(
             f"UPDATE {table} SET {role_col} = :1 WHERE {id_col} = :2",
-            (new_serialized, row["ID"]),
+            (new_serialized, row["id"]),
         )
         updated += 1
     return updated
@@ -79,8 +79,8 @@ def _collect_distinct_roles() -> set[str]:
     try:
         rows = db_manager.execute_query("SELECT DISTINCT role FROM app_users WHERE role IS NOT NULL")
         for r in rows or []:
-            if r.get("ROLE"):
-                roles.add(str(r["ROLE"]).strip().upper())
+            if r.get("role"):
+                roles.add(str(r["role"]).strip().upper())
     except Exception as exc:
         logger.warning(f"Collect roles: users failed: {exc}")
 
@@ -89,9 +89,9 @@ def _collect_distinct_roles() -> set[str]:
         try:
             rs = db_manager.execute_query(f"SELECT role FROM {table} WHERE role IS NOT NULL")
             for rr in rs or []:
-                if not rr.get("ROLE"):
+                if not rr.get("role"):
                     continue
-                parts = [p.strip().upper() for p in str(rr["ROLE"]).split(",") if p.strip()]
+                parts = [p.strip().upper() for p in str(rr["role"]).split(",") if p.strip()]
                 roles.update(parts)
         except Exception as e:
             logger.warning(f"Collect roles: {table} failed: {e}")
@@ -108,7 +108,7 @@ async def list_stale_roles(current_user: User = Depends(require_admin)):
     try:
         # Current known roles
         rows = db_manager.execute_query("SELECT UPPER(name) AS name FROM app_roles")
-        known = {r["NAME"] for r in rows} if rows else set()
+        known = {r["name"] for r in rows} if rows else set()
         known.update(SYSTEM_ROLES)
 
         referenced = _collect_distinct_roles()
@@ -118,16 +118,16 @@ async def list_stale_roles(current_user: User = Depends(require_admin)):
             try:
                 if single:
                     rs = db_manager.execute_query(
-                        f"SELECT COUNT(*) FROM {table} WHERE UPPER(role) = :1",
+                        f"SELECT COUNT(*) as count FROM {table} WHERE UPPER(role) = :1",
                         (role,),
                     )
-                    return int(rs[0]["COUNT(*)"]) if rs else 0
+                    return int(rs[0]["count"]) if rs else 0
                 else:
                     rs = db_manager.execute_query(
-                        f"SELECT COUNT(*) FROM {table} WHERE role IS NOT NULL AND (','||UPPER(role)||',') LIKE :1",
+                        f"SELECT COUNT(*) as count FROM {table} WHERE role IS NOT NULL AND (','||UPPER(role)||',') LIKE :1",
                         (f'%,{role.upper()},%',),
                     )
-                    return int(rs[0]["COUNT(*)"]) if rs else 0
+                    return int(rs[0]["count"]) if rs else 0
             except Exception as exc:
                 logger.warning(f"Count stale roles in {table} failed: {exc}")
                 return 0
@@ -187,7 +187,7 @@ async def list_roles(current_user: User = Depends(require_admin)):
     try:
         rows = db_manager.execute_query("SELECT name, is_system FROM app_roles ORDER BY name")
         data = [
-            {"name": row["NAME"], "is_system": bool(row.get("IS_SYSTEM", 0))} for row in rows
+            {"name": row["name"], "is_system": bool(row.get("is_system", 0))} for row in rows
         ]
         return APIResponse(success=True, data=data)
     except Exception as exc:
@@ -227,7 +227,7 @@ async def list_users_with_role(role_name: str, current_user: User = Depends(requ
             (role_name,),
         )
         users = [
-            {"id": r["ID"], "username": r["USERNAME"], "email": r["EMAIL"]} for r in rows
+            {"id": r["id"], "username": r["username"], "email": r["email"]} for r in rows
         ]
         return APIResponse(success=True, data=users, message=f"Found {len(users)} users")
     except Exception as exc:
@@ -264,7 +264,7 @@ async def delete_role(
     if user_rows and not new_role:
         # Return conflict status so the UI can show the list and ask for reassignment
         user_list = [
-            {"id": r["ID"], "username": r["USERNAME"]} for r in user_rows
+            {"id": r["id"], "username": r["username"]} for r in user_rows
         ]
         return APIResponse(
             success=False,

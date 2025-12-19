@@ -16,6 +16,7 @@ interface AdminUser {
   is_active: boolean;
   created_at: string;
   role: string; // dynamic roles may be any case
+  hidden_features?: string[];
 }
 
 interface UserFormState {
@@ -23,6 +24,7 @@ interface UserFormState {
   email: string;
   password: string;
   role: string;
+  hidden_features: string[];
 }
 
 interface UsersTabProps {
@@ -119,6 +121,7 @@ const UsersTab: React.FC<UsersTabProps> = ({
                         email: user.email,
                         password: "",
                         role: matchedRole,
+                        hidden_features: user.hidden_features || [],
                       });
                       setShowUserForm(true);
                     }}
@@ -163,17 +166,36 @@ const UsersTab: React.FC<UsersTabProps> = ({
             try {
               setLoading(true);
               if (editingUserId) {
-                const payload = { ...userForm, role: normalizeRoleCode(userForm.role) } as any;
+                const payload = {
+                  ...userForm,
+                  role: normalizeRoleCode(userForm.role),
+                  // normalise feature codes to lowercase to match backend expectations
+                  hidden_features: (userForm.hidden_features || []).map((f) =>
+                    f.toLowerCase(),
+                  ),
+                } as any;
                 await apiClient.updateUser(editingUserId, payload);
                 toast.success("User updated successfully");
               } else {
-                const payload = { ...userForm, role: normalizeRoleCode(userForm.role) } as any;
+                const payload = {
+                  ...userForm,
+                  role: normalizeRoleCode(userForm.role),
+                  hidden_features: (userForm.hidden_features || []).map((f) =>
+                    f.toLowerCase(),
+                  ),
+                } as any;
                 await apiClient.post("/api/admin/user", payload);
                 toast.success("User created successfully");
               }
               setShowUserForm(false);
               setEditingUserId(null);
-              setUserForm({ username: "", email: "", password: "", role: "user" });
+              setUserForm({
+                username: "",
+                email: "",
+                password: "",
+                role: "user",
+                hidden_features: [],
+              });
               loadData();
             } catch (error: any) {
               const errMsg = error?.response?.data?.detail || "Operation failed";
@@ -185,7 +207,13 @@ const UsersTab: React.FC<UsersTabProps> = ({
           onClose={() => {
             setShowUserForm(false);
             setEditingUserId(null);
-            setUserForm({ username: "", email: "", password: "", role: "user" });
+            setUserForm({
+              username: "",
+              email: "",
+              password: "",
+              role: "user",
+              hidden_features: [],
+            });
           }}
           availableRoles={allRolesList}
         />
