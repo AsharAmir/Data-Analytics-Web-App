@@ -1,4 +1,4 @@
-from roles_utils import get_admin_role, get_default_role
+from roles_utils import get_admin_role, get_default_role, is_admin
 import pandas as pd
 import json
 import io
@@ -541,8 +541,10 @@ class MenuService:
                     menu_roles = [r.strip().upper() for r in menu_roles.split(",") if r.strip()]
                 
                 # 1. Role Check
-                if user_role and menu_roles and str(user_role).strip().upper() not in menu_roles:
-                    continue
+                user_roles_set = {r.strip().upper() for r in str(user_role).split(",")} if user_role else set()
+                if user_role and not is_admin(user_role) and menu_roles:
+                    if not any(ur in menu_roles for ur in user_roles_set):
+                        continue
 
                 # 2. Hidden Feature Check
                 # Map feature entries to menu types/names
@@ -818,7 +820,7 @@ class KPIService:
     def _is_user_authorized(user_role: RoleType, allowed_roles: List[str]) -> bool:
         """Check if user is authorized to access KPI based on roles"""
         # Admin sees everything
-        if str(user_role).upper() == "ADMIN":
+        if is_admin(user_role):
             return True
             
         if not allowed_roles:
@@ -1036,10 +1038,12 @@ class ProcessService:
         for row in rows:
             roles = row.get("role")
             
-            if str(user_role).strip().upper() != get_admin_role():
+            user_roles_set = {r.strip().upper() for r in str(user_role).split(",")} if user_role else set()
+            if not is_admin(user_role):
                 if not roles or roles.strip() == "":
                     continue
-                if str(user_role).strip().upper() not in {r.strip().upper() for r in roles.split(",")}:
+                allowed_roles = {r.strip().upper() for r in roles.split(",")}
+                if not any(ur in allowed_roles for ur in user_roles_set):
                     continue
 
             processes.append(

@@ -29,11 +29,19 @@ def serialize_roles(value: Union[str, List[str], None]) -> Optional[str]:
 
 def is_admin(role: Union[str, UserRole, None]) -> bool:
     """Check if role is admin (case-insensitive)"""
-    return normalize_role(role) == "ADMIN"
+    if not role:
+        return False
+    normalized = str(role).upper()
+    roles = {r.strip() for r in normalized.split(",")}
+    return "ADMIN" in roles
 
 def is_user(role: Union[str, UserRole, None]) -> bool:
     """Check if role is user (case-insensitive)"""
-    return normalize_role(role) == "USER"
+    if not role:
+        return False
+    normalized = str(role).upper()
+    roles = {r.strip() for r in normalized.split(",")}
+    return "USER" in roles
 
 def is_system_role(role: Union[str, UserRole, None]) -> bool:
     """Check if role is a system role"""

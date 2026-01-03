@@ -6,6 +6,7 @@ from functools import partial
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user
+from roles_utils import is_admin
 from failure_tracker import failure_tracker
 from models import (
     APIResponse,
@@ -40,7 +41,7 @@ async def execute_query(request: QueryExecute, current_user: User = Depends(get_
             logger.info(f"AUTHORIZATION CHECK - Query ID: {request.query_id}, User: {current_user.username}, User Role: '{current_user.role}', Query Roles: '{query_obj.role}'")
             logger.info(f"AUTHORIZATION DEBUG - current_user.role type: {type(current_user.role)}, UserRole.ADMIN type: {type(UserRole.ADMIN)}, UserRole.ADMIN.value: '{UserRole.ADMIN.value}'")
             
-            if current_user.role.upper() != UserRole.ADMIN.value.upper():
+            if not is_admin(current_user.role):
                 assigned_roles = {r.strip().upper() for r in (query_obj.role or "").split(",") if r.strip()}
                 logger.info(f"AUTHORIZATION - Non-admin user, assigned_roles: {assigned_roles}, user_role_upper: '{current_user.role.upper()}'")
                 
@@ -131,7 +132,7 @@ async def get_query_detail(query_id: int, current_user: User = Depends(get_curre
         if not query_obj:
             return APIResponse(success=False, error="Query not found")
 
-        if current_user.role.upper() != UserRole.ADMIN.value.upper():
+        if not is_admin(current_user.role):
             assigned_roles = {r.strip().upper() for r in (query_obj.role or "").split(',') if r.strip()}
             if assigned_roles and current_user.role.upper() not in assigned_roles:
                 logger.warning(
@@ -163,7 +164,7 @@ async def execute_filtered_query(request: FilteredQueryRequest, current_user: Us
             if not query_obj:
                 raise HTTPException(status_code=404, detail="Query not found")
 
-            if current_user.role.upper() != UserRole.ADMIN.value.upper():
+            if not is_admin(current_user.role):
                 assigned_roles = {r.strip().upper() for r in (query_obj.role or "").split(',') if r.strip()}
                 if assigned_roles and current_user.role.upper() not in assigned_roles:
                     raise HTTPException(status_code=403, detail="Not authorised for this query")
@@ -188,7 +189,7 @@ async def execute_filtered_query(request: FilteredQueryRequest, current_user: Us
 async def get_reports_by_menu(menu_item_id: int, current_user: User = Depends(get_current_user)):
     try:
         queries = QueryService.get_queries_by_menu(menu_item_id)
-        if current_user.role.upper() != UserRole.ADMIN.value.upper():
+        if not is_admin(current_user.role):
             queries = [
                 q for q in queries if not q.role or current_user.role.upper() in {r.strip().upper() for r in q.role.split(",")}
             ]
@@ -220,7 +221,7 @@ async def export_query_data(request: ExportRequest, current_user: User = Depends
             if not query_obj:
                 raise HTTPException(status_code=404, detail="Query not found")
 
-            if current_user.role.upper() != UserRole.ADMIN.value.upper():
+            if not is_admin(current_user.role):
                 assigned_roles = {r.strip().upper() for r in (query_obj.role or "").split(',') if r.strip()}
                 if assigned_roles and current_user.role.upper() not in assigned_roles:
                     raise HTTPException(status_code=403, detail="Not authorized for this query")

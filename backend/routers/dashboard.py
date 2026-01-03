@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth import get_current_user
+from roles_utils import get_admin_role, get_default_role, is_admin
 from database import db_manager
 from models import DashboardWidget, QueryResult, User, UserRole, KPI
 from services import DashboardService, DataService, KPIService
@@ -18,12 +18,14 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 async def get_dashboard(menu_id: int = None, current_user: User = Depends(get_current_user)):
     """Return dashboard layout filtered by user role and optionally by menu item."""
     widgets = DashboardService.get_dashboard_layout(menu_id)
-    if current_user.role != UserRole.ADMIN:
+    # Only filter by role if user is not admin (admins see all menus)
+    user_role = None if is_admin(current_user.role) else current_user.role
+    if user_role: # If user_role is not None (i.e., user is not admin), apply filtering
         widgets = [
             w
             for w in widgets
-            if (not w.query) or (w.query.role in (None, "", current_user.role)) or 
-               (w.query.role and current_user.role.upper() in [r.strip().upper() for r in w.query.role.split(',')])
+            if (not w.query) or (w.query.role in (None, "", user_role)) or 
+               (w.query.role and user_role.upper() in [r.strip().upper() for r in w.query.role.split(',')])
         ]
     return widgets
 

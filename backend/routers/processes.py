@@ -1,4 +1,4 @@
-from roles_utils import normalize_role, get_admin_role
+from roles_utils import normalize_role, get_admin_role, is_admin
 from typing import Dict, Any, List
 import os
 import glob
@@ -70,7 +70,7 @@ async def run_process(proc_id: int, params: Dict[str, Any] | None = None, curren
         if not proc or not proc.is_active:
             raise HTTPException(status_code=404, detail="Process not found")
         if (
-            str(current_user.role).strip().lower() != get_admin_role()
+            not is_admin(current_user.role)
             and proc.role
             and str(current_user.role).strip().upper() not in {r.strip().upper() for r in str(proc.role).split(",")}
         ):

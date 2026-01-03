@@ -6,7 +6,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth import get_current_user, require_admin, get_password_hash
-from roles_utils import normalize_role, serialize_roles, get_default_role, get_admin_role, get_user_role
+from roles_utils import normalize_role, serialize_roles, get_default_role, get_admin_role, get_user_role, is_admin
 from database import db_manager
 from models import (
     APIResponse,
@@ -97,7 +97,6 @@ async def list_users(current_user: User = Depends(require_admin)):
             from auth import normalize_role
             raw_role = row.get("role") or get_default_role()
             raw_role = normalize_role(raw_role)
-            is_admin = raw_role == "ADMIN"
             hidden_raw = row.get("hidden_features")
             hidden_features = (
                 [h.strip().lower() for h in str(hidden_raw).split(",") if h and str(h).strip()]
@@ -113,7 +112,7 @@ async def list_users(current_user: User = Depends(require_admin)):
                     "role": raw_role,
                     "is_active": bool(row["is_active"]),
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                    "is_admin": is_admin,
+                    "is_admin": is_admin(raw_role),
                     "hidden_features": hidden_features,
                 }
             )

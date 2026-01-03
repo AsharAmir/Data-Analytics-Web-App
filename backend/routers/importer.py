@@ -1,4 +1,4 @@
-from roles_utils import get_admin_role, get_default_role
+from roles_utils import get_admin_role, get_default_role, is_admin
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import pandas as pd
@@ -36,13 +36,9 @@ async def import_report_data(
     currently permitted.
     """
 
-    # --- Permissions -----------------------------------------------------------------
-    # Case-insensitive role check
-    user_role = str(current_user.role).upper() if current_user.role else ""
-    admin_role = get_admin_role().upper()
-    
-    if user_role != admin_role:
-        # Simple rule for demo – extend with proper ACL later
+    if not is_admin(current_user.role):
+        # Allow import if user is admin
+        logger.warning(f"User {current_user.username} (role: {current_user.role}) attempted unauthorized import")
         raise HTTPException(status_code=403, detail="Not authorised to import data")
 
     # --- Parse options ----------------------------------------------------------------
@@ -85,7 +81,7 @@ async def import_report_data(
     # ORACLE: Use USER_TAB_COLUMNS (current schema). Table name usually UPPERCASE.
     try:
         cols_query = (
-            "SELECT COLUMN_NAME AS col_name, DATA_TYPE AS data_type "
+            "SELECT COLUMN_NAME AS col_name, DATA_TYPE AS data_type, TABLE_NAME "
             "FROM USER_TAB_COLUMNS "
             "WHERE TABLE_NAME = :1"
         )
@@ -93,15 +89,24 @@ async def import_report_data(
             cols_query, (table_name.upper(),)
         )
         if not meta:
-            # Try exact match if lower case table exists (unlikely in default Oracle but possible if quoted)
+            # Try replacing spaces with underscores (common mismatch between report names and table names)
+            alt_name = table_name.replace(" ", "_").upper()
+            if alt_name != table_name.upper():
+                meta = db_manager.execute_query(cols_query, (alt_name,))
+        
+        if not meta:
+            # Try exact match as provided
             meta = db_manager.execute_query(cols_query, (table_name,))
         
         if not meta:
-            raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+            raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found. Please verify the report name matches the target database table.")
         
         target_columns = {
-            str(m["col_name"]).lower(): str(m["data_type"]).upper() for m in meta
+            # Normalize column names to lower case for matching against DataFrame
+            str(m["COL_NAME"] if "COL_NAME" in m else m["col_name"]).lower(): str(m["DATA_TYPE"] if "DATA_TYPE" in m else m["data_type"]).upper() for m in meta
         }
+        # Use the matched table name for the insert (handles upper/lower case and alt names)
+        final_table_name = meta[0].get("TABLE_NAME", table_name.upper())
     except HTTPException:
         raise
     except Exception as exc:
@@ -118,7 +123,7 @@ async def import_report_data(
     insert_cols = list(df.columns)
     placeholders = ", ".join([f":{i+1}" for i in range(len(insert_cols))])
     col_names_sql = ", ".join(insert_cols)
-    insert_sql = f"INSERT INTO {table_name} ({col_names_sql}) VALUES ({placeholders})"
+    insert_sql = f"INSERT INTO {final_table_name} ({col_names_sql}) VALUES ({placeholders})"
 
     for idx, row in df.iterrows():
         try:
